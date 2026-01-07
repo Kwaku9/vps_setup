@@ -1,0 +1,10 @@
+---
+# Frontend Role Defaults
+
+deploy_frontend: true
+
+frontend:
+  nginx:
+    enabled: true
+    version: "alpine"
+    port: 8080

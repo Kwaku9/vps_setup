@@ -1,0 +1,6 @@
+---
+# Gemini Prep Role Defaults
+
+gemini:
+  workspace_base: "/workspace"
+  cli_version: "latest"

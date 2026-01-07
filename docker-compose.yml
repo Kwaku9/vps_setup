@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  ansible:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ansible-vps:latest
+    container_name: ansible-deployment
+
+    # Mount SSH keys and vault password
+    volumes:
+      # Mount SSH to temp location (entrypoint.sh will copy with correct permissions)
+      - ~/.ssh:/tmp/host-ssh:ro
+      # Uncomment if using vault password file:
+      # - ./vault-pass.txt:/ansible/.vault-pass:ro
+
+      # Mount current directory for live editing (optional)
+      - .:/ansible:rw
+
+      # Mount project directories for migration
+      - C:/Users/swirl/VScdeProjects:/mnt/c/Users/swirl/VScdeProjects:ro
+      - C:/Users/swirl/PycharmProjects:/mnt/c/Users/swirl/PycharmProjects:ro
+
+      # Mount .claude directory for environment transfer
+      - C:/Users/swirl/.claude:/mnt/c/Users/swirl/.claude:ro
+
+    # Network mode
+    network_mode: host
+
+    # Keep container running for interactive use
+    stdin_open: true
+    tty: true
+
+    # Override default CMD to keep container alive
+    command: ["/bin/bash", "-c", "sleep infinity"]
+
+    # Environment variables
+    environment:
+      - ANSIBLE_HOST_KEY_CHECKING=False
+      - ANSIBLE_FORCE_COLOR=true
+
+  # Alternative: Run playbook directly on container start
+  ansible-deploy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ansible-vps:latest
+    container_name: ansible-deploy-once
+
+    volumes:
+      # Mount SSH to temp location (entrypoint.sh will copy with correct permissions)
+      - ~/.ssh:/tmp/host-ssh:ro
+
+    network_mode: host
+
+    # Run the full deployment
+    command: >
+      bash -c "
+      echo 'Starting deployment...' &&
+      ansible-playbook -i hosts site.yml
+      "
+
+    # Only run when explicitly called
+    profiles:
+      - deploy

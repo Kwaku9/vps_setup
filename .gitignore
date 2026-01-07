@@ -1,0 +1,122 @@
+# ============================================
+# VPS Setup - Ansible Deployment Configuration
+# ============================================
+# Only deployment-critical Ansible files are tracked
+# Documentation, scripts, and development artifacts excluded
+
+# ============================================
+# Documentation
+# ============================================
+docs/
+CLAUDE.md
+GEMINI.md
+*.md
+!README.md                    # Keep main README for deployment notes
+
+# ============================================
+# Utility Scripts (Non-Deployment)
+# ============================================
+scripts/
+*.sh
+*.ps1
+!entrypoint.sh                # Exception: needed for container
+
+# ============================================
+# Claude/AI Instructions
+# ============================================
+.claude/
+
+# ============================================
+# Media Files
+# ============================================
+screenshots/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+
+# ============================================
+# Task-Specific Playbooks (Not Core Deployment)
+# ============================================
+# Uncomment to exclude one-off task playbooks:
+# claude-restore.yml
+# claude-transfer.yml
+# transfer-workspace-agents.yml
+# docker-compose-openwebui.yml
+# backend-info.txt.j2
+# services-info.txt.j2
+
+# ============================================
+# Secrets & Credentials (NEVER COMMIT!)
+# ============================================
+.vault_pass
+vault-pass.txt
+vault_password.txt
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+credentials.json
+token.json
+
+# ============================================
+# IDE & Editor
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ============================================
+# Language-Specific Build Artifacts
+# ============================================
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+
+# ============================================
+# Ansible Runtime
+# ============================================
+*.retry
+*.log
+
+# ============================================
+# Build Artifacts & Temporary Files
+# ============================================
+*.tar.gz
+*.zip
+backend-info.txt
+services-info.txt
+tmp/
+temp/
+*.tmp
+nul
+
+# ============================================
+# Backup Files
+# ============================================
+*.backup
+*.bak
+*.orig
+*~
+
+# ============================================
+# Docker
+# ============================================
+.dockerignore             # Only needed locally, not in repo

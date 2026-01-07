@@ -1,0 +1,16 @@
+---
+# Backend Role Defaults
+
+deploy_backend: true
+
+backend:
+  api_services: []
+  # Example:
+  # api_services:
+  #   - name: "my-api"
+  #     image: "your-registry/my-api:latest"
+  #     env:
+  #       DATABASE_URL: "postgresql://postgres:5432/mydb"
+  #       API_KEY: "{{ api_key }}"
+  #     volumes:
+  #       - /opt/api-data:/data

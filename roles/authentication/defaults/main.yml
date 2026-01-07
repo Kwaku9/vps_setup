@@ -1,0 +1,16 @@
+---
+# Authentication Role Defaults - Authentik SSO
+
+authentication:
+  enabled: true
+  authentik:
+    enabled: true
+    version: "2025.10"
+    image: "ghcr.io/goauthentik/server:2025.10"
+    port: 9000
+    postgres_db: "authentik"
+    postgres_user: "authentik"
+
+# Will be overridden by vault
+authentik_password: "VAULT_OVERRIDE"
+authentik_secret_key: "VAULT_OVERRIDE"

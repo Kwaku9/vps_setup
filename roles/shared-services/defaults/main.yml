@@ -1,0 +1,21 @@
+---
+# Shared Services Role Defaults
+
+deploy_shared_services: true
+
+shared_services:
+  - name: "postgres"
+    enabled: true
+    image: "docker.io/library/postgres:16-alpine"
+    port: 5432
+  - name: "redis"
+    enabled: true
+    image: "docker.io/library/redis:7-alpine"
+    port: 6379
+  - name: "traefik"
+    enabled: true
+    image: "docker.io/library/traefik:latest"
+    port: 80
+
+# Will be overridden by vault
+postgres_password: "VAULT_OVERRIDE"

@@ -1,0 +1,12 @@
+---
+# Base Role Defaults
+
+timezone: "America/New_York"
+
+git:
+  user_name: "Ansible Automation"
+  user_email: "ansible@localhost"
+
+backup:
+  enabled: true
+  destination: "/opt/backups"

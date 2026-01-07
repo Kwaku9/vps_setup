@@ -1,0 +1,24 @@
+---
+# Management Role Defaults
+# Container management and administration tools
+
+management:
+  enabled: true
+
+  portainer:
+    enabled: true
+    version: "2.33.6"
+    image: "portainer/portainer-ce:2.33.6"
+    port: 9443
+    data_volume: "portainer-data"
+
+  dockge:
+    enabled: true
+    version: "1"
+    image: "louislam/dockge:1"
+    port: 5001
+    stacks_dir: "/opt/compose"
+    data_volume: "dockge-data"
+
+# Will be overridden by vault
+portainer_password: "VAULT_OVERRIDE"
