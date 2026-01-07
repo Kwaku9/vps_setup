@@ -1,0 +1,345 @@
+---
+# Development Environment Migration Playbook
+# Migrates local Windows development environment to Alpine Linux VPS
+#
+# Prerequisites:
+#   1. Claude CLI installed on VPS (run: ansible-playbook -i hosts site.yml --tags "claude-prep")
+#   2. Local Claude config backed up
+#   3. Running containers stopped (optional, for clean migration)
+#
+# Usage:
+#   # Full migration
+#   ansible-playbook -i hosts migrate-dev-environment.yml --ask-vault-pass
+#
+#   # Specific phases
+#   ansible-playbook -i hosts migrate-dev-environment.yml --tags "sync-projects"
+#   ansible-playbook -i hosts migrate-dev-environment.yml --tags "claude-config"
+#   ansible-playbook -i hosts migrate-dev-environment.yml --tags "containers"
+
+- name: Migrate Development Environment to VPS
+  hosts: alpine_servers
+  become: true
+  gather_facts: true
+
+  vars:
+    # Workspace configuration
+    workspace_base: "/workspace"
+    vscode_projects_dest: "{{ workspace_base }}/vscode-projects"
+    pycharm_projects_dest: "{{ workspace_base }}/pycharm-projects"
+
+    # Local source paths (Windows, accessed via /mnt/c in WSL or direct paths)
+    # Adjust these if running from different context
+    local_vscode_projects: "/mnt/c/Users/swirl/VScdeProjects"
+    local_pycharm_projects: "/mnt/c/Users/swirl/PycharmProjects"
+    local_claude_config: "/mnt/c/Users/swirl/.claude"
+
+    # Claude config backup (create this first)
+    claude_backup_archive: "claude-config-backup-{{ ansible_date_time.date }}.tar.gz"
+
+    # Projects to sync (customize based on what you need)
+    essential_vscode_projects:
+      - "openwebui-litellm"
+      - "n8n" # Includes n8n-claude
+      - "bolt.diy"
+      - "claude-code-ssh"
+      - "fabric"
+      - "n8n-mcp"
+      - "context7-mcp"
+      - "mcp-googledocs-server"  # Google Docs/Sheets MCP server + pipeline scripts
+      # - "vps_setup" # This project is managed by Git (see 'Git Source of Truth' task)
+
+    essential_pycharm_projects:
+      - "ScrapyExtractor"
+      - "IB_MCP"
+      - "TradeJournal/trade_replay_mcp"
+      - "TWS_API"
+      - "AfroVeganaChatBot"
+      - "Interactive_Avatar"
+      - "ai-recipe-generator"
+      - "playwright-mcp-server"
+      - "geminichat_scrapy"
+
+    # Rsync exclude patterns
+    rsync_excludes:
+      - "node_modules/"
+      - ".venv/"
+      - "venv/"
+      - "__pycache__/"
+      - "*.pyc"
+      - "*.pyo"
+      - ".git/"
+      - "*.log"
+      - ".DS_Store"
+      - "Thumbs.db"
+
+  pre_tasks:
+    - name: Display migration banner
+      debug:
+        msg:
+          - "============================================"
+          - "Development Environment Migration"
+          - "============================================"
+          - "Source: Windows (C:\\Users\\swirl)"
+          - "Target: {{ ansible_host }}:/workspace"
+          - "Claude CLI: 2.0.76"
+          - "Container Runtime: Podman"
+          - "============================================"
+      tags: ['always']
+
+    - name: Verify prerequisites
+      block:
+        - name: Check Claude CLI is installed
+          command: claude --version
+          register: claude_check
+          changed_when: false
+          failed_when: claude_check.rc != 0
+
+        - name: Check Podman is available
+          command: podman --version
+          register: podman_check
+          changed_when: false
+          failed_when: podman_check.rc != 0
+
+        - name: Display versions
+          debug:
+            msg:
+              - "✓ Claude CLI: {{ claude_check.stdout }}"
+              - "✓ Podman: {{ podman_check.stdout }}"
+      tags: ['verify', 'always']
+
+  tasks:
+    # ========================================
+    # PHASE 1: Create Workspace Structure
+    # ========================================
+
+    - name: Create workspace directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+      loop:
+        - "{{ workspace_base }}"
+        - "{{ vscode_projects_dest }}"
+        - "{{ pycharm_projects_dest }}"
+      tags: ['directories', 'sync-projects']
+
+    # ========================================
+    # PHASE 2: Sync Project Directories
+    # ========================================
+
+    - name: Sync VScdeProjects to VPS
+      block:
+        - name: Sync essential VSCode projects
+          synchronize:
+            src: "{{ local_vscode_projects }}/{{ item }}/"
+            dest: "{{ vscode_projects_dest }}/{{ item }}/"
+            delete: no
+            rsync_path: rsync  # Don't use sudo - we're already root
+            rsync_opts:
+              - "--exclude={{ rsync_excludes | join(' --exclude=') }}"
+              - "--progress"
+              - "--mkpath"  # Create parent directories
+          loop: "{{ essential_vscode_projects }}"
+          when: essential_vscode_projects is defined
+          tags: ['sync-projects', 'sync-vscode']
+
+        - name: Display VSCode sync status
+          debug:
+            msg: "✓ Synced {{ essential_vscode_projects | length }} VSCode projects to {{ vscode_projects_dest }}"
+          tags: ['sync-projects', 'sync-vscode']
+      tags: ['sync-projects']
+
+    - name: Sync PycharmProjects to VPS
+      block:
+        - name: Sync essential PyCharm projects
+          synchronize:
+            src: "{{ local_pycharm_projects }}/{{ item }}/"
+            dest: "{{ pycharm_projects_dest }}/{{ item }}/"
+            delete: no
+            rsync_path: rsync  # Don't use sudo - we're already root
+            rsync_opts:
+              - "--exclude={{ rsync_excludes | join(' --exclude=') }}"
+              - "--progress"
+              - "--mkpath"  # Create parent directories
+          loop: "{{ essential_pycharm_projects }}"
+          when: essential_pycharm_projects is defined
+          tags: ['sync-projects', 'sync-pycharm']
+
+        - name: Display PyCharm sync status
+          debug:
+            msg: "✓ Synced {{ essential_pycharm_projects | length }} PyCharm projects to {{ pycharm_projects_dest }}"
+          tags: ['sync-projects', 'sync-pycharm']
+      tags: ['sync-projects']
+
+    # ========================================
+    # PHASE 3: Transfer Claude Configuration
+    # ========================================
+
+    - name: Transfer Claude configuration
+      block:
+        - name: Ensure Claude config directory exists
+          file:
+            path: "/root/.claude"
+            state: directory
+            mode: '0700'
+            owner: root
+            group: root
+          tags: ['claude-config', 'prep']
+
+        - name: Sync essential Claude config files
+          synchronize:
+            src: "{{ local_claude_config }}/{{ item }}"
+            dest: "/root/.claude/{{ item }}"
+            rsync_path: rsync
+          loop:
+            - .credentials.json
+            - settings.json
+            - settings.local.json
+            - mcp_settings.json
+          ignore_errors: yes
+          tags: ['claude-config', 'sync']
+
+        - name: Sync Claude commands directory (if exists)
+          synchronize:
+            src: "{{ local_claude_config }}/commands/"
+            dest: "/root/.claude/commands/"
+            delete: no
+            rsync_path: rsync
+          ignore_errors: yes
+          tags: ['claude-config', 'sync']
+
+        - name: Sync Claude plugins directory (if exists)
+          synchronize:
+            src: "{{ local_claude_config }}/plugins/"
+            dest: "/root/.claude/plugins/"
+            delete: no
+            rsync_path: rsync
+          ignore_errors: yes
+          tags: ['claude-config', 'sync']
+
+        - name: Set proper permissions on sensitive files
+          file:
+            path: "/root/.claude/{{ item }}"
+            mode: '0600'
+            owner: root
+            group: root
+          loop:
+            - .credentials.json
+            - settings.json
+            - settings.local.json
+            - mcp_settings.json
+          ignore_errors: yes
+          tags: ['claude-config', 'permissions']
+
+        - name: Display Claude config status
+          debug:
+            msg: "✓ Claude configuration synced to /root/.claude/"
+          tags: ['claude-config']
+      tags: ['claude-config']
+
+    # ========================================
+    # PHASE 2a: Git Source of Truth for vps_setup
+    # ========================================
+    - name: Ensure git is installed
+      apk:
+        name: git
+        state: present
+      tags: ['git-sync', 'sync-projects']
+
+    - name: Clone or update vps_setup from Git
+      ansible.builtin.git:
+        repo: 'https://github.com/Kwaku9/vps_setup.git'
+        dest: "{{ vscode_projects_dest }}/vps_setup"
+        version: main
+        force: yes
+      tags: ['git-sync', 'sync-projects']
+
+    # ========================================
+    # PHASE 4: Deploy Containerized Applications
+    # ========================================
+
+    - name: Create Podman network for services
+      command: podman network create enterprise_network
+      register: network_create
+      failed_when:
+        - network_create.rc != 0
+        - "'already exists' not in network_create.stderr"
+      changed_when: network_create.rc == 0
+      tags: ['containers', 'network']
+
+    - name: Deploy applications
+      include_role:
+        name: app_deployment
+      tags: ['containers']
+
+    # ========================================
+    # PHASE 5: Update MCP Settings Paths
+    # ========================================
+
+    - name: Update MCP settings with Linux paths
+      block:
+        - name: Check if mcp_settings.json exists
+          stat:
+            path: "/root/.claude/mcp_settings.json"
+          register: mcp_settings_stat
+
+        - name: Backup original mcp_settings.json
+          copy:
+            src: "/root/.claude/mcp_settings.json"
+            dest: "/root/.claude/mcp_settings.json.backup"
+            remote_src: yes
+          when: mcp_settings_stat.stat.exists
+
+        - name: Display MCP settings update note
+          debug:
+            msg:
+              - "⚠ MCP settings may need manual path updates:"
+              - "  Windows paths (C:\\Users\\swirl\\...) → Linux paths (/workspace/...)"
+              - "  Edit: /root/.claude/mcp_settings.json"
+              - "  Backup saved: /root/.claude/mcp_settings.json.backup"
+          when: mcp_settings_stat.stat.exists
+      tags: ['mcp-config']
+
+  post_tasks:
+    - name: Display migration summary
+      debug:
+        msg:
+          - "============================================"
+          - "Migration Complete!"
+          - "============================================"
+          - "✓ Projects synced to {{ workspace_base }}"
+          - "✓ Claude config restored to /root/.claude/"
+          - "✓ Podman network created: enterprise_network"
+          - ""
+          - "Next Steps:"
+          - "1. Update MCP settings paths (if needed):"
+          - "   ssh root@{{ ansible_host }} 'vi /root/.claude/mcp_settings.json'"
+          - ""
+          - "2. Start containers (one project at a time):"
+          - "   ssh root@{{ ansible_host }}"
+          - "   cd {{ vscode_projects_dest }}/fabric"
+          - "   podman-compose up -d"
+          - ""
+          - "3. Verify containers:"
+          - "   podman ps"
+          - ""
+          - "4. Set up VS Code Remote SSH:"
+          - "   Add to ~/.ssh/config:"
+          - "     Host alpine-vps"
+          - "       HostName {{ ansible_host }}"
+          - "       User root"
+          - "       IdentityFile ~/.ssh/id_ed25519"
+          - ""
+          - "5. Test Claude CLI:"
+          - "   cd {{ workspace_base }}/vscode-projects/vps_setup"
+          - "   claude --version"
+          - "============================================"
+      tags: ['always']
+
+    - name: Cleanup temporary files
+      file:
+        path: "/tmp/{{ claude_backup_archive }}"
+        state: absent
+      tags: ['cleanup']

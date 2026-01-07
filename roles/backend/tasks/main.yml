@@ -1,0 +1,43 @@
+---
+# Backend Role - Custom API Services
+# Deploy your custom backend containers here
+
+- name: Create backend pod
+  containers.podman.podman_pod:
+    name: backend-pod
+    network: "{{ podman_network_name | default('enterprise_network') }}"
+    state: started
+  when:
+    - deploy_backend | default(true)
+    - backend.api_services | length > 0
+  tags: ['backend', 'pod']
+
+- name: Deploy custom API services
+  containers.podman.podman_container:
+    name: "{{ item.name }}"
+    image: "{{ item.image }}"
+    state: started
+    pod: backend-pod
+    env: "{{ item.env | default({}) }}"
+    volumes: "{{ item.volumes | default([]) }}"
+  loop: "{{ backend.api_services }}"
+  when:
+    - deploy_backend | default(true)
+    - backend.api_services | length > 0
+  tags: ['backend', 'api']
+
+- name: Display backend status
+  debug:
+    msg: "Backend services: {{ backend.api_services | map(attribute='name') | list }}"
+  when:
+    - deploy_backend | default(true)
+    - backend.api_services | length > 0
+  tags: ['backend']
+
+- name: No backend services configured
+  debug:
+    msg: "No custom backend services configured - add them in all.yml"
+  when:
+    - deploy_backend | default(true)
+    - backend.api_services | length == 0
+  tags: ['backend']

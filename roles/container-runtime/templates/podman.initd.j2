@@ -1,0 +1,28 @@
+#!/sbin/openrc-run
+# Podman Auto-Start Service
+# Starts all containers with restart policy
+
+name="podman"
+description="Podman Container Service"
+
+depend() {
+    need net cgroups
+    after firewall
+}
+
+start() {
+    ebegin "Starting Podman containers with restart policy"
+    /usr/bin/podman start --all
+    eend $?
+}
+
+stop() {
+    ebegin "Stopping all Podman containers"
+    /usr/bin/podman stop --all --time 30
+    eend $?
+}
+
+restart() {
+    stop
+    start
+}

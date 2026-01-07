@@ -1,0 +1,11 @@
+#!/bin/bash
+# Podman Compose Wrapper Script
+# Shorthand: pc (instead of podman-compose)
+
+set -e
+
+# Suppress podman-compose docker compatibility warning
+export PODMAN_COMPOSE_WARNING_LOGS=false
+
+# Execute podman-compose with all arguments
+exec /usr/bin/podman-compose "$@"

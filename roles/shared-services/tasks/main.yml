@@ -1,0 +1,88 @@
+---
+# Shared Services Role - PostgreSQL, Redis, Traefik
+# Deploys common infrastructure containers
+# NOTE: Traefik runs as STANDALONE container (not in pod) due to pod networking issues
+
+- name: Create shared services pod
+  containers.podman.podman_pod:
+    name: shared-services-pod
+    network: "{{ podman_network_name | default('enterprise_network') }}"
+    state: started
+    ports:
+      - "5432:5432"  # PostgreSQL
+      - "6379:6379"  # Redis
+      # Traefik ports removed - runs standalone
+  when: deploy_shared_services | default(true)
+  tags: ['shared-services', 'pod']
+
+- name: Deploy PostgreSQL container
+  containers.podman.podman_container:
+    name: postgres
+    image: "{{ item.image }}"
+    state: started
+    pod: shared-services-pod
+    env:
+      POSTGRES_PASSWORD: "{{ postgres_password }}"
+      POSTGRES_USER: "postgres"
+      POSTGRES_DB: "enterprise"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+  loop: "{{ shared_services }}"
+  when:
+    - deploy_shared_services | default(true)
+    - item.name == "postgres"
+    - item.enabled | default(true)
+  tags: ['shared-services', 'postgres']
+
+- name: Deploy Redis container
+  containers.podman.podman_container:
+    name: redis
+    image: "{{ item.image }}"
+    state: started
+    pod: shared-services-pod
+    command: "redis-server --appendonly yes"
+    volumes:
+      - redis-data:/data
+  loop: "{{ shared_services }}"
+  when:
+    - deploy_shared_services | default(true)
+    - item.name == "redis"
+    - item.enabled | default(true)
+  tags: ['shared-services', 'redis']
+
+- name: Create Traefik configuration
+  template:
+    src: traefik.yml.j2
+    dest: /opt/compose/traefik.yml
+    mode: '0644'
+  when:
+    - deploy_shared_services | default(true)
+    - shared_services | selectattr('name', 'equalto', 'traefik') | selectattr('enabled', 'equalto', true) | list | length > 0
+  tags: ['shared-services', 'traefik']
+
+- name: Deploy Traefik container (STANDALONE - not in pod)
+  containers.podman.podman_container:
+    name: traefik
+    image: "{{ item.image }}"
+    state: started
+    network: "{{ podman_network_name | default('enterprise_network') }}"
+    ports:
+      - "80:80"      # HTTP
+      - "443:443"    # HTTPS
+      - "8082:8080"  # Dashboard/API
+    volumes:
+      - /run/podman/podman.sock:/var/run/docker.sock:ro
+      - /opt/compose/traefik.yml:/etc/traefik/traefik.yml:ro
+    restart_policy: unless-stopped
+  loop: "{{ shared_services }}"
+  when:
+    - deploy_shared_services | default(true)
+    - item.name == "traefik"
+    - item.enabled | default(true)
+  tags: ['shared-services', 'traefik']
+
+- name: Display shared services status
+  debug:
+    msg: "Shared services deployed in pod 'shared-services-pod'"
+  when: deploy_shared_services | default(true)
+  tags: ['shared-services']

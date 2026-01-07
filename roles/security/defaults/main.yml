@@ -1,0 +1,38 @@
+---
+# Security Role Defaults
+
+security:
+  fail2ban:
+    enabled: true
+    bantime: "1h"
+    findtime: "10m"
+    maxretry: 5
+    jail_services:
+      - sshd
+
+  wazuh:
+    enabled: false  # Resource intensive - enable manually
+    version: "4.7.2"
+
+  trivy:
+    enabled: true
+    version: "latest"
+    scan_on_startup: true
+
+  firewall:
+    enabled: true
+    allowed_ports:
+      - 22     # SSH
+      - 80     # HTTP
+      - 443    # HTTPS
+      - 3000   # Grafana
+      - 3002   # n8n MCP HTTP
+      - 3101   # Claude Monitor Frontend
+      - 3200   # Loki (FIXED - was 3100)
+      - 5001   # Dockge
+      - 5002   # IBKR MCP HTTP
+      - 5678   # n8n-claude
+      - 8082   # Traefik Dashboard
+      - 9000   # Authentik SSO
+      - 9090   # Prometheus
+      - 9443   # Portainer

@@ -1,0 +1,65 @@
+---
+# Tasks for app_deployment
+
+- name: Ensure community.docker collection is installed
+  command: ansible-galaxy collection install community.docker
+  changed_when: false
+  tags: ['containers', 'setup']
+
+- name: Find docker-compose files in vscode projects
+  find:
+    paths: "{{ vscode_projects_dest }}"
+    patterns:
+      - "docker-compose.yml"
+      - "docker-compose.yaml"
+    recurse: yes
+  register: vscode_compose_files
+  tags: ['containers']
+
+- name: Find docker-compose files in pycharm projects
+  find:
+    paths: "{{ pycharm_projects_dest }}"
+    patterns:
+      - "docker-compose.yml"
+      - "docker-compose.yaml"
+    recurse: yes
+  register: pycharm_compose_files
+  tags: ['containers']
+
+- name: Combine all found compose files
+  set_fact:
+    all_compose_files: "{{ vscode_compose_files.files + pycharm_compose_files.files }}"
+  tags: ['containers']
+
+- name: Replace Windows VScdeProjects paths in compose files
+  replace:
+    path: "{{ item.path }}"
+    regexp: 'C:(\/|\\)+Users(\/|\\)+swirl(\/|\\)+VScdeProjects'
+    replace: "{{ vscode_projects_dest }}"
+  loop: "{{ all_compose_files }}"
+  when: all_compose_files is defined and all_compose_files | length > 0
+  tags: ['containers', 'path-fix']
+
+- name: Replace Windows PycharmProjects paths in compose files
+  replace:
+    path: "{{ item.path }}"
+    regexp: 'C:(\/|\\)+Users(\/|\\)+swirl(\/|\\)+PycharmProjects'
+    replace: "{{ pycharm_projects_dest }}"
+  loop: "{{ all_compose_files }}"
+  when: all_compose_files is defined and all_compose_files | length > 0
+  tags: ['containers', 'path-fix']
+
+- name: Start services from compose files
+  community.docker.docker_compose:
+    project_src: "{{ item.path | dirname }}"
+    executable: "podman-compose"
+    state: present
+  loop: "{{ all_compose_files }}"
+  when: all_compose_files is defined and all_compose_files | length > 0
+  tags: ['containers', 'deploy']
+
+- name: Display container deployment summary
+  debug:
+    msg: "✓ Processed and started services for {{ all_compose_files | length }} docker-compose file(s)."
+  when: all_compose_files is defined and all_compose_files | length > 0
+  tags: ['containers']

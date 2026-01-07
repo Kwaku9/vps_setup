@@ -1,0 +1,6 @@
+---
+# Claude Prep Role Defaults
+
+claude:
+  workspace_base: "/workspace"
+  cli_version: "latest"

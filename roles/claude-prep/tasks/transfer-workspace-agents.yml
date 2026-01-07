@@ -1,0 +1,82 @@
+---
+# Transfer Workspace-Level Claude Code Configuration to VPS
+# Transfers entire .claude directory from C:\Users\swirl\VScdeProjects\.claude
+# to /workspace/.claude on the VPS so all projects can use shared configuration
+
+- name: Create workspace .claude directory on VPS
+  file:
+    path: /workspace/.claude
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  tags: ['workspace-config', 'directories']
+
+- name: Check if workspace .claude directory exists locally
+  stat:
+    path: /mnt/c/Users/swirl/VScdeProjects/.claude
+  delegate_to: localhost
+  register: workspace_claude_dir
+  tags: ['workspace-config']
+
+- name: Transfer workspace-level .claude directory to VPS
+  synchronize:
+    src: /mnt/c/Users/swirl/VScdeProjects/.claude/
+    dest: /workspace/.claude/
+    delete: no
+    recursive: yes
+    use_ssh_args: yes
+    rsync_path: "rsync"
+  when: workspace_claude_dir.stat.exists
+  tags: ['workspace-config']
+
+- name: Verify workspace agents transferred
+  find:
+    paths: /workspace/.claude/agents
+    patterns: "*.md"
+  register: vps_workspace_agents
+  when: workspace_claude_dir.stat.exists
+  tags: ['workspace-config', 'verify']
+
+- name: Verify workspace workflows transferred
+  find:
+    paths: /workspace/.claude/workflows
+    patterns: "*"
+  register: vps_workspace_workflows
+  when: workspace_claude_dir.stat.exists
+  ignore_errors: yes
+  tags: ['workspace-config', 'verify']
+
+- name: Count documentation files transferred
+  find:
+    paths: /workspace/.claude
+    patterns: "*.md"
+    recurse: no
+  register: vps_workspace_docs
+  when: workspace_claude_dir.stat.exists
+  tags: ['workspace-config', 'verify']
+
+- name: Display workspace configuration transfer summary
+  debug:
+    msg:
+      - "============================================"
+      - "Workspace Configuration Transfer Complete!"
+      - "============================================"
+      - "Agents: {{ vps_workspace_agents.matched | default(0) }} files"
+      - "Workflows: {{ vps_workspace_workflows.matched | default(0) }} files"
+      - "Documentation: {{ vps_workspace_docs.matched | default(0) }} MD files"
+      - "Location: /workspace/.claude/"
+      - ""
+      - "Contents transferred:"
+      - "  - agents/ (custom Claude agents)"
+      - "  - workflows/ (workflow definitions)"
+      - "  - COMMANDS.md"
+      - "  - PROJECT_STATUS.md"
+      - "  - SCRIPTS.md"
+      - "  - SUBAGENTS-REFERENCE.md"
+      - "  - RealEstateListings_Workflow_FilePaths.md"
+      - "  - settings.local.json"
+      - ""
+      - "Available to ALL projects under /workspace"
+      - "============================================"
+  tags: ['workspace-config', 'verify']

@@ -1,0 +1,79 @@
+---
+# Security Role - Firewall, Fail2ban, Wazuh, Trivy
+# Implements security hardening and threat detection
+
+- name: Import hardening tasks
+  import_tasks: ../../hardening.yml
+  tags: ['security', 'hardening']
+
+- name: Install Fail2ban
+  apk:
+    name:
+      - fail2ban
+      - iptables
+    state: present
+  when: security.fail2ban.enabled | default(true)
+  tags: ['security', 'fail2ban']
+
+- name: Create Fail2ban jail configuration
+  template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    mode: '0644'
+  when: security.fail2ban.enabled | default(true)
+  notify: restart fail2ban
+  tags: ['security', 'fail2ban']
+
+- name: Enable and start Fail2ban
+  service:
+    name: fail2ban
+    enabled: yes
+    state: started
+  when: security.fail2ban.enabled | default(true)
+  tags: ['security', 'fail2ban']
+
+- name: Create firewall configuration script
+  template:
+    src: firewall.sh.j2
+    dest: /usr/local/bin/configure-firewall.sh
+    mode: '0755'
+  when: security.firewall.enabled | default(true)
+  tags: ['security', 'firewall']
+
+- name: Apply firewall rules
+  command: /usr/local/bin/configure-firewall.sh start
+  when: security.firewall.enabled | default(true)
+  tags: ['security', 'firewall']
+
+- name: Create Trivy scan script
+  template:
+    src: trivy-scan.sh.j2
+    dest: /usr/local/bin/trivy-scan-all
+    mode: '0755'
+  when: security.trivy.enabled | default(true)
+  tags: ['security', 'trivy']
+
+- name: Create security check script
+  template:
+    src: security-check.sh.j2
+    dest: /usr/local/bin/security-check
+    mode: '0755'
+  tags: ['security', 'audit']
+
+- name: Run initial security scan
+  command: /usr/local/bin/security-check
+  register: security_scan
+  changed_when: false
+  failed_when: false
+  tags: ['security', 'audit']
+
+- name: Display security scan results
+  debug:
+    var: security_scan.stdout_lines
+  tags: ['security', 'audit']
+
+- name: Deploy Wazuh stack (optional - resource intensive)
+  debug:
+    msg: "Wazuh deployment skipped - enable manually if needed"
+  when: security.wazuh.enabled | default(false)
+  tags: ['security', 'wazuh']

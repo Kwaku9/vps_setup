@@ -1,0 +1,33 @@
+---
+# Monitoring Role Defaults
+
+monitoring:
+  enabled: true
+  prometheus:
+    enabled: true
+    version: "latest"
+    port: 9090
+    retention: "15d"
+  grafana:
+    enabled: true
+    version: "latest"
+    port: 3000
+    admin_user: "admin"
+  node_exporter:
+    enabled: true
+    version: "latest"
+    port: 9100
+  cadvisor:
+    enabled: true
+    version: "latest"
+    port: 8080
+  loki:
+    enabled: true
+    version: "latest"
+    port: 3200  # FIXED - was 3100
+  promtail:
+    enabled: true
+    version: "latest"
+
+# Will be overridden by vault
+grafana_password: "VAULT_OVERRIDE"

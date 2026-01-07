@@ -1,0 +1,102 @@
+---
+# Claude Prep Role - Prepare System for Claude Code
+# Installs ONLY Claude CLI and creates workspace structure
+# MCP servers run in containers (no Python dependencies needed)
+
+- name: Install Node.js and npm (for Claude CLI only)
+  apk:
+    name:
+      - nodejs
+      - npm
+    state: present
+  tags: ['claude-prep', 'packages']
+
+- name: Install Claude Code CLI globally
+  shell: /usr/bin/npm install -g @anthropic-ai/claude-code
+  args:
+    creates: /usr/lib/node_modules/@anthropic-ai/claude-code
+  environment:
+    PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  tags: ['claude-prep', 'claude-cli']
+
+- name: Create Claude workspace base directory
+  file:
+    path: "{{ claude.workspace_base | default('/workspace') }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  tags: ['claude-prep', 'directories']
+
+- name: Create Claude config directory
+  file:
+    path: /root/.claude
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+  tags: ['claude-prep', 'directories']
+
+- name: Create MCP server workspace directories
+  file:
+    path: "{{ claude.workspace_base | default('/workspace') }}/{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  loop:
+    - mcp-googledocs-server
+    - IB_MCP
+    - trade_replay_mcp
+    - whisper-mcp
+    - mcp-voice-hooks
+    - n8n-mcp
+    - n8n-claude
+  tags: ['claude-prep', 'directories']
+
+- name: Verify Claude CLI installation
+  command: claude --version
+  register: claude_version_check
+  changed_when: false
+  failed_when: false
+  tags: ['claude-prep', 'verify']
+
+- name: Display Claude CLI status
+  debug:
+    msg: "{{ claude_version_check.stdout if claude_version_check.rc == 0 else 'Claude CLI installation pending (npm install may be in progress)' }}"
+  tags: ['claude-prep', 'verify']
+
+- name: Create Claude workspace info file
+  copy:
+    dest: "{{ claude.workspace_base | default('/workspace') }}/README.txt"
+    content: |
+      Claude Code Workspace
+      =====================
+
+      This directory contains Claude Code MCP server projects.
+      All MCP servers run as Podman containers.
+
+      Base system only has:
+      - Node.js + npm (for Claude CLI)
+      - Bash, Git, GPG (utilities)
+      - Podman (container runtime)
+
+      MCP Servers (containerized):
+      - Google Docs/Drive MCP
+      - IBKR Trading MCP
+      - Trade Replay MCP
+      - Whisper MCP
+      - Voice Hooks MCP
+      - n8n MCP
+      - n8n-Claude Integration
+
+      Restore from backup:
+      ansible-playbook -i hosts claude-restore.yml
+    mode: '0644'
+  tags: ['claude-prep', 'documentation']
+
+# Include Claude environment transfer tasks
+- name: Include Claude environment transfer tasks
+  include_tasks: transfer-claude-environment.yml
+  when: transfer_claude_environment | default(false)
+  tags: ['claude-prep', 'claude-transfer']

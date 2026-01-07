@@ -1,0 +1,44 @@
+---
+# Transfer Claude Code session history from Windows to VPS
+# Transfers conversation history for vps_setup project
+
+- name: Create Claude projects directory on VPS
+  file:
+    path: /root/.claude/projects
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+  tags: ['claude-prep', 'session-history']
+
+- name: Create project session directory on VPS
+  file:
+    path: /root/.claude/projects/-workspace-vscode-projects-vps_setup
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+  tags: ['claude-prep', 'session-history']
+
+- name: Transfer vps_setup project session history
+  copy:
+    src: "{{ item }}"
+    dest: /root/.claude/projects/-workspace-vscode-projects-vps_setup/
+    mode: '0600'
+    owner: root
+    group: root
+  with_fileglob:
+    - "C:/Users/swirl/.claude/projects/C--Users-swirl-VScdeProjects-vps-setup/*.jsonl"
+  tags: ['claude-prep', 'session-history']
+
+- name: Verify session files transferred
+  find:
+    paths: /root/.claude/projects/-workspace-vscode-projects-vps_setup
+    patterns: "*.jsonl"
+  register: transferred_sessions
+  tags: ['claude-prep', 'session-history']
+
+- name: Display transfer summary
+  debug:
+    msg: "Transferred {{ transferred_sessions.matched }} session files to VPS"
+  tags: ['claude-prep', 'session-history']

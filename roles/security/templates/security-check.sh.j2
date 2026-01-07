@@ -1,0 +1,47 @@
+#!/bin/bash
+# Security Audit Script
+# Performs basic security checks
+
+echo "==================================="
+echo "Security Audit - $(date)"
+echo "==================================="
+
+# Check for failed login attempts
+echo ""
+echo "Recent Failed Login Attempts:"
+grep "Failed password" /var/log/messages 2>/dev/null | tail -10 || echo "None found"
+
+# Check Fail2ban status
+echo ""
+echo "Fail2ban Status:"
+fail2ban-client status 2>/dev/null || echo "Fail2ban not running"
+
+# Check running containers
+echo ""
+echo "Running Containers:"
+podman ps --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}\t{{ '{{' }}.Ports{{ '}}' }}"
+
+# Check for updates
+echo ""
+echo "Available Package Updates:"
+apk list --upgradable 2>/dev/null || echo "All packages up to date"
+
+# Check disk usage
+echo ""
+echo "Disk Usage:"
+df -h / | tail -1
+
+# Check memory usage
+echo ""
+echo "Memory Usage:"
+free -h | grep Mem
+
+# Check firewall rules
+echo ""
+echo "Active Firewall Rules:"
+iptables -L -n | grep -c "^Chain" || echo "No firewall rules"
+
+echo ""
+echo "==================================="
+echo "Audit Complete"
+echo "==================================="

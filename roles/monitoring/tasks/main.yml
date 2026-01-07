@@ -1,0 +1,188 @@
+---
+# Monitoring Role - Prometheus, Grafana, Loki Stack
+# Deploys observability infrastructure
+
+- name: Create monitoring pod
+  containers.podman.podman_pod:
+    name: monitoring-pod
+    network: "{{ podman_network_name | default('enterprise_network') }}"
+    state: started
+    ports:
+      - "3000:3000"    # Grafana
+      - "5000:5000"    # CheckMK
+      - "9090:9090"    # Prometheus
+      - "9100:9100"    # Node Exporter
+      - "8081:8080"    # cAdvisor
+      - "3200:3100"    # Loki
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'pod']
+
+- name: Create Prometheus configuration
+  template:
+    src: prometheus.yml.j2
+    dest: /opt/compose/prometheus.yml
+    mode: '0644'
+  when: monitoring.prometheus.enabled | default(true)
+  tags: ['monitoring', 'prometheus']
+
+- name: Deploy Prometheus container
+  containers.podman.podman_container:
+    name: prometheus
+    image: "docker.io/prom/prometheus:{{ monitoring.prometheus.version | default('latest') }}"
+    state: started
+    pod: monitoring-pod
+    volumes:
+      - /opt/compose/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command: >
+      --config.file=/etc/prometheus/prometheus.yml
+      --storage.tsdb.path=/prometheus
+      --storage.tsdb.retention.time={{ monitoring.prometheus.retention | default('15d') }}
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.prometheus.enabled | default(true)
+  tags: ['monitoring', 'prometheus']
+
+- name: Create Grafana datasources configuration
+  template:
+    src: grafana-datasources.yml.j2
+    dest: /opt/compose/grafana-datasources.yml
+    mode: '0644'
+  when: monitoring.grafana.enabled | default(true)
+  tags: ['monitoring', 'grafana']
+
+- name: Create Grafana dashboards configuration
+  template:
+    src: grafana-dashboards.yml.j2
+    dest: /opt/compose/grafana-dashboards.yml
+    mode: '0644'
+  when: monitoring.grafana.enabled | default(true)
+  tags: ['monitoring', 'grafana']
+
+- name: Deploy Grafana container
+  containers.podman.podman_container:
+    name: grafana
+    image: "docker.io/grafana/grafana:{{ monitoring.grafana.version | default('latest') }}"
+    state: started
+    pod: monitoring-pod
+    env:
+      GF_SECURITY_ADMIN_USER: "{{ monitoring.grafana.admin_user | default('admin') }}"
+      GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_password }}"
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - /opt/compose/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - /opt/compose/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.grafana.enabled | default(true)
+  tags: ['monitoring', 'grafana']
+
+- name: Deploy Node Exporter container
+  containers.podman.podman_container:
+    name: node-exporter
+    image: "docker.io/prom/node-exporter:{{ monitoring.node_exporter.version | default('latest') }}"
+    state: started
+    pod: monitoring-pod
+    command: >
+      --path.procfs=/host/proc
+      --path.sysfs=/host/sys
+      --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.node_exporter.enabled | default(true)
+  tags: ['monitoring', 'node-exporter']
+
+- name: Deploy cAdvisor container
+  containers.podman.podman_container:
+    name: cadvisor
+    image: "{{ monitoring.cadvisor.image | default('ghcr.io/google/cadvisor:latest') }}"
+    state: started
+    pod: monitoring-pod
+    privileged: yes
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/containers:/var/lib/containers:ro
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.cadvisor.enabled | default(true)
+  tags: ['monitoring', 'cadvisor']
+
+- name: Create Loki configuration
+  template:
+    src: loki-config.yml.j2
+    dest: /opt/compose/loki-config.yml
+    mode: '0644'
+  when: monitoring.loki.enabled | default(true)
+  tags: ['monitoring', 'loki']
+
+- name: Deploy Loki container
+  containers.podman.podman_container:
+    name: loki
+    image: "docker.io/grafana/loki:{{ monitoring.loki.version | default('latest') }}"
+    state: started
+    pod: monitoring-pod
+    volumes:
+      - /opt/compose/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    command: "-config.file=/etc/loki/local-config.yaml"
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.loki.enabled | default(true)
+  tags: ['monitoring', 'loki']
+
+- name: Create Promtail configuration
+  template:
+    src: promtail-config.yml.j2
+    dest: /opt/compose/promtail-config.yml
+    mode: '0644'
+  when: monitoring.promtail.enabled | default(true)
+  tags: ['monitoring', 'promtail']
+
+- name: Deploy Promtail container
+  containers.podman.podman_container:
+    name: promtail
+    image: "docker.io/grafana/promtail:{{ monitoring.promtail.version | default('latest') }}"
+    state: started
+    pod: monitoring-pod
+    volumes:
+      - /opt/compose/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/log:/var/log:ro
+    command: "-config.file=/etc/promtail/config.yml"
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.promtail.enabled | default(true)
+  tags: ['monitoring', 'promtail']
+
+- name: Deploy CheckMK container
+  containers.podman.podman_container:
+    name: checkmk
+    image: "{{ monitoring.checkmk.image | default('checkmk/check-mk-raw:2.4') }}"
+    state: started
+    pod: monitoring-pod
+    env:
+      CMK_SITE_ID: "{{ monitoring.checkmk.site_name | default('cmk') }}"
+    volumes:
+      - checkmk-data:/omd/sites
+    tmpfs:
+      - /opt/omd/sites/{{ monitoring.checkmk.site_name | default('cmk') }}/tmp:uid=1000,gid=1000
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.checkmk.enabled | default(false)
+  tags: ['monitoring', 'checkmk']
+
+- name: Display monitoring stack status
+  debug:
+    msg:
+      - "Monitoring stack deployed successfully"
+      - "Grafana: http://{{ ansible_host }}:3000"
+      - "Prometheus: http://{{ ansible_host }}:9090"
+      - "CheckMK: http://{{ ansible_host }}:5000/{{ monitoring.checkmk.site_name | default('cmk') }}"
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring']

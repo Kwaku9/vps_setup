@@ -1,0 +1,120 @@
+---
+# Container Runtime Role - Podman Installation and Configuration
+# Sets up rootless Podman with all necessary configurations
+
+- name: Install Podman and dependencies
+  apk:
+    name:
+      - podman
+      - fuse-overlayfs   # For rootless storage driver
+      - slirp4netns      # For rootless networking
+      - crun             # Lightweight OCI runtime
+    state: present
+  tags: ['container-runtime', 'podman']
+
+- name: Install podman-compose via pip
+  apk:
+    name:
+      - py3-pip
+    state: present
+  tags: ['container-runtime', 'podman-compose']
+
+- name: Install podman-compose Python package
+  pip:
+    name: podman-compose
+    state: present
+    executable: pip3
+    break_system_packages: yes
+  tags: ['container-runtime', 'podman-compose']
+
+- name: Create podman-compose wrapper script
+  template:
+    src: podman-compose-wrapper.sh.j2
+    dest: /usr/local/bin/pc
+    mode: '0755'
+  tags: ['container-runtime', 'podman-compose']
+
+- name: Configure user namespaces for rootless Podman
+  lineinfile:
+    path: "{{ item.path }}"
+    line: "{{ item.user }}:100000:65536"
+    create: yes
+  loop:
+    - { path: '/etc/subuid', user: 'root' }
+    - { path: '/etc/subgid', user: 'root' }
+  when: enable_rootless | default(false)
+  tags: ['container-runtime', 'rootless']
+
+- name: Configure Podman storage
+  template:
+    src: storage.conf.j2
+    dest: /etc/containers/storage.conf
+    mode: '0644'
+  tags: ['container-runtime', 'config']
+
+- name: Configure Podman registries
+  template:
+    src: registries.conf.j2
+    dest: /etc/containers/registries.conf
+    mode: '0644'
+  tags: ['container-runtime', 'config']
+
+- name: Configure Podman policy
+  template:
+    src: policy.json.j2
+    dest: /etc/containers/policy.json
+    mode: '0644'
+  tags: ['container-runtime', 'config']
+
+- name: Create Podman network
+  containers.podman.podman_network:
+    name: "{{ podman_network_name | default('enterprise_network') }}"
+    subnet: "{{ podman_network_subnet | default('REDACTED_CIDR') }}"
+    state: present
+  tags: ['container-runtime', 'network']
+
+- name: Create Podman auto-start OpenRC service
+  template:
+    src: podman.initd.j2
+    dest: /etc/init.d/podman
+    mode: '0755'
+  tags: ['container-runtime', 'service']
+
+- name: Enable Podman auto-start service
+  service:
+    name: podman
+    enabled: yes
+  tags: ['container-runtime', 'service']
+
+- name: Create Podman socket directory
+  file:
+    path: /run/podman
+    state: directory
+    mode: '0755'
+  tags: ['container-runtime', 'socket']
+
+- name: Enable Podman API socket service
+  shell: |
+    podman system service --time=0 unix:///run/podman/podman.sock &
+    sleep 2
+  args:
+    creates: /run/podman/podman.sock
+  tags: ['container-runtime', 'socket']
+
+- name: Create compose stacks directory
+  file:
+    path: /opt/compose
+    state: directory
+    mode: '0755'
+  tags: ['container-runtime', 'directories']
+
+- name: Verify Podman installation
+  command: podman --version
+  register: podman_version
+  changed_when: false
+  tags: ['container-runtime', 'verify']
+
+- name: Display Podman version
+  debug:
+    msg: "Podman installed: {{ podman_version.stdout }}"
+  tags: ['container-runtime', 'verify']

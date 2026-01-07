@@ -1,0 +1,53 @@
+---
+# Frontend Role - Nginx Web Server
+# Deploys web services and landing page
+
+- name: Create frontend pod
+  containers.podman.podman_pod:
+    name: frontend-pod
+    network: "{{ podman_network_name | default('enterprise_network') }}"
+    state: started
+    ports:
+      - "8080:80"  # Nginx
+  when: deploy_frontend | default(true)
+  tags: ['frontend', 'pod']
+
+- name: Create Nginx configuration
+  template:
+    src: nginx.conf.j2
+    dest: /opt/compose/nginx.conf
+    mode: '0644'
+  when:
+    - deploy_frontend | default(true)
+    - frontend.nginx.enabled | default(true)
+  tags: ['frontend', 'nginx']
+
+- name: Create landing page HTML
+  template:
+    src: index.html.j2
+    dest: /opt/compose/index.html
+    mode: '0644'
+  when:
+    - deploy_frontend | default(true)
+    - frontend.nginx.enabled | default(true)
+  tags: ['frontend', 'nginx']
+
+- name: Deploy Nginx container
+  containers.podman.podman_container:
+    name: nginx
+    image: "docker.io/library/nginx:{{ frontend.nginx.version | default('alpine') }}"
+    state: started
+    pod: frontend-pod
+    volumes:
+      - /opt/compose/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /opt/compose/index.html:/usr/share/nginx/html/index.html:ro
+  when:
+    - deploy_frontend | default(true)
+    - frontend.nginx.enabled | default(true)
+  tags: ['frontend', 'nginx']
+
+- name: Display frontend status
+  debug:
+    msg: "Frontend deployed at http://{{ ansible_host }}:8080"
+  when: deploy_frontend | default(true)
+  tags: ['frontend']

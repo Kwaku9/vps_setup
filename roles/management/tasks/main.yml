@@ -1,0 +1,106 @@
+---
+# Management Role - Container Management GUIs
+# Deploys Portainer and Dockge for infrastructure administration
+
+- name: Create management pod
+  containers.podman.podman_pod:
+    name: management-pod
+    network: "{{ podman_network_name | default('enterprise_network') }}"
+    state: started
+    ports:
+      - "9443:9443"  # Portainer HTTPS
+      - "5001:5001"  # Dockge HTTP
+  when: management.enabled | default(true)
+  tags: ['management', 'pod']
+
+- name: Deploy Portainer container
+  containers.podman.podman_container:
+    name: portainer
+    image: "{{ management.portainer.image | default('portainer/portainer-ce:latest') }}"
+    state: started
+    pod: management-pod
+    volumes:
+      - "{{ management.portainer.data_volume | default('portainer-data') }}:/data"
+      - /run/podman/podman.sock:/var/run/docker.sock:ro
+    env:
+      PORTAINER_HTTP_DISABLED: "true"  # Force HTTPS only
+  when:
+    - management.enabled | default(true)
+    - management.portainer.enabled | default(true)
+  tags: ['management', 'portainer']
+
+- name: Create Dockge stacks directory
+  file:
+    path: "{{ management.dockge.stacks_dir | default('/opt/compose') }}"
+    state: directory
+    mode: '0755'
+  when:
+    - management.enabled | default(true)
+    - management.dockge.enabled | default(true)
+  tags: ['management', 'dockge']
+
+- name: Deploy Dockge container
+  containers.podman.podman_container:
+    name: dockge
+    image: "{{ management.dockge.image | default('louislam/dockge:1') }}"
+    state: started
+    pod: management-pod
+    env:
+      DOCKGE_STACKS_DIR: "{{ management.dockge.stacks_dir | default('/opt/compose') }}"
+    volumes:
+      - /var/run/podman/podman.sock:/var/run/docker.sock
+      - "{{ management.dockge.data_volume | default('dockge-data') }}:/app/data"
+      - "{{ management.dockge.stacks_dir | default('/opt/compose') }}:/opt/stacks"
+  when:
+    - management.enabled | default(true)
+    - management.dockge.enabled | default(true)
+  tags: ['management', 'dockge']
+
+- name: Wait for Portainer to be ready
+  wait_for:
+    host: localhost
+    port: 9443
+    delay: 5
+    timeout: 60
+  when:
+    - management.enabled | default(true)
+    - management.portainer.enabled | default(true)
+  tags: ['management', 'portainer']
+
+- name: Initialize Portainer admin account
+  uri:
+    url: "https://{{ ansible_host }}:9443/api/users/admin/init"
+    method: POST
+    body_format: json
+    body:
+      username: "admin"
+      password: "{{ portainer_password }}"
+    validate_certs: no
+    status_code: [200, 409]  # 200 = created, 409 = already exists
+  when:
+    - management.enabled | default(true)
+    - management.portainer.enabled | default(true)
+  register: portainer_init
+  failed_when: false
+  tags: ['management', 'portainer']
+
+- name: Display Portainer initialization result
+  debug:
+    msg: "{{ 'Portainer admin account created' if portainer_init.status == 200 else 'Portainer admin account already exists' }}"
+  when:
+    - management.enabled | default(true)
+    - management.portainer.enabled | default(true)
+    - portainer_init is defined
+  tags: ['management', 'portainer']
+
+- name: Display management tools status
+  debug:
+    msg:
+      - "Management tools deployed successfully"
+      - "Portainer: https://{{ ansible_host }}:9443"
+      - "  - First login: create admin account"
+      - "  - Connect to local Podman environment"
+      - "Dockge: http://{{ ansible_host }}:5001"
+      - "  - Manage compose stacks in {{ management.dockge.stacks_dir | default('/opt/compose') }}"
+  when: management.enabled | default(true)
+  tags: ['management']

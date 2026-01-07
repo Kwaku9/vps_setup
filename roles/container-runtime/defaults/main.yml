@@ -1,0 +1,7 @@
+---
+# Container Runtime Role Defaults
+
+podman_version: "latest"
+enable_rootless: false
+podman_network_name: "enterprise_network"
+podman_network_subnet: "REDACTED_CIDR"

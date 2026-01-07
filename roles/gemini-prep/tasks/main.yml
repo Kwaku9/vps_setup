@@ -1,0 +1,74 @@
+---
+# Gemini Prep Role - Prepare System for Gemini CLI
+# Installs Gemini CLI and creates workspace structure
+
+- name: Install Node.js and npm (for Gemini CLI)
+  apk:
+    name:
+      - nodejs
+      - npm
+    state: present
+  tags: ['gemini-prep', 'packages']
+
+- name: Install Gemini CLI globally
+  shell: /usr/bin/npm install -g @google/gemini-cli
+  args:
+    creates: /usr/lib/node_modules/@google/gemini-cli
+  environment:
+    PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  tags: ['gemini-prep', 'gemini-cli']
+
+- name: Create Gemini workspace base directory
+  file:
+    path: "{{ gemini.workspace_base | default('/workspace') }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  tags: ['gemini-prep', 'directories']
+
+- name: Create Gemini config directory
+  file:
+    path: /root/.gemini
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+  tags: ['gemini-prep', 'directories']
+
+- name: Verify Gemini CLI installation
+  command: gemini --version
+  register: gemini_version_check
+  changed_when: false
+  failed_when: false
+  tags: ['gemini-prep', 'verify']
+
+- name: Display Gemini CLI status
+  debug:
+    msg: "{{ gemini_version_check.stdout if gemini_version_check.rc == 0 else 'Gemini CLI installation pending (npm install may be in progress)' }}"
+  tags: ['gemini-prep', 'verify']
+
+- name: Create Gemini workspace info file
+  copy:
+    dest: "{{ gemini.workspace_base | default('/workspace') }}/GEMINI_README.txt"
+    content: |
+      Gemini CLI Workspace
+      ====================
+
+      This directory contains Gemini CLI workspace.
+
+      Base system has:
+      - Node.js + npm (for Gemini CLI)
+      - Bash, Git, GPG (utilities)
+      - Podman (container runtime)
+
+      Gemini CLI Commands:
+      - gemini --help          # Show help
+      - gemini --version       # Show version
+      - gemini chat            # Start chat session
+
+      Configuration:
+      - Config directory: /root/.gemini
+      - Workspace: {{ gemini.workspace_base | default('/workspace') }}
+    mode: '0644'
+  tags: ['gemini-prep', 'documentation']

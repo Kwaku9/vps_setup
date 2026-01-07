@@ -1,0 +1,101 @@
+---
+# Authentication Role - Authentik SSO & Authentication
+# Deploys centralized authentication and SSO infrastructure
+
+- name: Create authentication pod
+  containers.podman.podman_pod:
+    name: authentication-pod
+    network: "{{ podman_network_name | default('enterprise_network') }}"
+    state: started
+    ports:
+      - "9000:9000"    # Authentik HTTP
+      - "9443:9443"    # Authentik HTTPS
+  when: authentication.enabled | default(true)
+  tags: ['authentication', 'pod']
+
+- name: Create Authentik PostgreSQL database
+  containers.podman.podman_container:
+    name: authentik-postgres
+    image: "docker.io/library/postgres:{{ shared_services[0].version | default('18-alpine') }}"
+    state: started
+    pod: authentication-pod
+    env:
+      POSTGRES_DB: "{{ authentication.authentik.postgres_db | default('authentik') }}"
+      POSTGRES_USER: "{{ authentication.authentik.postgres_user | default('authentik') }}"
+      POSTGRES_PASSWORD: "{{ authentik_password }}"
+    volumes:
+      - authentik-postgres-data:/var/lib/postgresql/data
+  when:
+    - authentication.enabled | default(true)
+    - authentication.authentik.enabled | default(true)
+  tags: ['authentication', 'authentik', 'postgres']
+
+- name: Wait for Authentik PostgreSQL to be ready
+  wait_for:
+    host: localhost
+    port: 5432
+    delay: 5
+    timeout: 60
+  when:
+    - authentication.enabled | default(true)
+    - authentication.authentik.enabled | default(true)
+  tags: ['authentication', 'authentik']
+
+- name: Deploy Authentik Server container
+  containers.podman.podman_container:
+    name: authentik-server
+    image: "{{ authentication.authentik.image | default('ghcr.io/goauthentik/server:2025.10') }}"
+    state: started
+    pod: authentication-pod
+    env:
+      AUTHENTIK_REDIS__HOST: "localhost"  # Not used in 2025.10+, but kept for compatibility
+      AUTHENTIK_POSTGRESQL__HOST: "localhost"
+      AUTHENTIK_POSTGRESQL__NAME: "{{ authentication.authentik.postgres_db | default('authentik') }}"
+      AUTHENTIK_POSTGRESQL__USER: "{{ authentication.authentik.postgres_user | default('authentik') }}"
+      AUTHENTIK_POSTGRESQL__PASSWORD: "{{ authentik_password }}"
+      AUTHENTIK_SECRET_KEY: "{{ authentik_secret_key }}"
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_LOG_LEVEL: "info"
+    command: server
+    volumes:
+      - authentik-media:/media
+      - authentik-templates:/templates
+  when:
+    - authentication.enabled | default(true)
+    - authentication.authentik.enabled | default(true)
+  tags: ['authentication', 'authentik', 'server']
+
+- name: Deploy Authentik Worker container
+  containers.podman.podman_container:
+    name: authentik-worker
+    image: "{{ authentication.authentik.worker_image | default('ghcr.io/goauthentik/server:2025.10') }}"
+    state: started
+    pod: authentication-pod
+    env:
+      AUTHENTIK_REDIS__HOST: "localhost"  # Not used in 2025.10+
+      AUTHENTIK_POSTGRESQL__HOST: "localhost"
+      AUTHENTIK_POSTGRESQL__NAME: "{{ authentication.authentik.postgres_db | default('authentik') }}"
+      AUTHENTIK_POSTGRESQL__USER: "{{ authentication.authentik.postgres_user | default('authentik') }}"
+      AUTHENTIK_POSTGRESQL__PASSWORD: "{{ authentik_password }}"
+      AUTHENTIK_SECRET_KEY: "{{ authentik_secret_key }}"
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_LOG_LEVEL: "info"
+    command: worker
+    volumes:
+      - authentik-media:/media
+      - authentik-templates:/templates
+      - authentik-certs:/certs
+  when:
+    - authentication.enabled | default(true)
+    - authentication.authentik.enabled | default(true)
+  tags: ['authentication', 'authentik', 'worker']
+
+- name: Display Authentik status
+  debug:
+    msg:
+      - "Authentik SSO deployed successfully"
+      - "Authentik UI: http://{{ ansible_host }}:9000"
+      - "Default login: akadmin / Use the password shown in container logs on first start"
+      - "Run 'podman logs authentik-server' to see the initial admin password"
+  when: authentication.enabled | default(true)
+  tags: ['authentication']

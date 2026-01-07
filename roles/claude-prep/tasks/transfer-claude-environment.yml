@@ -1,0 +1,238 @@
+---
+# Transfer Claude Code Environment for vps_setup Project
+# Transfers conversation history, settings, and project configs from Windows to VPS
+
+#==========================================
+# PART 1: Create Directory Structure
+#==========================================
+
+- name: Create Claude root configuration directory
+  file:
+    path: /root/.claude
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+  tags: ['claude-transfer', 'directories']
+
+- name: Create Claude projects directory
+  file:
+    path: /root/.claude/projects
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+  tags: ['claude-transfer', 'directories']
+
+- name: Create vps_setup session directory (Linux path encoded)
+  file:
+    path: /root/.claude/projects/-workspace-vscode-projects-vps_setup
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+  tags: ['claude-transfer', 'directories']
+
+- name: Create file-history directory
+  file:
+    path: /root/.claude/file-history
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+  tags: ['claude-transfer', 'directories']
+
+- name: Ensure vps_setup workspace exists on VPS
+  file:
+    path: /workspace/vscode-projects/vps_setup
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  tags: ['claude-transfer', 'directories']
+
+#==========================================
+# PART 2: Transfer Session History (Last 2 Weeks)
+#==========================================
+
+- name: Find recent session files (last 14 days) on local machine
+  find:
+    paths: /mnt/c/Users/swirl/.claude/projects/C--Users-swirl-VScdeProjects-vps-setup
+    patterns: '*.jsonl'
+    age: -14d
+    age_stamp: mtime
+  delegate_to: localhost
+  register: recent_sessions
+  tags: ['claude-transfer', 'sessions']
+
+- name: Transfer recent session history to VPS
+  copy:
+    src: "{{ item.path }}"
+    dest: /root/.claude/projects/-workspace-vscode-projects-vps_setup/
+    mode: '0600'
+    owner: root
+    group: root
+  loop: "{{ recent_sessions.files }}"
+  when: recent_sessions.matched > 0
+  tags: ['claude-transfer', 'sessions']
+
+- name: Display session transfer summary
+  debug:
+    msg: "Transferred {{ recent_sessions.matched }} session files from last 2 weeks"
+  tags: ['claude-transfer', 'sessions']
+
+#==========================================
+# PART 3: Transfer User-Level Settings
+#==========================================
+
+- name: Transfer user settings.json
+  copy:
+    src: /mnt/c/Users/swirl/.claude/settings.json
+    dest: /root/.claude/settings.json
+    mode: '0600'
+    owner: root
+    group: root
+  when: lookup('fileglob', '/mnt/c/Users/swirl/.claude/settings.json', wantlist=True) | length > 0
+  ignore_errors: yes
+  tags: ['claude-transfer', 'settings']
+
+- name: Transfer user settings.local.json if exists
+  copy:
+    src: /mnt/c/Users/swirl/.claude/settings.local.json
+    dest: /root/.claude/settings.local.json
+    mode: '0600'
+    owner: root
+    group: root
+  when: lookup('fileglob', '/mnt/c/Users/swirl/.claude/settings.local.json', wantlist=True) | length > 0
+  ignore_errors: yes
+  tags: ['claude-transfer', 'settings']
+
+- name: Transfer MCP settings
+  copy:
+    src: /mnt/c/Users/swirl/.claude/mcp_settings.json
+    dest: /root/.claude/mcp_settings.json
+    mode: '0600'
+    owner: root
+    group: root
+  when: lookup('fileglob', '/mnt/c/Users/swirl/.claude/mcp_settings.json', wantlist=True) | length > 0
+  ignore_errors: yes
+  tags: ['claude-transfer', 'settings']
+
+- name: Transfer global history.jsonl
+  copy:
+    src: /mnt/c/Users/swirl/.claude/history.jsonl
+    dest: /root/.claude/history.jsonl
+    mode: '0600'
+    owner: root
+    group: root
+  when: lookup('fileglob', '/mnt/c/Users/swirl/.claude/history.jsonl', wantlist=True) | length > 0
+  ignore_errors: yes
+  tags: ['claude-transfer', 'settings']
+
+#==========================================
+# PART 4: Transfer File History (Last 2 Weeks)
+#==========================================
+
+- name: Find recent file-history directories
+  find:
+    paths: /mnt/c/Users/swirl/.claude/file-history
+    file_type: directory
+    age: -14d
+    age_stamp: mtime
+  delegate_to: localhost
+  register: recent_file_history
+  tags: ['claude-transfer', 'file-history']
+
+- name: Transfer recent file-history to VPS
+  synchronize:
+    src: "{{ item.path }}/"
+    dest: "/root/.claude/file-history/{{ item.path | basename }}/"
+    delete: no
+    recursive: yes
+    use_ssh_args: yes
+    rsync_path: "rsync"
+  loop: "{{ recent_file_history.files }}"
+  when: recent_file_history.matched > 0
+  tags: ['claude-transfer', 'file-history']
+
+- name: Display file-history transfer summary
+  debug:
+    msg: "Transferred {{ recent_file_history.matched }} file-history sessions"
+  tags: ['claude-transfer', 'file-history']
+
+#==========================================
+# PART 5: Transfer Project-Specific Config
+#==========================================
+
+- name: Transfer vps_setup CLAUDE.md from project root
+  copy:
+    src: /mnt/c/Users/swirl/VScdeProjects/vps_setup/CLAUDE.md
+    dest: /workspace/vscode-projects/vps_setup/CLAUDE.md
+    mode: '0644'
+    owner: root
+    group: root
+  when: lookup('fileglob', '/mnt/c/Users/swirl/VScdeProjects/vps_setup/CLAUDE.md', wantlist=True) | length > 0
+  ignore_errors: yes
+  tags: ['claude-transfer', 'project-config']
+
+- name: Check if .claude directory exists in vps_setup project
+  stat:
+    path: /mnt/c/Users/swirl/VScdeProjects/vps_setup/.claude
+  delegate_to: localhost
+  register: project_claude_dir
+  tags: ['claude-transfer', 'project-config']
+
+- name: Transfer .claude directory from vps_setup project
+  synchronize:
+    src: /mnt/c/Users/swirl/VScdeProjects/vps_setup/.claude/
+    dest: /workspace/vscode-projects/vps_setup/.claude/
+    delete: no
+    recursive: yes
+    use_ssh_args: yes
+    rsync_path: "rsync"
+  when: project_claude_dir.stat.exists
+  tags: ['claude-transfer', 'project-config']
+
+- name: Transfer .mcp.json if exists
+  copy:
+    src: /mnt/c/Users/swirl/VScdeProjects/vps_setup/.mcp.json
+    dest: /workspace/vscode-projects/vps_setup/.mcp.json
+    mode: '0644'
+    owner: root
+    group: root
+  when: lookup('fileglob', '/mnt/c/Users/swirl/VScdeProjects/vps_setup/.mcp.json', wantlist=True) | length > 0
+  ignore_errors: yes
+  tags: ['claude-transfer', 'project-config']
+
+#==========================================
+# PART 6: Verification
+#==========================================
+
+- name: Verify Claude environment on VPS
+  stat:
+    path: "{{ item }}"
+  loop:
+    - /root/.claude
+    - /root/.claude/projects/-workspace-vscode-projects-vps_setup
+    - /workspace/vscode-projects/vps_setup
+  register: claude_paths
+  tags: ['claude-transfer', 'verify']
+
+- name: Count transferred session files
+  find:
+    paths: /root/.claude/projects/-workspace-vscode-projects-vps_setup
+    patterns: '*.jsonl'
+  register: vps_sessions
+  tags: ['claude-transfer', 'verify']
+
+- name: Display transfer verification
+  debug:
+    msg:
+      - "============================================"
+      - "Claude Environment Transfer Complete!"
+      - "============================================"
+      - "Session files on VPS: {{ vps_sessions.matched }}"
+      - "Sessions directory: /root/.claude/projects/-workspace-vscode-projects-vps_setup"
+      - "Project directory: /workspace/vscode-projects/vps_setup"
+      - "============================================"
+  tags: ['claude-transfer', 'verify']
