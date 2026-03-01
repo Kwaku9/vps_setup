@@ -1,6 +1,6 @@
----
-# Monitoring Role - Prometheus, Grafana, Loki Stack
-# Deploys observability infrastructure
+﻿---
+# Monitoring Role - Prometheus, Grafana, Loki, Tempo, Alloy Stack
+# Deploys observability infrastructure with unified telemetry collection
 
 - name: Create monitoring pod
   containers.podman.podman_pod:
@@ -8,12 +8,12 @@
     network: "{{ podman_network_name | default('enterprise_network') }}"
     state: started
     ports:
-      - "3000:3000"    # Grafana
-      - "5000:5000"    # CheckMK
-      - "9090:9090"    # Prometheus
-      - "9100:9100"    # Node Exporter
-      - "8081:8080"    # cAdvisor
-      - "3200:3100"    # Loki
+      - "127.0.0.1:3000:3000"    # Grafana (internal - SSH tunnel)
+      - "127.0.0.1:5000:5000"    # CheckMK (internal - SSH tunnel)
+      - "127.0.0.1:9090:9090"    # Prometheus (internal - SSH tunnel)
+      - "127.0.0.1:9100:9100"    # Node Exporter (internal)
+      - "127.0.0.1:3200:3100"    # Loki (internal)
+      - "127.0.0.1:4318:4318"    # Tempo OTLP HTTP (internal)
   when: monitoring.enabled | default(true)
   tags: ['monitoring', 'pod']
 
@@ -31,13 +31,16 @@
     image: "docker.io/prom/prometheus:{{ monitoring.prometheus.version | default('latest') }}"
     state: started
     pod: monitoring-pod
+    memory: "{{ monitoring.prometheus.memory | default('512m') }}"
     volumes:
       - /opt/compose/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/compose/prometheus-rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
     command: >
       --config.file=/etc/prometheus/prometheus.yml
       --storage.tsdb.path=/prometheus
       --storage.tsdb.retention.time={{ monitoring.prometheus.retention | default('15d') }}
+      --web.enable-remote-write-receiver
   when:
     - monitoring.enabled | default(true)
     - monitoring.prometheus.enabled | default(true)
@@ -97,22 +100,59 @@
     - monitoring.node_exporter.enabled | default(true)
   tags: ['monitoring', 'node-exporter']
 
-- name: Deploy cAdvisor container
+- name: Create Grafana Alloy configuration
+  template:
+    src: alloy-config.alloy.j2
+    dest: /opt/compose/alloy-config.alloy
+    mode: '0644'
+  when: monitoring.alloy.enabled | default(true)
+  tags: ['monitoring', 'alloy']
+
+- name: Deploy Grafana Alloy container
   containers.podman.podman_container:
-    name: cadvisor
-    image: "{{ monitoring.cadvisor.image | default('ghcr.io/google/cadvisor:latest') }}"
+    name: alloy
+    image: "docker.io/grafana/alloy:{{ monitoring.alloy.version | default('latest') }}"
     state: started
     pod: monitoring-pod
-    privileged: yes
+    command: >
+      run
+      --server.http.listen-addr=0.0.0.0:12345
+      --storage.path=/var/lib/alloy/data
+      /etc/alloy/config.alloy
     volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/containers:/var/lib/containers:ro
+      - /opt/compose/alloy-config.alloy:/etc/alloy/config.alloy:ro
+      - /var/log:/var/log:ro
+      - /var/run/podman/podman.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy
+    privileged: yes
   when:
     - monitoring.enabled | default(true)
-    - monitoring.cadvisor.enabled | default(true)
-  tags: ['monitoring', 'cadvisor']
+    - monitoring.alloy.enabled | default(true)
+  tags: ['monitoring', 'alloy']
+
+- name: Create Tempo configuration
+  template:
+    src: tempo-config.yml.j2
+    dest: /opt/compose/tempo-config.yml
+    mode: '0644'
+  when: monitoring.tempo.enabled | default(true)
+  tags: ['monitoring', 'tempo']
+
+- name: Deploy Grafana Tempo container
+  containers.podman.podman_container:
+    name: tempo
+    image: "docker.io/grafana/tempo:{{ monitoring.tempo.version | default('latest') }}"
+    state: started
+    pod: monitoring-pod
+    memory: "{{ monitoring.tempo.memory | default('768m') }}"
+    command: "-config.file=/etc/tempo/tempo.yml"
+    volumes:
+      - /opt/compose/tempo-config.yml:/etc/tempo/tempo.yml:ro
+      - tempo-data:/var/tempo
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.tempo.enabled | default(true)
+  tags: ['monitoring', 'tempo']
 
 - name: Create Loki configuration
   template:
@@ -137,33 +177,10 @@
     - monitoring.loki.enabled | default(true)
   tags: ['monitoring', 'loki']
 
-- name: Create Promtail configuration
-  template:
-    src: promtail-config.yml.j2
-    dest: /opt/compose/promtail-config.yml
-    mode: '0644'
-  when: monitoring.promtail.enabled | default(true)
-  tags: ['monitoring', 'promtail']
-
-- name: Deploy Promtail container
-  containers.podman.podman_container:
-    name: promtail
-    image: "docker.io/grafana/promtail:{{ monitoring.promtail.version | default('latest') }}"
-    state: started
-    pod: monitoring-pod
-    volumes:
-      - /opt/compose/promtail-config.yml:/etc/promtail/config.yml:ro
-      - /var/log:/var/log:ro
-    command: "-config.file=/etc/promtail/config.yml"
-  when:
-    - monitoring.enabled | default(true)
-    - monitoring.promtail.enabled | default(true)
-  tags: ['monitoring', 'promtail']
-
 - name: Deploy CheckMK container
   containers.podman.podman_container:
     name: checkmk
-    image: "{{ monitoring.checkmk.image | default('checkmk/check-mk-raw:2.4') }}"
+    image: "{{ monitoring.checkmk.image | default('checkmk/check-mk-raw:2.3.0-daily') }}"
     state: started
     pod: monitoring-pod
     env:
@@ -171,18 +188,24 @@
     volumes:
       - checkmk-data:/omd/sites
     tmpfs:
-      - /opt/omd/sites/{{ monitoring.checkmk.site_name | default('cmk') }}/tmp:uid=1000,gid=1000
+      "/opt/omd/sites/{{ monitoring.checkmk.site_name | default('cmk') }}/tmp": "rw,noexec,nosuid,size=1g"
   when:
     - monitoring.enabled | default(true)
-    - monitoring.checkmk.enabled | default(false)
+    - monitoring.checkmk.enabled | default(true)
   tags: ['monitoring', 'checkmk']
 
 - name: Display monitoring stack status
   debug:
     msg:
       - "Monitoring stack deployed successfully"
-      - "Grafana: http://{{ ansible_host }}:3000"
-      - "Prometheus: http://{{ ansible_host }}:9090"
-      - "CheckMK: http://{{ ansible_host }}:5000/{{ monitoring.checkmk.site_name | default('cmk') }}"
+      - "  Components: Prometheus, Grafana, Loki, Tempo, Alloy, Node Exporter, CheckMK"
+      - ""
+      - "Access URLs:"
+      - "  Grafana: http://{{ ansible_host }}:3000"
+      - "  Prometheus: http://{{ ansible_host }}:9090"
+      - "  Tempo (OTLP HTTP): http://{{ ansible_host }}:4318"
+      - "  CheckMK: http://{{ ansible_host }}:5000/{{ monitoring.checkmk.site_name | default('cmk') }}"
+      - ""
+      - "Note: Loki (port 3200), Alloy (internal), and Node Exporter (port 9100) are accessible within the pod"
   when: monitoring.enabled | default(true)
   tags: ['monitoring']

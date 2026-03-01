@@ -1,4 +1,4 @@
----
+﻿---
 # Monitoring Role Defaults
 
 monitoring:
@@ -8,6 +8,7 @@ monitoring:
     version: "latest"
     port: 9090
     retention: "15d"
+    memory: "512m"
   grafana:
     enabled: true
     version: "latest"
@@ -25,6 +26,15 @@ monitoring:
     enabled: true
     version: "latest"
     port: 3200  # FIXED - was 3100
+  tempo:
+    enabled: true
+    version: "latest"
+    memory: "768m"
+  alloy:
+    enabled: true
+    version: "latest"
+  checkmk:
+    enabled: false
   promtail:
     enabled: true
     version: "latest"
