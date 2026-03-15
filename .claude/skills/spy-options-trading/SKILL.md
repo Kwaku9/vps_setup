@@ -807,7 +807,7 @@ The render call takes 5-15 seconds (Chromium startup overhead on first call, fas
 
 ### 9D: Error Handling
 
-- **Grafana unreachable** (curl fails): Tell user to check if monitoring-pod is running (`podman pod ps`)
+- **Grafana unreachable** (curl fails): Tell user to check if metrics-pod is running (`podman pod ps`)
 - **Image Renderer not running** (returns HTML error page instead of PNG): Tell user to verify the renderer container is running (`podman ps | grep renderer`)
 - **Empty/small PNG** (< 1KB): The render likely failed. Check Grafana logs (`podman logs grafana`) for rendering errors
 - **No data for ticker**: Direct user to run `ivscan` first

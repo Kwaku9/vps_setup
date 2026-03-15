@@ -84,7 +84,7 @@ http:
         crowdsec-bouncer:
           enabled: true
           crowdsecLapiScheme: http
-          crowdsecLapiHost: "crowdsec:8080"
+          crowdsecLapiHost: "localhost:8180"
           crowdsecLapiKey: "{{ crowdsec_bouncer_api_key | default('') }}"
           forwardedHeadersTrustedIPs:
             - "REDACTED_CIDR"

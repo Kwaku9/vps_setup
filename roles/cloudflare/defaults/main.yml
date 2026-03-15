@@ -73,7 +73,7 @@ cloudflare_access:
     - "chat"
     - "auth"
     # hooks removed — orphaned (no Traefik route, no service behind it)
-    # otlp removed — internal telemetry uses Podman DNS (monitoring-pod:4318), public URL now behind CF Access
+    # otlp removed — internal telemetry uses Podman DNS (logs-pod:4318), public URL now behind CF Access
   ssh_browser:
     enabled: true
     subdomain: "ssh"
@@ -100,15 +100,17 @@ cloudflare_exposed_services:
   # NOTE: service_url uses Podman pod names, not container names.
   # Containers inside pods are only DNS-resolvable by their pod name
   # on the enterprise_network. Pod-to-service mapping:
-  #   monitoring-pod:    grafana, prometheus, checkmk, loki, node-exporter, cadvisor
+  #   metrics-pod:       grafana, prometheus, victoriametrics, image-renderer
+  #   logs-pod:          loki, alloy (OTEL gateway)
+  #   tempo-pod:         tempo
   #   management-pod:    portainer
   #   ai-stack-pod:      open-webui, n8n-claude, litellm, kokoro-tts, ollama
   #   authentication-pod: authentik-server, authentik-worker
   #   frontend-pod:      nginx
-  #   traefik:           standalone (not in a pod)
+  #   security-infra-pod: traefik, cloudflared, crowdsec
   - name: grafana
     host: "grafana.{{ cf_domain }}"
-    service_url: "http://monitoring-pod:3000"
+    service_url: "http://metrics-pod:3000"
     enabled: "{{ monitoring.grafana.enabled | default(true) }}"
   - name: portainer
     host: "portainer.{{ cf_domain }}"
@@ -125,7 +127,7 @@ cloudflare_exposed_services:
     enabled: "{{ ai_stack.openwebui.enabled | default(true) }}"
   - name: prometheus
     host: "prometheus.{{ cf_domain }}"
-    service_url: "http://monitoring-pod:9090"
+    service_url: "http://metrics-pod:9090"
     enabled: "{{ monitoring.prometheus.enabled | default(true) }}"
   - name: authentik
     host: "auth.{{ cf_domain }}"
@@ -137,7 +139,7 @@ cloudflare_exposed_services:
       # No rate-limit — OIDC token exchanges are bursty
   - name: checkmk
     host: "checkmk.{{ cf_domain }}"
-    service_url: "http://monitoring-pod:5000"
+    service_url: "http://metrics-pod:5000"
     enabled: "{{ monitoring.checkmk.enabled | default(true) }}"
   - name: litellm
     host: "litellm.{{ cf_domain }}"
@@ -145,7 +147,7 @@ cloudflare_exposed_services:
     enabled: "{{ ai_stack.litellm.enabled | default(true) }}"
   - name: traefik
     host: "traefik.{{ cf_domain }}"
-    service_url: "http://traefik:8080"
+    service_url: "http://security-infra-pod:8080"
     enabled: "{{ shared_services.traefik.enabled | default(true) }}"
   - name: kokoro-tts
     host: "tts.{{ cf_domain }}"
@@ -157,7 +159,7 @@ cloudflare_exposed_services:
     enabled: true
   - name: otlp
     host: "otlp.{{ cf_domain }}"
-    service_url: "http://monitoring-pod:4318"
+    service_url: "http://logs-pod:4318"
     enabled: true
   - name: telegram-bot
     host: "telegram-bot.{{ cf_domain }}"
