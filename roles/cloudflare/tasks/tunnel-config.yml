@@ -28,12 +28,12 @@
         },
         {
           "hostname": "*.{{ cf_domain }}",
-          "service": "https://traefik:443",
+          "service": "https://localhost:443",
           "originRequest": {"noTLSVerify": true}
         },
         {
           "hostname": "{{ cf_domain }}",
-          "service": "https://traefik:443",
+          "service": "https://localhost:443",
           "originRequest": {"noTLSVerify": true}
         },
         {
@@ -63,8 +63,8 @@
       Tunnel configuration updated successfully.
       Ingress routes:
         - ssh.{{ cf_domain }} -> ssh://host.containers.internal:22 (TCP proxy)
-        - *.{{ cf_domain }} -> https://traefik:443
-        - {{ cf_domain }} -> https://traefik:443
+        - *.{{ cf_domain }} -> https://localhost:443
+        - {{ cf_domain }} -> https://localhost:443
       Traefik handles subdomain routing via dynamic config.
   when:
     - tunnel_config_result is defined

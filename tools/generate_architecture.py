@@ -358,9 +358,9 @@ def build_diagram():
                STYLES["engineering_label"], parent="layer_engineering", x=1920, y=1035, w=350, h=20)
 
     # ========================================================================
-    # MONITORING POD
+    # METRICS POD (formerly monitoring-pod, split into metrics/logs/tempo)
     # ========================================================================
-    pod_mon = b.add_cell("pod_mon", "<b>monitoring-pod</b>",
+    pod_mon = b.add_cell("pod_mon", "<b>metrics-pod</b>",
                          STYLES["pod"] + f"fillColor={COLORS['bg_pod_mon']};strokeColor=#FF9800;",
                          x=2700, y=750, w=1000, h=600)
 
@@ -990,7 +990,7 @@ def build_diagram():
     eng_items = [
         ("10.89.0.4", 570, 730, "ai-stack-pod IP"),
         ("10.89.0.7", 1970, 730, "auth-pod IP"),
-        ("10.89.0.9", 2770, 730, "monitoring-pod IP"),
+        ("10.89.0.9", 2770, 730, "metrics-pod IP"),
         ("10.89.0.2", 170, 1380, "security-pod IP"),
         ("10.89.0.5", 1170, 1380, "mgmt-pod IP"),
         ("10.89.0.3", 1620, 1380, "frontend-pod IP"),
@@ -1019,7 +1019,7 @@ def build_diagram():
     net_pod_ips = [
         ("ai-stack-pod", "10.89.0.4", 500, 740),
         ("authentication-pod", "10.89.0.7", 1900, 740),
-        ("monitoring-pod", "10.89.0.9", 2700, 740),
+        ("metrics-pod", "10.89.0.9", 2700, 740),
         ("security-pod", "10.89.0.2", 100, 1390),
         ("management-pod", "10.89.0.5", 1100, 1390),
         ("frontend-pod", "10.89.0.3", 1550, 1390),
@@ -1065,7 +1065,7 @@ def build_diagram():
     dns_targets = [
         ("pod_ai", "ai-stack-pod"),
         ("pod_auth", "authentication-pod"),
-        ("pod_mon", "monitoring-pod"),
+        ("pod_mon", "metrics-pod"),
         ("pod_sec", "security-pod"),
         ("pod_mgmt", "management-pod"),
         ("pod_front", "frontend-pod"),

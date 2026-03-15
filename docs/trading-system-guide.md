@@ -510,21 +510,21 @@ All cron jobs run under `CRON_TZ=America/New_York` (DST-safe). Managed by Ansibl
 │  │  Podman Network: enterprise_network (REDACTED_CIDR)             │     │
 │  │                                                                 │     │
 │  │  ┌──────────────────┐    ┌──────────────────────────────────┐  │     │
-│  │  │  IBeam Container  │    │  shared-services-pod             │  │     │
-│  │  │  (voyz/ibeam)     │    │  ┌───────────┐  ┌────────────┐  │  │     │
-│  │  │  :5055 → :5000    │    │  │ PostgreSQL │  │  Traefik   │  │  │     │
-│  │  │  IBKR Gateway     │    │  │  :5432     │  │  :80/:443  │  │  │     │
-│  │  └────────┬──────────┘    │  └─────┬─────┘  └────────────┘  │  │     │
-│  │           │                │        │                         │  │     │
-│  │  ┌────────▼──────────┐    │        │  trading.iv_scan_results│  │     │
-│  │  │ ib-mcp-server     │    │        │  trading.open_positions │  │     │
-│  │  │  :5002             │    │        │                         │  │     │
-│  │  │  FastAPI + FastMCP │    └────────┼─────────────────────────┘  │     │
+│  │  │  IBeam Container  │    │  shared-db-pod                   │  │     │
+│  │  │  (voyz/ibeam)     │    │  ┌───────────┐                    │  │     │
+│  │  │  :5055 → :5000    │    │  │ PostgreSQL │                   │  │     │
+│  │  │  IBKR Gateway     │    │  │  :5432     │                   │  │     │
+│  │  └────────┬──────────┘    │  └─────┬─────┘                    │  │     │
+│  │           │                │        │                          │  │     │
+│  │  ┌────────▼──────────┐    │        │  trading.iv_scan_results │  │     │
+│  │  │ ib-mcp-server     │    │        │  trading.open_positions  │  │     │
+│  │  │  :5002             │    │        │                          │  │     │
+│  │  │  FastAPI + FastMCP │    └────────┼──────────────────────────┘  │     │
 │  │  │  79 REST endpoints │             │                            │     │
 │  │  └────────────────────┘             │                            │     │
 │  │                                     │                            │     │
 │  │  ┌──────────────────────────────────┼─────────────────────────┐  │     │
-│  │  │  monitoring-pod                  │                         │  │     │
+│  │  │  metrics-pod                     │                         │  │     │
 │  │  │  ┌──────────┐  ┌──────────┐     │    ┌─────────────────┐  │  │     │
 │  │  │  │ Grafana  │  │Prometheus│     │    │ Image Renderer  │  │  │     │
 │  │  │  │  :3000   │  │  :9090   │     │    │     :8081       │  │  │     │

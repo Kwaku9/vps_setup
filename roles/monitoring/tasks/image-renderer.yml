@@ -1,13 +1,13 @@
 ---
 # Grafana Image Renderer — Chromium-based sidecar for server-side PNG rendering
-# Runs in monitoring-pod alongside Grafana, accessible via localhost:8081
+# Runs in metrics-pod alongside Grafana, accessible via localhost:8081
 
 - name: Deploy Grafana Image Renderer
   containers.podman.podman_container:
     name: renderer
     image: "docker.io/grafana/grafana-image-renderer:{{ monitoring.image_renderer.version | default('latest') }}"
     state: started
-    pod: monitoring-pod
+    pod: metrics-pod
     memory: 256m
     recreate: true
     env:
@@ -33,7 +33,7 @@
 
 - name: WARN — Image Renderer not responding
   debug:
-    msg: "WARNING: Grafana Image Renderer not responding on localhost:8081 inside monitoring-pod. Chart rendering will fail."
+    msg: "WARNING: Grafana Image Renderer not responding on localhost:8081 inside metrics-pod. Chart rendering will fail."
   when:
     - renderer_check is defined
     - renderer_check.stdout is defined

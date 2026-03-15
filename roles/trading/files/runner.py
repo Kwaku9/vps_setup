@@ -16,7 +16,7 @@ import pandas as pd
 import requests
 
 VM_URL = os.environ.get("VICTORIAMETRICS_URL", "http://victoriametrics:8428")
-PG_DSN = os.environ.get("PG_DSN", "postgresql://postgres:postgres@shared-services-pod:5432/postgres")
+PG_DSN = os.environ.get("PG_DSN", "postgresql://postgres:postgres@shared-db-pod:5432/postgres")
 
 
 class TradeRecorder(bt.Analyzer):

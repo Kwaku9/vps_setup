@@ -38,7 +38,7 @@ WARMUP_DAYS = 365  # Calendar days of extra data before OOS window for indicator
 # (container names not in pods aren't resolvable by pod name)
 RUNNER_ENV = {
     "VICTORIAMETRICS_URL": os.environ.get(
-        "VICTORIAMETRICS_URL", "http://monitoring-pod:8428"
+        "VICTORIAMETRICS_URL", "http://metrics-pod:8428"
     ),
     "PG_DSN": os.environ.get(
         "PG_DSN", "postgresql://postgres:postgres@postgres:5432/enterprise"

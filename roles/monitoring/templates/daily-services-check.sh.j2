@@ -15,7 +15,7 @@ add_warn() { WARN_COUNT=$((WARN_COUNT + 1)); TOTAL=$((TOTAL + 1)); REPORT="${REP
 add_crit() { CRIT_COUNT=$((CRIT_COUNT + 1)); TOTAL=$((TOTAL + 1)); REPORT="${REPORT}[CRIT] $1\n"; }
 
 # --- Pods ---
-for pod in shared-services-pod monitoring-pod ai-stack-pod authentication-pod; do
+for pod in security-infra-pod metrics-pod logs-pod tempo-pod ai-stack-pod authentication-pod management-pod frontend-pod shared-db-pod mcp-pod; do
     if podman pod exists "$pod" 2>/dev/null; then
         status=$(podman pod inspect "$pod" --format '{{ '{{' }}.State{{ '}}' }}' 2>/dev/null || echo "unknown")
         if [ "$status" = "Running" ]; then
