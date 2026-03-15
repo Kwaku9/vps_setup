@@ -231,7 +231,7 @@
       },
       "targets": [
         {
-          "expr": "sum((rate(podman_container_cpu_seconds_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
+          "expr": "sum((podman_container_cpu_percent / 100 * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
           "legendFormat": "CPU",
           "refId": "A"
         }
@@ -624,7 +624,7 @@
           "refId": "Info"
         },
         {
-          "expr": "sum by (name, pod_name) ((rate(podman_container_cpu_seconds_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
+          "expr": "sum by (name, pod_name) ((podman_container_cpu_percent / 100 * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
           "format": "table",
           "instant": true,
           "legendFormat": "CPU %",
