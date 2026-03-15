@@ -1,0 +1,31 @@
+#!/bin/sh
+# Daily Claude Code session ingestion
+# Runs the Python ingestion script which processes:
+#   1. VPS-native sessions from /root/.claude/projects/
+#   2. Local (Windows) sessions staged in /opt/compose/session-ingestion/staging/local/
+#
+# The ingestion script is idempotent - it checks session_uuid + file_size
+# and only re-imports sessions that have changed.
+
+LOG_DIR="/var/log"
+LOG_FILE="${LOG_DIR}/session-ingest.log"
+SCRIPT_DIR="/opt/compose/session-ingestion"
+
+# Resolve postgres container IP dynamically (avoids stale IP after restarts)
+export DB_HOST=$(podman inspect postgres --format '{% raw %}{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}{% endraw %}' 2>/dev/null || echo 'REDACTED_DNS8')
+
+echo "========================================" >> "$LOG_FILE"
+echo "Session ingestion started: $(date -Iseconds)" >> "$LOG_FILE"
+echo "Using DB_HOST=$DB_HOST" >> "$LOG_FILE"
+
+/usr/bin/python3 "${SCRIPT_DIR}/ingest-sessions.py" >> "$LOG_FILE" 2>&1
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -eq 0 ]; then
+    echo "Session ingestion completed successfully: $(date -Iseconds)" >> "$LOG_FILE"
+else
+    echo "Session ingestion FAILED (exit code $EXIT_CODE): $(date -Iseconds)" >> "$LOG_FILE"
+fi
+
+echo "========================================" >> "$LOG_FILE"
+exit $EXIT_CODE

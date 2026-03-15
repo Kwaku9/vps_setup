@@ -668,6 +668,32 @@
   when: monitoring.enabled | default(true)
   tags: ['monitoring', 'crowdsec-geo', 'cron-jobs']
 
+# ============================================================================
+# DAILY SESSION INGESTION (Claude Code Timeline)
+# ============================================================================
+
+- name: Create session-ingestion directory
+  file:
+    path: /opt/compose/session-ingestion
+    state: directory
+    mode: '0755'
+  tags: ['monitoring', 'session-ingest', 'cron-jobs']
+
+- name: Deploy daily session ingest script
+  template:
+    src: daily-ingest.sh.j2
+    dest: /opt/compose/session-ingestion/daily-ingest.sh
+    mode: '0755'
+  tags: ['monitoring', 'session-ingest', 'cron-jobs']
+
+- name: Schedule daily session ingest cron (3:00 AM)
+  cron:
+    name: "daily-session-ingest"
+    minute: "0"
+    hour: "3"
+    job: "/opt/compose/session-ingestion/daily-ingest.sh >> /var/log/session-ingest.log 2>&1"
+  tags: ['monitoring', 'session-ingest', 'cron-jobs']
+
 - name: Display monitoring stack status
   debug:
     msg:
@@ -696,5 +722,6 @@
       - "  Authentik events: every 5 min"
       - "  CrowdSec geo feed: every 5 min"
       - "  Podman metrics: every 1 min"
+      - "  Session ingest: daily 3:00 AM"
   when: monitoring.enabled | default(true)
   tags: ['monitoring']

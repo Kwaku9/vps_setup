@@ -1,0 +1,31 @@
+#!/bin/sh
+# Fail2ban + iptables -> Prometheus textfile collector
+# Runs every 5 minutes via cron
+OUT=/opt/compose/textfile-collector/fail2ban.prom
+TMP="${OUT}.tmp"
+
+{
+echo "# HELP fail2ban_banned_current Currently banned IPs per jail"
+echo "# TYPE fail2ban_banned_current gauge"
+echo "# HELP fail2ban_banned_total Total banned IPs per jail"
+echo "# TYPE fail2ban_banned_total gauge"
+echo "# HELP fail2ban_failed_total Total failed attempts per jail"
+echo "# TYPE fail2ban_failed_total gauge"
+
+for jail in $(fail2ban-client status 2>/dev/null | grep "Jail list" | sed 's/.*://;s/,/ /g'); do
+    status=$(fail2ban-client status "$jail" 2>/dev/null)
+    current=$(echo "$status" | grep "Currently banned" | awk '{print $NF}')
+    total=$(echo "$status" | grep "Total banned" | awk '{print $NF}')
+    failed=$(echo "$status" | grep "Total failed" | awk '{print $NF}')
+    echo "fail2ban_banned_current{jail=\"$jail\"} ${current:-0}"
+    echo "fail2ban_banned_total{jail=\"$jail\"} ${total:-0}"
+    echo "fail2ban_failed_total{jail=\"$jail\"} ${failed:-0}"
+done
+
+# iptables drop counter (last rule in INPUT chain)
+drops=$(iptables -L INPUT -v -n 2>/dev/null | tail -1 | awk '{print $1}')
+echo "# HELP iptables_input_drops_total Packets dropped by INPUT chain final DROP rule"
+echo "# TYPE iptables_input_drops_total gauge"
+echo "iptables_input_drops_total ${drops:-0}"
+} > "$TMP"
+mv "$TMP" "$OUT"

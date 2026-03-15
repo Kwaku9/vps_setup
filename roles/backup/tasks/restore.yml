@@ -1,0 +1,35 @@
+---
+# Restore from a backup archive
+# Usage: ansible-playbook site.yml --tags restore -e backup_restore=true -e backup_file=/opt/backups/daily/vps-backup-YYYYMMDD_HHMMSS.tar.gz
+
+- name: Validate backup_file parameter
+  fail:
+    msg: "backup_file must be specified. Usage: -e backup_file=/opt/backups/daily/vps-backup-YYYYMMDD_HHMMSS.tar.gz"
+  when: backup_file is not defined or backup_file | length == 0
+  tags: ['backup', 'restore']
+
+- name: Check backup file exists
+  stat:
+    path: "{{ backup_file }}"
+  register: backup_stat
+  tags: ['backup', 'restore']
+
+- name: Fail if backup file not found
+  fail:
+    msg: "Backup file not found: {{ backup_file }}"
+  when: not backup_stat.stat.exists
+  tags: ['backup', 'restore']
+
+- name: Run VPS restore
+  command: "/usr/local/bin/vps-restore {{ backup_file }}"
+  register: restore_result
+  when: backup.enabled | default(true)
+  tags: ['backup', 'restore']
+
+- name: Display restore result
+  debug:
+    msg: "{{ restore_result.stdout_lines | default(['Restore script not found']) }}"
+  when:
+    - backup.enabled | default(true)
+    - restore_result is defined
+  tags: ['backup', 'restore']

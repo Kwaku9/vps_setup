@@ -1,0 +1,17 @@
+---
+# Backup Role - VPS Backup & Restore Infrastructure
+# Deploys backup/restore scripts and configures daily backup cron
+
+- name: Setup backup infrastructure
+  include_tasks: setup.yml
+  tags: ['backup', 'backup-setup']
+
+- name: Run backup now
+  include_tasks: backup.yml
+  when: backup_run_now | default(false)
+  tags: ['backup', 'backup-run']
+
+- name: Restore from backup
+  include_tasks: restore.yml
+  when: backup_restore | default(false)
+  tags: ['backup', 'restore']

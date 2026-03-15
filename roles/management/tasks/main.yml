@@ -33,6 +33,19 @@
 
 # ── Ansible Deployment Container (STANDALONE — requires host networking) ──
 
+- name: Build ansible-vps container image
+  containers.podman.podman_image:
+    name: ansible-vps
+    tag: latest
+    path: /workspace/vscode-projects/vps_setup
+    build:
+      file: Dockerfile
+      rm: true
+    state: present
+  when:
+    - management.ansible_deployment.enabled | default(true)
+  tags: ['management', 'ansible-deployment', 'build']
+
 - name: Deploy ansible-deployment container (standalone, host network)
   containers.podman.podman_container:
     name: ansible-deployment

@@ -1,0 +1,17 @@
+---
+# Run backup immediately (ad-hoc)
+# Usage: ansible-playbook site.yml --tags backup-run -e backup_run_now=true
+
+- name: Run VPS backup now
+  command: /usr/local/bin/vps-backup
+  register: backup_result
+  when: backup.enabled | default(true)
+  tags: ['backup', 'backup-run']
+
+- name: Display backup result
+  debug:
+    msg: "{{ backup_result.stdout_lines | default(['Backup script not found']) }}"
+  when:
+    - backup.enabled | default(true)
+    - backup_result is defined
+  tags: ['backup', 'backup-run']

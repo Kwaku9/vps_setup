@@ -492,6 +492,68 @@
   tags: ['security', 'squid']
 
 # ============================================
+# THREAT INTELLIGENCE FEED CHECKER
+# ============================================
+
+- name: Deploy threat-feed-checker script
+  template:
+    src: threat-feed-checker.py.j2
+    dest: /usr/local/bin/threat-feed-checker
+    mode: '0755'
+  tags: ['security', 'threat-feed', 'cron-jobs']
+
+- name: Schedule threat-feed-checker cron (every 15 min)
+  cron:
+    name: "threat-feed-checker"
+    minute: "*/15"
+    job: "/usr/bin/python3 /usr/local/bin/threat-feed-checker >> /var/log/threat-feed-checker.log 2>&1"
+  tags: ['security', 'threat-feed', 'cron-jobs']
+
+# ============================================
+# FAIL2BAN METRICS
+# ============================================
+
+- name: Deploy fail2ban-metrics script
+  template:
+    src: fail2ban-metrics.sh.j2
+    dest: /usr/local/bin/fail2ban-metrics
+    mode: '0755'
+  tags: ['security', 'fail2ban', 'cron-jobs']
+
+- name: Schedule fail2ban-metrics cron (every 5 min)
+  cron:
+    name: "fail2ban-metrics"
+    minute: "*/5"
+    job: "/usr/local/bin/fail2ban-metrics > /dev/null 2>&1"
+  tags: ['security', 'fail2ban', 'cron-jobs']
+
+# ============================================
+# CROWDSEC DAILY REPORT
+# ============================================
+
+- name: Create CrowdSec reporting scripts directory
+  file:
+    path: /opt/scripts
+    state: directory
+    mode: '0755'
+  tags: ['security', 'crowdsec', 'cron-jobs']
+
+- name: Deploy crowdsec-daily-report script
+  template:
+    src: crowdsec-daily-report.sh.j2
+    dest: /opt/scripts/crowdsec-daily-report.sh
+    mode: '0755'
+  tags: ['security', 'crowdsec', 'cron-jobs']
+
+- name: Schedule crowdsec-daily-report cron (daily 9:00 AM)
+  cron:
+    name: "crowdsec-daily-report"
+    minute: "0"
+    hour: "9"
+    job: "/opt/scripts/crowdsec-daily-report.sh > /dev/null 2>&1"
+  tags: ['security', 'crowdsec', 'cron-jobs']
+
+# ============================================
 # SECURITY AUDIT
 # ============================================
 

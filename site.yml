@@ -86,6 +86,10 @@
       tags: ['backend', 'api']
       when: deploy_backend | default(true)
 
+    - role: backup
+      tags: ['backup', 'backup-setup', 'backup-run', 'restore']
+      when: backup.enabled | default(true)
+
   post_tasks:
     - name: Display deployment summary
       debug:

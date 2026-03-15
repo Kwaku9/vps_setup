@@ -81,6 +81,27 @@
     - shared_services | selectattr('name', 'equalto', 'traefik') | selectattr('enabled', 'equalto', true) | list | length > 0
   tags: ['shared-services', 'security-infra-pod', 'traefik']
 
+# ── CrowdSec Bouncer Plugin for Traefik ──
+
+- name: Create traefik-plugins volume
+  containers.podman.podman_volume:
+    name: traefik-plugins
+    state: present
+  tags: ['shared-services', 'security-infra-pod', 'traefik', 'crowdsec']
+
+- name: Install CrowdSec bouncer plugin for Traefik
+  shell: |
+    PLUGIN_DIR=$(podman volume inspect traefik-plugins --format '{% raw %}{{.Mountpoint}}{% endraw %}')/src/github.com/maxlerebourg
+    mkdir -p "$PLUGIN_DIR"
+    if [ ! -d "$PLUGIN_DIR/crowdsec-bouncer-traefik-plugin" ]; then
+      git clone --depth 1 --branch v1.3.5 \
+        https://github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin.git \
+        "$PLUGIN_DIR/crowdsec-bouncer-traefik-plugin"
+    fi
+  args:
+    creates: /var/lib/containers/storage/volumes/traefik-plugins/_data/src/github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
+  tags: ['shared-services', 'security-infra-pod', 'traefik', 'crowdsec']
+
 - name: Deploy Traefik container (in security-infra-pod)
   containers.podman.podman_container:
     name: traefik

@@ -1,0 +1,95 @@
+---
+# Backup Setup - Create infrastructure for daily backups
+
+- name: Create backup directory structure
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0750'
+    owner: root
+    group: root
+  loop:
+    - "{{ backup.backup_dir }}"
+    - "{{ backup.backup_dir }}/daily"
+    - "{{ backup.backup_dir }}/volumes"
+  when: backup.enabled | default(true)
+  tags: ['backup', 'backup-setup']
+
+- name: Deploy VPS backup script
+  template:
+    src: backup.sh.j2
+    dest: /usr/local/bin/vps-backup
+    mode: '0750'
+    owner: root
+    group: root
+  when: backup.enabled | default(true)
+  tags: ['backup', 'backup-setup']
+
+- name: Deploy VPS restore script
+  template:
+    src: restore.sh.j2
+    dest: /usr/local/bin/vps-restore
+    mode: '0750'
+    owner: root
+    group: root
+  when: backup.enabled | default(true)
+  tags: ['backup', 'backup-setup']
+
+- name: Configure daily backup cron (2:00 AM)
+  cron:
+    name: "vps-daily-backup"
+    minute: "0"
+    hour: "2"
+    job: "/usr/local/bin/vps-backup >> /var/log/vps-backup.log 2>&1"
+  when: backup.enabled | default(true)
+  tags: ['backup', 'backup-setup']
+
+- name: Install aws-cli for S3 sync
+  apk:
+    name: aws-cli
+    state: present
+  when:
+    - backup.enabled | default(true)
+    - backup.s3_enabled | default(false)
+  tags: ['backup', 'backup-setup', 's3']
+
+- name: Create logrotate config for backup logs
+  copy:
+    content: |
+      /var/log/vps-backup.log {
+          weekly
+          rotate 4
+          compress
+          missingok
+          notifempty
+      }
+      /var/log/vps-restore.log {
+          weekly
+          rotate 4
+          compress
+          missingok
+          notifempty
+      }
+    dest: /etc/logrotate.d/vps-backup
+    mode: '0644'
+  when: backup.enabled | default(true)
+  tags: ['backup', 'backup-setup']
+
+- name: Display backup setup summary
+  debug:
+    msg:
+      - "Backup infrastructure deployed successfully"
+      - "  Backup script: /usr/local/bin/vps-backup"
+      - "  Restore script: /usr/local/bin/vps-restore"
+      - "  Backup directory: {{ backup.backup_dir }}/daily"
+      - "  Schedule: Daily at 2:00 AM"
+      - "  Retention: {{ backup.retention_days }} days"
+      - "  S3 sync: {{ backup.s3_enabled | default(false) }}"
+      - ""
+      - "Ad-hoc usage:"
+      - "  Run backup now:  ansible-playbook site.yml --tags backup-run -e backup_run_now=true"
+      - "  Restore backup:  ansible-playbook site.yml --tags restore -e backup_restore=true -e backup_file=/opt/backups/daily/vps-backup-YYYYMMDD_HHMMSS.tar.gz"
+      - "  Or directly:     /usr/local/bin/vps-backup"
+      - "                   /usr/local/bin/vps-restore /path/to/backup.tar.gz"
+  when: backup.enabled | default(true)
+  tags: ['backup', 'backup-setup']
