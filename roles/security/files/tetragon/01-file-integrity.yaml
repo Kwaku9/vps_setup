@@ -1,0 +1,41 @@
+# Policy 1: File Integrity Monitoring
+# Monitors writes to critical system files, configs, and Dockerfiles
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: file-integrity-monitoring
+spec:
+  kprobes:
+    - call: "security_file_open"
+      syscall: false
+      args:
+        - index: 0
+          type: "file"
+        - index: 1
+          type: "int"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Prefix"
+              values:
+                # System critical files
+                - "/etc/passwd"
+                - "/etc/shadow"
+                - "/etc/sudoers"
+                - "/etc/ssh/"
+                - "/etc/crontab"
+                - "/etc/cron"
+                # Container/infrastructure configs
+                - "/opt/compose/"
+                - "/opt/podman-data/"
+                # Dockerfiles and build files
+                - "/workspace/"
+                # Claude and agent configs
+                - "/root/.claude/"
+                - "/root/.ssh/"
+            - index: 1
+              operator: "Mask"
+              values:
+                - "2"       # O_WRONLY
+                - "1024"    # O_CREAT
+                - "512"     # O_TRUNC

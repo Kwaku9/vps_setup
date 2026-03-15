@@ -1,0 +1,13 @@
+# Policy 3: Network Connection Monitoring
+# Track outbound TCP connections for zero-trust visibility
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: network-monitoring
+spec:
+  kprobes:
+    - call: "tcp_connect"
+      syscall: false
+      args:
+        - index: 0
+          type: "sock"

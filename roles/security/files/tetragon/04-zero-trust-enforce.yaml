@@ -1,0 +1,45 @@
+# Policy 4: Zero Trust Enforcement
+# SIGKILL processes that attempt unauthorized operations
+# WARNING: Only enable after thorough testing — can kill legitimate processes
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: zero-trust-enforcement
+spec:
+  kprobes:
+    # Kill any process attempting to load kernel modules (rootkit prevention)
+    - call: "__x64_sys_init_module"
+      syscall: true
+      args:
+        - index: 0
+          type: "char_buf"
+          sizeArgIndex: 1
+          returnCopy: false
+        - index: 1
+          type: "size_t"
+      selectors:
+        - matchActions:
+            - action: Sigkill
+
+    # Kill any process attempting to modify /etc/shadow directly
+    - call: "security_file_open"
+      syscall: false
+      args:
+        - index: 0
+          type: "file"
+        - index: 1
+          type: "int"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Equal"
+              values:
+                - "/etc/shadow"
+                - "/etc/sudoers"
+            - index: 1
+              operator: "Mask"
+              values:
+                - "2"
+                - "1024"
+          matchActions:
+            - action: Sigkill
