@@ -143,7 +143,7 @@
     image: "{{ ai_stack.openwebui.image }}"
     state: started
     pod: "{{ ai_stack.pod_name }}"
-    memory: 384m
+    memory: 512m
     recreate: true
     env:
       WEBUI_NAME: "AICORTEX"
