@@ -1,43 +1,56 @@
-﻿---
+---
 # Monitoring Role Defaults
+# Split into 5 isolated pods: metrics-pod, logs-pod, tempo-pod, node-exporter-pod, podman-exporter-pod
 
 monitoring:
   enabled: true
-  prometheus:
+  victoriametrics:
     enabled: true
-    version: "latest"
-    port: 9090
-    retention: "15d"
-    memory: "512m"
+    version: "v1.115.0"
+    port: 8428
+    retention: "60"  # days
+    memory: "1536m"  # 73% usage is healthy for TSDB
   grafana:
     enabled: true
-    version: "latest"
+    version: "12.3.1-ubuntu"
     port: 3000
     admin_user: "admin"
+    memory: "300m"  # Reduced from 384m — stable at 221MB
   node_exporter:
     enabled: true
-    version: "latest"
+    version: "v1.10.2"
     port: 9100
-  cadvisor:
+    memory: "128m"  # Increased from 50m — was OOM'd at 99%
+  podman_exporter:
     enabled: true
-    version: "latest"
-    port: 8080
+    version: "v1.14.0"
+    port: 9882
+    memory: "96m"  # Was OOM'd — needs own failure domain
   loki:
     enabled: true
-    version: "latest"
+    version: "3.6.3"
     port: 3200  # FIXED - was 3100
+    memory: "768m"  # 59% usage is fine
   tempo:
     enabled: true
-    version: "latest"
-    memory: "768m"
+    version: "2.9.0"
+    memory: "384m"  # Reduced from 512m — isolated from gRPC instability
   alloy:
     enabled: true
-    version: "latest"
+    version: "v1.12.2"
+    memory: "640m"  # Increased from 512m — was at 88%, needs headroom
   checkmk:
     enabled: false
-  promtail:
+  image_renderer:
     enabled: true
     version: "latest"
+    port: 8081
+    memory: "32m"  # Reduced from 256m — only uses 9MB
+  dep_health_check:
+    enabled: true
+
+# Network names
+monitoring_network_name: "monitoring-net"
 
 # Will be overridden by vault
 grafana_password: "VAULT_OVERRIDE"

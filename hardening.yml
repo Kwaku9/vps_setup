@@ -1,0 +1,110 @@
+﻿---
+# Security Hardening Tasks
+
+- name: Disable unnecessary services
+  service:
+    name: "{{ item }}"
+    enabled: no
+    state: stopped
+  loop: []
+  ignore_errors: yes
+  tags: ['hardening']
+
+- name: Set proper permissions on sensitive files
+  file:
+    path: "{{ item }}"
+    mode: '0600'
+    state: file
+  loop:
+    - /etc/ssh/sshd_config
+    - /etc/shadow
+  tags: ['hardening', 'permissions']
+
+- name: Harden SSH configuration
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    state: present
+  loop:
+    # - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin no' }
+    - { regexp: '^#?PasswordAuthentication', line: 'PasswordAuthentication no' }
+    - { regexp: '^#?PubkeyAuthentication', line: 'PubkeyAuthentication yes' }
+    - { regexp: '^#?X11Forwarding', line: 'X11Forwarding no' }
+    - { regexp: '^#?MaxAuthTries', line: 'MaxAuthTries 3' }
+    - { regexp: '^#?ClientAliveInterval', line: 'ClientAliveInterval 300' }
+    - { regexp: '^#?ClientAliveCountMax', line: 'ClientAliveCountMax 2' }
+  notify: restart sshd
+  tags: ['hardening', 'ssh']
+
+- name: Check if login.defs exists
+  stat:
+    path: /etc/login.defs
+  register: login_defs_exists
+  tags: ['hardening', 'passwords']
+
+- name: Create login.defs if it doesn't exist (Alpine Linux)
+  copy:
+    content: |
+      # Password aging controls (created by Ansible)
+      PASS_MAX_DAYS   90
+      PASS_MIN_DAYS   7
+      PASS_WARN_AGE   14
+    dest: /etc/login.defs
+    mode: '0644'
+  when: not login_defs_exists.stat.exists
+  tags: ['hardening', 'passwords']
+
+- name: Set password policies in login.defs
+  lineinfile:
+    path: /etc/login.defs
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - { regexp: '^PASS_MAX_DAYS', line: 'PASS_MAX_DAYS   90' }
+    - { regexp: '^PASS_MIN_DAYS', line: 'PASS_MIN_DAYS   7' }
+    - { regexp: '^PASS_WARN_AGE', line: 'PASS_WARN_AGE   14' }
+  when: login_defs_exists.stat.exists
+  tags: ['hardening', 'passwords']
+
+- name: Create /etc/security directory if it doesn't exist
+  file:
+    path: /etc/security
+    state: directory
+    mode: '0755'
+  tags: ['hardening']
+
+- name: Disable core dumps
+  lineinfile:
+    path: /etc/security/limits.conf
+    line: '*               hard    core            0'
+    create: yes
+  tags: ['hardening']
+
+- name: Set kernel parameters for security
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_file: /etc/sysctl.d/99-security.conf
+  loop:
+    - { name: "kernel.dmesg_restrict", value: "1" }
+    - { name: "kernel.kptr_restrict", value: "2" }
+    - { name: "kernel.yama.ptrace_scope", value: "1" }
+    - { name: "net.ipv4.conf.all.rp_filter", value: "1" }
+    - { name: "net.ipv4.conf.default.rp_filter", value: "1" }
+    - { name: "net.ipv4.icmp_echo_ignore_broadcasts", value: "1" }
+    - { name: "net.ipv4.conf.all.accept_source_route", value: "0" }
+    - { name: "net.ipv4.conf.default.accept_source_route", value: "0" }
+    - { name: "net.ipv4.conf.all.send_redirects", value: "0" }
+    - { name: "net.ipv4.conf.default.send_redirects", value: "0" }
+  tags: ['hardening', 'kernel']
+
+- name: Create security audit log
+  file:
+    path: /var/log/security-audit.log
+    state: touch
+    mode: '0600'
+    modification_time: preserve
+    access_time: preserve
+  tags: ['hardening', 'logging']

@@ -1,0 +1,33 @@
+---
+# WorldView Geospatial Dashboard Role Defaults
+
+worldview:
+  enabled: true
+  container_name: "worldview-dev"
+  image: "docker.io/library/node:22-alpine"
+  network: "enterprise_network"
+  source_dir: "/workspace/vscode-projects/geospatial-dashboard"
+  port: 5173
+  memory: "640m"
+  node_max_old_space: "448"
+  domain: "geo.REDACTED_DOMAIN"
+
+  # Vite dev server config
+  vite:
+    allowed_hosts: "geo.REDACTED_DOMAIN"
+    watch_polling: true
+    watch_interval: 1000
+
+# Vault overrides these
+worldview_google_maps_api_key: "VAULT_OVERRIDE"
+worldview_cesium_ion_token: "VAULT_OVERRIDE"
+worldview_opensky_username: "VAULT_OVERRIDE"
+worldview_opensky_password: "VAULT_OVERRIDE"
+worldview_adsb_api_key: "VAULT_OVERRIDE"
+worldview_wigle_api_token: "VAULT_OVERRIDE"
+worldview_firms_map_key: "VAULT_OVERRIDE"
+worldview_acled_email: "VAULT_OVERRIDE"
+worldview_acled_password: "VAULT_OVERRIDE"
+worldview_abuseipdb_api_key: "VAULT_OVERRIDE"
+worldview_vps_lat: "REDACTED_COORD"
+worldview_vps_lon: "REDACTED_COORD"

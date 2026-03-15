@@ -1,0 +1,92 @@
+---
+# ============================================================
+# Claude Code Environment Transfer Playbook
+# ============================================================
+# Transfers your vps_setup project Claude Code environment
+# from Windows to VPS, including:
+#   - Last 2 weeks of conversation history
+#   - Project configuration files
+#   - User settings and MCP configs
+#   - File edit history
+#
+# Usage:
+#   ansible-playbook -i hosts claude-transfer.yml
+#
+# To transfer only specific parts, use tags:
+#   ansible-playbook -i hosts claude-transfer.yml --tags sessions
+#   ansible-playbook -i hosts claude-transfer.yml --tags settings
+#   ansible-playbook -i hosts claude-transfer.yml --tags project-config
+# ============================================================
+
+- name: Transfer Claude Code Environment to VPS
+  hosts: alpine_servers
+  become: yes
+  gather_facts: yes
+
+  vars:
+    transfer_claude_environment: true
+
+  tasks:
+    - name: Display transfer information
+      debug:
+        msg:
+          - "============================================"
+          - "Claude Code Environment Transfer"
+          - "============================================"
+          - "Source: Windows (C:\\Users\\swirl\\.claude)"
+          - "Destination: VPS (/root/.claude)"
+          - "Project: vps_setup"
+          - "Time Range: Last 2 weeks"
+          - "============================================"
+      tags: ['always']
+
+    - name: Verify Claude CLI is installed
+      command: claude --version
+      register: claude_check
+      changed_when: false
+      failed_when: false
+      tags: ['always']
+
+    - name: Warn if Claude CLI not found
+      debug:
+        msg:
+          - "WARNING: Claude CLI not found on VPS!"
+          - "Run the main playbook first: ansible-playbook -i hosts site.yml"
+      when: claude_check.rc != 0
+      tags: ['always']
+
+    - name: Fail if Claude CLI not installed
+      fail:
+        msg: "Claude CLI must be installed before transferring environment"
+      when: claude_check.rc != 0
+      tags: ['always']
+
+    - name: Include claude-prep role transfer tasks
+      include_role:
+        name: claude-prep
+        tasks_from: transfer-claude-environment
+      tags: ['claude-transfer']
+
+    - name: Display post-transfer instructions
+      debug:
+        msg:
+          - "============================================"
+          - "Transfer Complete!"
+          - "============================================"
+          - ""
+          - "Next steps:"
+          - "1. SSH to your VPS: ssh root@REDACTED_IP"
+          - "2. Navigate to project: cd /workspace/vscode-projects/vps_setup"
+          - "3. Start Claude Code: claude"
+          - ""
+          - "Your conversation history will be available!"
+          - "You can resume previous sessions with /resume"
+          - ""
+          - "Project location on VPS:"
+          - "  /workspace/vscode-projects/vps_setup"
+          - ""
+          - "Session data location:"
+          - "  /root/.claude/projects/-workspace-vscode-projects-vps_setup"
+          - ""
+          - "============================================"
+      tags: ['always']

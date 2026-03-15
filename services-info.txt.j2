@@ -1,0 +1,23 @@
+﻿==============================================
+Shared Services Information
+==============================================
+
+Network: {{ podman_network_name }}
+Subnet: {{ podman_network_subnet }}
+
+Services Running in shared-services-pod:
+
+{% for service in shared_services %}
+{% if service.enabled %}
+- {{ service.name | upper }}
+  Image: {{ service.image }}
+  Port: {{ service.port }}
+  Connection: {{ service.name }}:{{ service.port }}
+{% endif %}
+{% endfor %}
+
+==============================================
+Access from other pods:
+Use service names as hostnames on the shared network
+Example: postgres://postgres:5432
+==============================================

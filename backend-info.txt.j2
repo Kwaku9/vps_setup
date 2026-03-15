@@ -1,0 +1,19 @@
+﻿==============================================
+Backend Services Information
+==============================================
+
+Pod: backend-pod
+Network: {{ podman_network_name }}
+
+API Services:
+{% if backend.api_services is defined and backend.api_services | length > 0 %}
+{% for service in backend.api_services %}
+- {{ service.name }}
+  Image: {{ service.image }}
+{% endfor %}
+{% else %}
+No API services configured yet.
+Add services to backend.api_services in group_vars/all.yml
+{% endif %}
+
+==============================================

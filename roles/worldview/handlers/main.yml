@@ -1,0 +1,6 @@
+---
+- name: restart worldview
+  containers.podman.podman_container:
+    name: "{{ worldview.container_name }}"
+    state: started
+    force_restart: true

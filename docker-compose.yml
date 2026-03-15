@@ -1,4 +1,4 @@
-version: '3.8'
+﻿version: '3.8'
 
 services:
   ansible:
@@ -11,19 +11,22 @@ services:
     # Mount SSH keys and vault password
     volumes:
       # Mount SSH to temp location (entrypoint.sh will copy with correct permissions)
-      - ~/.ssh:/tmp/host-ssh:ro
-      # Uncomment if using vault password file:
-      # - ./vault-pass.txt:/ansible/.vault-pass:ro
+      - /root/.ssh:/tmp/host-ssh:ro
 
-      # Mount current directory for live editing (optional)
+      # Mount current directory for live editing
       - .:/ansible:rw
 
-      # Mount project directories for migration
-      - C:/Users/swirl/VScdeProjects:/mnt/c/Users/swirl/VScdeProjects:ro
-      - C:/Users/swirl/PycharmProjects:/mnt/c/Users/swirl/PycharmProjects:ro
+      # Mount VPS directories for configuration management
+      - /workspace:/workspace:rw
+      - /opt/podman-data:/opt/podman-data:rw
+      - /opt/compose:/opt/compose:rw
+      - /opt/backups:/opt/backups:rw
 
-      # Mount .claude directory for environment transfer
-      - C:/Users/swirl/.claude:/mnt/c/Users/swirl/.claude:ro
+      # Mount Claude configuration
+      - /root/.claude:/root/.claude:rw
+
+      # Mount Podman socket for container management
+      - /run/podman/podman.sock:/run/podman/podman.sock:rw
 
     # Network mode
     network_mode: host
@@ -50,7 +53,18 @@ services:
 
     volumes:
       # Mount SSH to temp location (entrypoint.sh will copy with correct permissions)
-      - ~/.ssh:/tmp/host-ssh:ro
+      - /root/.ssh:/tmp/host-ssh:ro
+
+      # Mount current directory for playbooks
+      - .:/ansible:rw
+
+      # Mount VPS directories for configuration management
+      - /workspace:/workspace:rw
+      - /opt/podman-data:/opt/podman-data:rw
+      - /opt/compose:/opt/compose:rw
+
+      # Mount Podman socket for container management
+      - /run/podman/podman.sock:/run/podman/podman.sock:rw
 
     network_mode: host
 
@@ -58,7 +72,7 @@ services:
     command: >
       bash -c "
       echo 'Starting deployment...' &&
-      ansible-playbook -i hosts site.yml
+      ansible-playbook -i inventory/hosts site.yml --ask-vault-pass
       "
 
     # Only run when explicitly called

@@ -1,4 +1,4 @@
----
+﻿---
 # Security Role Defaults
 
 security:
@@ -19,20 +19,26 @@ security:
     version: "latest"
     scan_on_startup: true
 
+  crowdsec:
+    enabled: true
+    version: "1.6.4"
+    image: "crowdsecurity/crowdsec:v1.6.4"
+    collections:
+      - crowdsecurity/traefik
+      - crowdsecurity/http-cve
+      - crowdsecurity/base-http-scenarios
+      - crowdsecurity/sshd
+      - crowdsecurity/linux
+
   firewall:
     enabled: true
     allowed_ports:
-      - 22     # SSH
-      - 80     # HTTP
-      - 443    # HTTPS
-      - 3000   # Grafana
-      - 3002   # n8n MCP HTTP
-      - 3101   # Claude Monitor Frontend
-      - 3200   # Loki (FIXED - was 3100)
-      - 5001   # Dockge
-      - 5002   # IBKR MCP HTTP
-      - 5678   # n8n-claude
-      - 8082   # Traefik Dashboard
-      - 9000   # Authentik SSO
-      - 9090   # Prometheus
-      - 9443   # Portainer
+      - 22     # SSH (all other services accessed via Cloudflare Tunnel)
+
+  squid:
+    enabled: false  # Transparent egress proxy — enable manually
+    mode: "discovery"  # discovery = log-only, enforcement = whitelist-based blocking
+    http_port: 3128
+    https_port: 3129
+    container_subnet: "REDACTED_CIDR"
+    dns_nameserver: "REDACTED_DNS"

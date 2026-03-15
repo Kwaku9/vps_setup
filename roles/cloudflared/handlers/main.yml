@@ -1,0 +1,6 @@
+---
+- name: restart cloudflared
+  containers.podman.podman_container:
+    name: "{{ cloudflared.container_name }}"
+    state: started
+    force_restart: true

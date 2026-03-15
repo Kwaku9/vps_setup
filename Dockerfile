@@ -1,4 +1,4 @@
-# Lightweight Ansible Container for Alpine Podman Enterprise Stack
+﻿# Lightweight Ansible Container for Alpine Podman Enterprise Stack
 # Optimized for minimal size and all required dependencies
 
 FROM python:3.12-alpine
@@ -31,6 +31,7 @@ RUN pip install --no-cache-dir \
     jinja2 \
     netaddr \
     paramiko \
+    passlib \
     && rm -rf /root/.cache/pip
 
 # Set up working directory
@@ -46,10 +47,12 @@ RUN ansible-galaxy collection install -r requirements.yml
 # Copy playbook files
 COPY *.yml ./
 COPY *.j2 ./
-COPY hosts ./
 
-# Create directories for inventory and SSH
-RUN mkdir -p inventory /root/.ssh && \
+# Copy inventory directory
+COPY inventory ./inventory
+
+# Create SSH directory
+RUN mkdir -p /root/.ssh && \
     chmod 700 /root/.ssh
 
 # Set environment variables
@@ -61,7 +64,7 @@ ENV ANSIBLE_HOST_KEY_CHECKING=False \
     PYTHONUNBUFFERED=1
 
 # Copy entrypoint script
-COPY entrypoint.sh /entrypoint.sh
+COPY scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Use entrypoint to set up SSH keys on container start
