@@ -1,0 +1,42 @@
+---
+# Build and configure Backtrader container for ATLAS
+
+- name: Create backtrader directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ trading.backtrader.strategies_dir }}"
+    - "{{ trading.backtrader.results_dir }}"
+    - /opt/compose/backtrader-build
+
+- name: Copy Backtrader Dockerfile
+  ansible.builtin.copy:
+    src: backtrader/Dockerfile
+    dest: /opt/compose/backtrader-build/Dockerfile
+    mode: "0644"
+
+- name: Copy Backtrader requirements
+  ansible.builtin.copy:
+    src: backtrader/requirements.txt
+    dest: /opt/compose/backtrader-build/requirements.txt
+    mode: "0644"
+
+- name: Copy Backtrader runner
+  ansible.builtin.copy:
+    src: backtrader/runner.py
+    dest: /opt/compose/backtrader-build/runner.py
+    mode: "0755"
+
+- name: Build Backtrader container image
+  containers.podman.podman_image:
+    name: "{{ trading.backtrader.image }}"
+    path: /opt/compose/backtrader-build
+    force: true
+  register: bt_build
+
+- name: Display Backtrader build result
+  ansible.builtin.debug:
+    msg: "Backtrader image built: {{ trading.backtrader.image }}"
+  when: bt_build.changed

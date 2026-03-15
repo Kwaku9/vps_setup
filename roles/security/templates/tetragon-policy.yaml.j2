@@ -1,0 +1,60 @@
+# Tetragon TracingPolicy - eBPF Security Observability
+# Kernel-level hooks for file integrity, network, and privilege monitoring
+# Note: Process execution is tracked by Tetragon's built-in base sensor
+#       (process_exec/process_exit events) without needing a TracingPolicy.
+# Managed by Ansible - do not edit directly
+
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: security-monitoring
+spec:
+  kprobes:
+    # ============================================
+    # File Integrity Monitoring
+    # Watch writes to critical system paths (replaces Wazuh syscheck/FIM)
+    # ============================================
+    - call: "security_file_open"
+      syscall: false
+      args:
+        - index: 0
+          type: "file"
+        - index: 1
+          type: "int"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Prefix"
+              values:
+                - "/etc/"
+                - "/usr/bin/"
+                - "/usr/sbin/"
+                - "/usr/local/bin/"
+                - "/opt/compose/"
+                - "/workspace/.claude/"
+                - "/root/.claude/"
+            - index: 1
+              operator: "Mask"
+              values:
+                - "2"    # O_WRONLY
+                - "1024"  # O_CREAT
+
+    # ============================================
+    # Network Connection Monitoring
+    # Track outbound TCP connections for visibility
+    # ============================================
+    - call: "tcp_connect"
+      syscall: false
+      args:
+        - index: 0
+          type: "sock"
+
+    # ============================================
+    # Privileged Operations Monitoring
+    # Track setuid/capability changes
+    # ============================================
+    - call: "commit_creds"
+      syscall: false
+      args:
+        - index: 0
+          type: "cred"

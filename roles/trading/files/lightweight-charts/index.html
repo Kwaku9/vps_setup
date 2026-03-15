@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATLAS Charts</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+    <div id="app">
+        <div class="header">
+            <div class="header-left">
+                <span class="logo">ATLAS</span>
+                <input type="text" class="symbol-input" id="symbolInput" value="SPY" placeholder="Symbol">
+                <div class="timeframe-bar">
+                    <button class="tf-btn" data-tf="1m">1m</button>
+                    <button class="tf-btn" data-tf="5m">5m</button>
+                    <button class="tf-btn" data-tf="15m">15m</button>
+                    <button class="tf-btn" data-tf="1h">1H</button>
+                    <button class="tf-btn" data-tf="4h">4H</button>
+                    <button class="tf-btn active" data-tf="1d">D</button>
+                    <button class="tf-btn" data-tf="1w">W</button>
+                </div>
+            </div>
+            <div class="header-right">
+                <button class="indicator-toggle" data-ind="sma20">SMA20</button>
+                <button class="indicator-toggle" data-ind="sma50">SMA50</button>
+                <button class="indicator-toggle" data-ind="ema9">EMA9</button>
+                <button class="indicator-toggle" data-ind="ema21">EMA21</button>
+                <button class="indicator-toggle" data-ind="bb">BB</button>
+                <button class="indicator-toggle" data-ind="volume" id="volToggle">VOL</button>
+                <button class="indicator-toggle" data-ind="backtest">BACKTEST</button>
+            </div>
+        </div>
+
+        <div class="chart-container" id="chartContainer">
+            <div class="loading" id="loading">Loading</div>
+        </div>
+
+        <div class="backtest-panel" id="backtestPanel"></div>
+
+        <div class="stats-bar" id="statsBar">
+            <span><span class="stat-label">O</span><span class="stat-value" id="statOpen">-</span></span>
+            <span><span class="stat-label">H</span><span class="stat-value" id="statHigh">-</span></span>
+            <span><span class="stat-label">L</span><span class="stat-value" id="statLow">-</span></span>
+            <span><span class="stat-label">C</span><span class="stat-value" id="statClose">-</span></span>
+            <span><span class="stat-label">Vol</span><span class="stat-value" id="statVol">-</span></span>
+            <span><span class="stat-label">Chg</span><span class="stat-value" id="statChg">-</span></span>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,610 @@
+{
+  "uid": "atlas-backtest",
+  "title": "ATLAS Backtest Results",
+  "description": "Backtest equity curves, trade analysis, and strategy comparison",
+  "tags": ["trading", "atlas", "backtest"],
+  "timezone": "browser",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1,
+      "title": "",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 2,
+      "title": "Total Return",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#ef4444", "value": null },
+              { "color": "#f59e0b", "value": 0 },
+              { "color": "#22c55e", "value": 50 }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "targets": [
+        {
+          "rawSql": "SELECT total_return_pct AS \"Total Return\" FROM trading.backtest_results WHERE run_id = '$run_id'::uuid;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Sharpe Ratio",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 4, "y": 1 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#ef4444", "value": null },
+              { "color": "#f59e0b", "value": 0 },
+              { "color": "#22c55e", "value": 0.5 },
+              { "color": "#10b981", "value": 1.0 }
+            ]
+          },
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "targets": [
+        {
+          "rawSql": "SELECT sharpe_ratio AS \"Sharpe\" FROM trading.backtest_results WHERE run_id = '$run_id'::uuid;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Sortino Ratio",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 7, "y": 1 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#ef4444", "value": null },
+              { "color": "#f59e0b", "value": 0 },
+              { "color": "#22c55e", "value": 1.0 },
+              { "color": "#10b981", "value": 3.0 }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "targets": [
+        {
+          "rawSql": "SELECT sortino_ratio AS \"Sortino\" FROM trading.backtest_results WHERE run_id = '$run_id'::uuid;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Max Drawdown",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 10, "y": 1 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#22c55e", "value": null },
+              { "color": "#f59e0b", "value": 10 },
+              { "color": "#ef4444", "value": 25 }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "targets": [
+        {
+          "rawSql": "SELECT max_drawdown_pct AS \"Max DD\" FROM trading.backtest_results WHERE run_id = '$run_id'::uuid;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Win Rate",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 13, "y": 1 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#ef4444", "value": null },
+              { "color": "#f59e0b", "value": 0.4 },
+              { "color": "#22c55e", "value": 0.5 }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "targets": [
+        {
+          "rawSql": "SELECT win_rate AS \"Win Rate\" FROM trading.backtest_results WHERE run_id = '$run_id'::uuid;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Profit Factor",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 16, "y": 1 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#ef4444", "value": null },
+              { "color": "#f59e0b", "value": 1.0 },
+              { "color": "#22c55e", "value": 1.5 },
+              { "color": "#10b981", "value": 2.0 }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "targets": [
+        {
+          "rawSql": "SELECT profit_factor AS \"PF\" FROM trading.backtest_results WHERE run_id = '$run_id'::uuid;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Total Trades",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 2, "x": 19, "y": 1 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#6b7280", "value": null },
+              { "color": "#06b6d4", "value": 30 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "targets": [
+        {
+          "rawSql": "SELECT total_trades AS \"Trades\" FROM trading.backtest_results WHERE run_id = '$run_id'::uuid;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "CAGR",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 21, "y": 1 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#ef4444", "value": null },
+              { "color": "#f59e0b", "value": 0 },
+              { "color": "#22c55e", "value": 5 }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "targets": [
+        {
+          "rawSql": "SELECT cagr_pct AS \"CAGR\" FROM trading.backtest_results WHERE run_id = '$run_id'::uuid;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Equity Curve",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 5 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "#06b6d4", "mode": "fixed" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "scheme",
+            "showPoints": "never",
+            "axisCenteredZero": false,
+            "axisLabel": "Portfolio Value ($)"
+          },
+          "unit": "currencyUSD",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT (elem->>'date')::timestamptz AS time, (elem->>'value')::float AS \"Portfolio Value\" FROM trading.backtest_results r, jsonb_array_elements(r.equity_curve) AS elem WHERE r.run_id = '$run_id'::uuid ORDER BY time;",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Drawdown",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 15 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "#ef4444", "mode": "fixed" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "fillOpacity": 30,
+            "gradientMode": "scheme",
+            "showPoints": "never",
+            "axisLabel": "Drawdown %"
+          },
+          "unit": "percent",
+          "decimals": 1,
+          "max": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "rawSql": "WITH curve AS ( SELECT (elem->>'date')::timestamptz AS time, (elem->>'value')::float AS val FROM trading.backtest_results r, jsonb_array_elements(r.equity_curve) AS elem WHERE r.run_id = '$run_id'::uuid ), peak AS ( SELECT time, val, MAX(val) OVER (ORDER BY time ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS peak_val FROM curve ) SELECT time, -((peak_val - val) / NULLIF(peak_val, 0) * 100) AS \"Drawdown\" FROM peak ORDER BY time;",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Monthly Returns (%)",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "center", "filterable": true }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Monthly Return" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "decimals", "value": 2 },
+              {
+                "id": "custom.cellOptions",
+                "value": { "mode": "gradient", "type": "gauge", "valueDisplayMode": "text" }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "#ef4444", "value": null },
+                    { "color": "#22c55e", "value": 0 }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Year" },
+            "properties": [
+              { "id": "custom.width", "value": 60 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Month" },
+            "properties": [
+              { "id": "custom.width", "value": 80 }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Year", "desc": true }]
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT EXTRACT(YEAR FROM ((elem->>'month') || '-01')::date)::int AS \"Year\", TO_CHAR(((elem->>'month') || '-01')::date, 'Mon') AS \"Month\", (elem->>'return_pct')::float AS \"Monthly Return\" FROM trading.backtest_results r, jsonb_array_elements(r.monthly_returns) AS elem WHERE r.run_id = '$run_id'::uuid AND (elem->>'return_pct')::float != 0 ORDER BY ((elem->>'month') || '-01')::date DESC;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Trade P&L Distribution",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "center", "filterable": true }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Trades" },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": { "mode": "gradient", "type": "gauge", "valueDisplayMode": "text" }
+              },
+              { "id": "color", "value": { "fixedColor": "#06b6d4", "mode": "fixed" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "P&L Range" }],
+        "footer": { "show": true, "reducer": ["sum"], "fields": ["Trades"] }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT '$' || (floor(pnl / 500) * 500)::int || ' to $' || (floor(pnl / 500) * 500 + 500)::int AS \"P&L Range\", count(*)::int AS \"Trades\" FROM trading.backtest_trades WHERE run_id = '$run_id'::uuid GROUP BY floor(pnl / 500) ORDER BY floor(pnl / 500);",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Cumulative P&L by Trade",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "#8b5cf6", "mode": "fixed" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "auto",
+            "pointSize": 4,
+            "axisLabel": "Cumulative P&L ($)"
+          },
+          "unit": "currencyUSD",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT exit_date AS time, SUM(pnl) OVER (ORDER BY exit_date) AS \"Cumulative P&L\" FROM trading.backtest_trades WHERE run_id = '$run_id'::uuid ORDER BY exit_date;",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Trade Log",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 38 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "center", "filterable": true }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "pnl" },
+            "properties": [
+              { "id": "unit", "value": "currencyUSD" },
+              { "id": "decimals", "value": 2 },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "#ef4444", "value": null },
+                    { "color": "#22c55e", "value": 0 }
+                  ]
+                }
+              },
+              { "id": "custom.cellOptions", "value": { "mode": "gradient", "type": "color-background" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "pnl_pct" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "decimals", "value": 2 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "entry_price" },
+            "properties": [ { "id": "unit", "value": "currencyUSD" }, { "id": "decimals", "value": 2 } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "exit_price" },
+            "properties": [ { "id": "unit", "value": "currencyUSD" }, { "id": "decimals", "value": 2 } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "direction" },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  { "type": "value", "options": { "long": { "color": "#22c55e", "text": "LONG" }, "short": { "color": "#ef4444", "text": "SHORT" } } }
+                ]
+              },
+              { "id": "custom.cellOptions", "value": { "mode": "gradient", "type": "color-background" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "entry_date", "desc": true }],
+        "footer": { "show": true, "reducer": ["sum"], "fields": ["pnl"] }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT entry_date, exit_date, direction, size, entry_price, exit_price, pnl, pnl_pct, commission, bars_held FROM trading.backtest_trades WHERE run_id = '$run_id'::uuid ORDER BY entry_date DESC;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "title": "Strategy Comparison",
+      "type": "table",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 48 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "center" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "total_return_pct" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "decimals", "value": 2 },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "#ef4444", "value": null },
+                    { "color": "#22c55e", "value": 0 }
+                  ]
+                }
+              },
+              { "id": "custom.cellOptions", "value": { "mode": "gradient", "type": "color-background" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "sharpe_ratio" },
+            "properties": [ { "id": "decimals", "value": 3 } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "win_rate" },
+            "properties": [ { "id": "unit", "value": "percentunit" }, { "id": "decimals", "value": 1 } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "max_drawdown_pct" },
+            "properties": [ { "id": "unit", "value": "percent" }, { "id": "decimals", "value": 2 } ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "total_return_pct", "desc": true }]
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT strategy_name, symbol, timeframe, start_date, end_date, total_return_pct, cagr_pct, sharpe_ratio, sortino_ratio, max_drawdown_pct, win_rate, profit_factor, total_trades, initial_cash, final_value FROM trading.backtest_results ORDER BY created_at DESC;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "run_id",
+        "type": "query",
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-trading" },
+        "query": "SELECT run_id::text AS __value, strategy_name || ' (' || symbol || ' ' || timeframe || ' ' || start_date || ' to ' || end_date || ')' AS __text FROM trading.backtest_results ORDER BY created_at DESC;",
+        "current": {},
+        "refresh": 1,
+        "sort": 0,
+        "label": "Backtest Run"
+      }
+    ]
+  },
+  "time": { "from": "2008-01-01T00:00:00.000Z", "to": "now" },
+  "refresh": "",
+  "schemaVersion": 39,
+  "version": 1
+}

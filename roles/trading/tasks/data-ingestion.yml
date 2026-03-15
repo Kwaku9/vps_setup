@@ -1,0 +1,31 @@
+---
+# Deploy OHLC data ingestion scripts for ATLAS
+
+- name: Create MT5 import directory
+  ansible.builtin.file:
+    path: "{{ trading.ingestion.mt5.import_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Deploy IBKR OHLC ingestion script
+  ansible.builtin.copy:
+    src: ibkr-ohlc-ingest.py
+    dest: /usr/local/bin/ibkr-ohlc-ingest.py
+    mode: "0755"
+
+- name: Deploy MT5 OHLC ingestion script
+  ansible.builtin.copy:
+    src: mt5-ohlc-ingest.py
+    dest: /usr/local/bin/mt5-ohlc-ingest.py
+    mode: "0755"
+
+- name: Deploy OHLC resampler script
+  ansible.builtin.copy:
+    src: ohlc-resample.py
+    dest: /usr/local/bin/ohlc-resample.py
+    mode: "0755"
+
+- name: Install Python requests for ingestion scripts
+  community.general.apk:
+    name: py3-requests
+    state: present

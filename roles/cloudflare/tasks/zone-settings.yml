@@ -1,0 +1,24 @@
+---
+# Cloudflare Zone Settings
+# Configures zone-level settings via Cloudflare API
+
+- name: Enable Always Use HTTPS
+  uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ cf_zone_id }}/settings/always_use_https"
+    method: PATCH
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      value: "on"
+    status_code: 200
+  register: always_https_result
+  tags: ['cloudflare', 'zone-settings', 'https']
+
+- name: Display zone settings summary
+  debug:
+    msg:
+      - "Cloudflare Zone Settings:"
+      - "  Always Use HTTPS: on"
+  tags: ['cloudflare', 'zone-settings', 'summary']

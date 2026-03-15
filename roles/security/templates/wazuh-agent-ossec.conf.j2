@@ -1,0 +1,106 @@
+<!--
+  Wazuh Agent Configuration
+  Managed by Ansible - do not edit manually on the host
+  Deployed to: /opt/compose/wazuh/agent-ossec.conf
+-->
+<ossec_config>
+
+  <client>
+    <server>
+      <address>security-pod</address>
+      <port>1514</port>
+      <protocol>tcp</protocol>
+    </server>
+  </client>
+
+  <!-- ============================================ -->
+  <!-- File Integrity Monitoring (FIM)              -->
+  <!-- ============================================ -->
+  <syscheck>
+    <frequency>21600</frequency> <!-- Every 6 hours -->
+
+    <!-- Infrastructure configuration (realtime) -->
+    <directories realtime="yes" report_changes="yes" check_all="yes"
+                 recursion_level="3">/hostfs/opt/compose</directories>
+
+    <!-- Container persistent data -->
+    <directories realtime="yes" check_all="yes"
+                 recursion_level="2">/opt/podman-data</directories>
+
+    <!-- Claude Code configuration -->
+    <directories realtime="yes" report_changes="yes" check_all="yes"
+                 recursion_level="3">/hostfs/workspace/.claude</directories>
+    <directories realtime="yes" report_changes="yes" check_all="yes"
+                 recursion_level="3">/hostfs/root/.claude</directories>
+
+    <!-- Security-critical system paths -->
+    <directories check_all="yes">/hostfs/etc</directories>
+    <directories check_all="yes">/hostfs/etc/ssh</directories>
+    <directories realtime="yes" report_changes="yes" check_all="yes">/hostfs/etc/iptables</directories>
+    <directories realtime="yes" report_changes="yes" check_all="yes">/hostfs/etc/fail2ban</directories>
+    <directories realtime="yes" check_all="yes">/hostfs/etc/crontabs</directories>
+
+    <!-- Security scripts -->
+    <directories realtime="yes" report_changes="yes" check_all="yes">/usr/local/bin</directories>
+
+    <!-- Exclusions -->
+    <ignore>/hostfs/etc/mtab</ignore>
+    <ignore>/hostfs/etc/random-seed</ignore>
+    <ignore>/hostfs/etc/adjtime</ignore>
+    <ignore>/hostfs/etc/resolv.conf</ignore>
+    <ignore type="sregex">.log$|.swp$|.tmp$</ignore>
+
+    <!-- Don't report content for sensitive files -->
+    <nodiff>/hostfs/root/.claude/settings.json</nodiff>
+    <nodiff>/hostfs/root/.claude/mcp_settings.json</nodiff>
+
+    <file_limit>
+      <enabled>yes</enabled>
+      <entries>100000</entries>
+    </file_limit>
+
+    <skip_nfs>yes</skip_nfs>
+    <skip_dev>yes</skip_dev>
+    <skip_proc>yes</skip_proc>
+    <skip_sys>yes</skip_sys>
+  </syscheck>
+
+  <!-- ============================================ -->
+  <!-- Docker/Podman Container Monitoring           -->
+  <!-- ============================================ -->
+  <wodle name="docker-listener">
+    <disabled>no</disabled>
+    <interval>10m</interval>
+    <attempts>5</attempts>
+    <run_on_start>yes</run_on_start>
+  </wodle>
+
+  <!-- ============================================ -->
+  <!-- System Inventory (for vulnerability detection) -->
+  <!-- ============================================ -->
+  <wodle name="syscollector">
+    <disabled>no</disabled>
+    <interval>1h</interval>
+    <scan_on_start>yes</scan_on_start>
+    <hardware>yes</hardware>
+    <os>yes</os>
+    <network>yes</network>
+    <packages>yes</packages>
+    <ports all="no">yes</ports>
+    <processes>yes</processes>
+  </wodle>
+
+  <!-- ============================================ -->
+  <!-- Log Analysis                                 -->
+  <!-- ============================================ -->
+  <localfile>
+    <log_format>syslog</log_format>
+    <location>/var/log/syslog</location>
+  </localfile>
+
+  <localfile>
+    <log_format>syslog</log_format>
+    <location>/var/log/*.log</location>
+  </localfile>
+
+</ossec_config>

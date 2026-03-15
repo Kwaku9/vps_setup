@@ -1,0 +1,133 @@
+---
+# Trading Schema — PostgreSQL tables for IV scan results and trading data
+# Runs after PostgreSQL container is deployed and healthy
+
+- name: Wait for PostgreSQL to accept connections
+  shell: >
+    podman exec -i postgres pg_isready -U postgres -d enterprise
+  register: pg_ready
+  retries: 10
+  delay: 3
+  until: pg_ready.rc == 0
+  changed_when: false
+  tags: ['shared-services', 'trading-schema']
+
+- name: Create trading schema and iv_scan_results table
+  shell: |
+    podman exec -i postgres psql -U postgres -d enterprise <<'SQL'
+    CREATE SCHEMA IF NOT EXISTS trading;
+
+    CREATE TABLE IF NOT EXISTS trading.iv_scan_results (
+      id SERIAL PRIMARY KEY,
+      scan_time TIMESTAMP DEFAULT NOW(),
+      ticker VARCHAR(10) NOT NULL,
+      conid INTEGER,
+      price NUMERIC(10,2),
+      iv NUMERIC(6,4),
+      hv20 NUMERIC(6,4),
+      iv_hv_ratio NUMERIC(6,3),
+      z_score NUMERIC(6,3),
+      iv_rank NUMERIC(5,2),
+      monthly_ranks JSONB,
+      score INTEGER,
+      signal VARCHAR(20),
+      scan_direction VARCHAR(10),
+      iv_30d NUMERIC(6,4),
+      iv_90d NUMERIC(6,4),
+      term_slope NUMERIC(6,3),
+      target_dte INTEGER
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_iv_scan_ticker ON trading.iv_scan_results(ticker);
+    CREATE INDEX IF NOT EXISTS idx_iv_scan_time ON trading.iv_scan_results(scan_time);
+    SQL
+  register: trading_schema
+  changed_when: "'CREATE' in trading_schema.stdout"
+  tags: ['shared-services', 'trading-schema']
+
+- name: Create open_positions table for position lifecycle tracking
+  shell: |
+    podman exec -i postgres psql -U postgres -d enterprise <<'SQL'
+    CREATE TABLE IF NOT EXISTS trading.open_positions (
+      id               SERIAL PRIMARY KEY,
+      account_id       VARCHAR(20) NOT NULL,
+      conid            INTEGER NOT NULL,
+      ticker           VARCHAR(10) NOT NULL,
+      underlying_conid INTEGER,
+      put_call         VARCHAR(1),
+      strike           NUMERIC(10,2),
+      expiry           DATE,
+      dte              INTEGER,
+      quantity         INTEGER NOT NULL DEFAULT 0,
+      avg_cost         NUMERIC(12,4),
+      market_price     NUMERIC(12,4),
+      market_value     NUMERIC(12,2),
+      unrealized_pnl   NUMERIC(12,2),
+      pnl_pct          NUMERIC(8,2),
+      iv               NUMERIC(8,4),
+      delta            NUMERIC(8,4),
+      gamma            NUMERIC(8,6),
+      theta            NUMERIC(8,4),
+      vega             NUMERIC(8,4),
+      exit_signal      VARCHAR(20),
+      exit_priority    INTEGER DEFAULT 0,
+      status           VARCHAR(10) NOT NULL DEFAULT 'OPEN',
+      opened_at        TIMESTAMP DEFAULT NOW(),
+      last_synced      TIMESTAMP DEFAULT NOW(),
+      closed_at        TIMESTAMP,
+      CONSTRAINT uq_open_positions_acct_conid UNIQUE (account_id, conid)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_open_positions_status ON trading.open_positions(status);
+    CREATE INDEX IF NOT EXISTS idx_open_positions_signal ON trading.open_positions(exit_signal) WHERE exit_signal IS NOT NULL;
+    SQL
+  register: open_positions_schema
+  changed_when: "'CREATE' in open_positions_schema.stdout"
+  tags: ['shared-services', 'trading-schema']
+
+- name: Create iv_snapshots table for full S&P 500 IV data per scan day
+  shell: |
+    podman exec -i postgres psql -U postgres -d enterprise <<'SQL'
+    CREATE TABLE IF NOT EXISTS trading.iv_snapshots (
+      scan_date DATE NOT NULL,
+      ticker VARCHAR(10) NOT NULL,
+      conid INTEGER,
+      price NUMERIC(10,2),
+      iv NUMERIC(6,4),
+      volume BIGINT,
+      CONSTRAINT uq_iv_snapshots_date_ticker UNIQUE (scan_date, ticker)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_iv_snapshots_scan_date ON trading.iv_snapshots(scan_date);
+    CREATE INDEX IF NOT EXISTS idx_iv_snapshots_ticker ON trading.iv_snapshots(ticker);
+    SQL
+  register: iv_snapshots_schema
+  changed_when: "'CREATE' in iv_snapshots_schema.stdout"
+  tags: ['shared-services', 'trading-schema']
+
+- name: Create scan_metadata table for scan pipeline stats
+  shell: |
+    podman exec -i postgres psql -U postgres -d enterprise <<'SQL'
+    CREATE TABLE IF NOT EXISTS trading.scan_metadata (
+      id SERIAL PRIMARY KEY,
+      scan_time TIMESTAMP DEFAULT NOW(),
+      total_tickers INTEGER,
+      tickers_with_iv INTEGER,
+      tickers_skipped_no_data INTEGER,
+      tickers_skipped_low_volume INTEGER,
+      high_prefilter_count INTEGER,
+      low_prefilter_count INTEGER,
+      high_final_count INTEGER,
+      low_final_count INTEGER,
+      duration_seconds NUMERIC(8,1)
+    );
+    SQL
+  register: scan_metadata_schema
+  changed_when: "'CREATE' in scan_metadata_schema.stdout"
+  tags: ['shared-services', 'trading-schema']
+
+- name: Display trading schema status
+  debug:
+    msg: "Trading schema created: iv_scan_results, open_positions, iv_snapshots, scan_metadata tables ready"
+  when: trading_schema is changed or open_positions_schema is changed or iv_snapshots_schema is changed or scan_metadata_schema is changed
+  tags: ['shared-services', 'trading-schema']

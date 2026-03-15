@@ -1,0 +1,144 @@
+#!/bin/sh
+# {{ ansible_managed }}
+# Daily critical services health check — sends report via Telegram Gateway.
+
+set -e
+
+REPORT=""
+OK_COUNT=0
+WARN_COUNT=0
+CRIT_COUNT=0
+TOTAL=0
+
+add_ok()   { OK_COUNT=$((OK_COUNT + 1));   TOTAL=$((TOTAL + 1)); REPORT="${REPORT}[OK] $1\n"; }
+add_warn() { WARN_COUNT=$((WARN_COUNT + 1)); TOTAL=$((TOTAL + 1)); REPORT="${REPORT}[WARN] $1\n"; }
+add_crit() { CRIT_COUNT=$((CRIT_COUNT + 1)); TOTAL=$((TOTAL + 1)); REPORT="${REPORT}[CRIT] $1\n"; }
+
+# --- Pods ---
+for pod in shared-services-pod monitoring-pod ai-stack-pod authentication-pod; do
+    if podman pod exists "$pod" 2>/dev/null; then
+        status=$(podman pod inspect "$pod" --format '{{ '{{' }}.State{{ '}}' }}' 2>/dev/null || echo "unknown")
+        if [ "$status" = "Running" ]; then
+            add_ok "Pod $pod: Running"
+        else
+            add_crit "Pod $pod: $status"
+        fi
+    else
+        add_crit "Pod $pod: NOT FOUND"
+    fi
+done
+
+# --- Container health ---
+containers=$(podman ps --format '{{ '{{' }}.Names{{ '}}' }}' 2>/dev/null || true)
+for ctr in $containers; do
+    health=$(podman inspect "$ctr" --format '{{ '{{' }}.State.Health.Status{{ '}}' }}' 2>/dev/null || echo "none")
+    case "$health" in
+        healthy) add_ok "Container $ctr: healthy" ;;
+        none)    ;; # no healthcheck configured, skip
+        *)       add_warn "Container $ctr: $health" ;;
+    esac
+done
+
+# --- Key ports ---
+for port in 443 5432 6379 3000 9090; do
+    if ss -tlnp 2>/dev/null | grep -q ":${port} " 2>/dev/null; then
+        add_ok "Port $port: listening"
+    else
+        add_crit "Port $port: NOT listening"
+    fi
+done
+
+# --- Disk usage ---
+DISK_PCT=$(df / 2>/dev/null | awk 'NR==2 {gsub(/%/,""); print $5}')
+if [ -n "$DISK_PCT" ]; then
+    if [ "$DISK_PCT" -ge 90 ]; then
+        add_crit "Disk: ${DISK_PCT}% used"
+    elif [ "$DISK_PCT" -ge 80 ]; then
+        add_warn "Disk: ${DISK_PCT}% used"
+    else
+        add_ok "Disk: ${DISK_PCT}% used"
+    fi
+else
+    add_warn "Disk: unable to check"
+fi
+
+# --- Memory usage ---
+MEM_TOTAL=$(free -m 2>/dev/null | awk '/Mem:/ {print $2}')
+MEM_USED=$(free -m 2>/dev/null | awk '/Mem:/ {print $3}')
+if [ -n "$MEM_TOTAL" ] && [ "$MEM_TOTAL" -gt 0 ]; then
+    MEM_PCT=$((MEM_USED * 100 / MEM_TOTAL))
+    if [ "$MEM_PCT" -ge 90 ]; then
+        add_crit "Memory: ${MEM_PCT}% (${MEM_USED}/${MEM_TOTAL}MB)"
+    elif [ "$MEM_PCT" -ge 80 ]; then
+        add_warn "Memory: ${MEM_PCT}% (${MEM_USED}/${MEM_TOTAL}MB)"
+    else
+        add_ok "Memory: ${MEM_PCT}% (${MEM_USED}/${MEM_TOTAL}MB)"
+    fi
+else
+    add_warn "Memory: unable to check"
+fi
+
+# --- CPU load ---
+LOAD=$(cat /proc/loadavg 2>/dev/null | awk '{print $1}')
+NCPU=$(nproc 2>/dev/null || echo 1)
+if [ -n "$LOAD" ]; then
+    # Compare integer parts (sh doesn't do float)
+    LOAD_INT=$(printf '%.0f' "$LOAD" 2>/dev/null || echo 0)
+    THRESHOLD=$((NCPU * 2))
+    if [ "$LOAD_INT" -ge "$THRESHOLD" ]; then
+        add_warn "CPU load: $LOAD (${NCPU} cores)"
+    else
+        add_ok "CPU load: $LOAD (${NCPU} cores)"
+    fi
+fi
+
+# --- SSL cert expiry ---
+CERT_EXPIRY=$(echo | openssl s_client -connect localhost:443 -servername localhost 2>/dev/null | \
+    openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+if [ -n "$CERT_EXPIRY" ]; then
+    EXPIRY_EPOCH=$(date -d "$CERT_EXPIRY" +%s 2>/dev/null || date -D "%b %d %T %Y %Z" -d "$CERT_EXPIRY" +%s 2>/dev/null || echo 0)
+    NOW_EPOCH=$(date +%s)
+    if [ "$EXPIRY_EPOCH" -gt 0 ]; then
+        DAYS_LEFT=$(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
+        if [ "$DAYS_LEFT" -lt 7 ]; then
+            add_crit "SSL cert: ${DAYS_LEFT} days left"
+        elif [ "$DAYS_LEFT" -lt 14 ]; then
+            add_warn "SSL cert: ${DAYS_LEFT} days left"
+        else
+            add_ok "SSL cert: ${DAYS_LEFT} days left"
+        fi
+    fi
+fi
+
+# --- Cloudflare tunnel ---
+if podman ps --format '{{ '{{' }}.Names{{ '}}' }}' 2>/dev/null | grep -q cloudflared; then
+    add_ok "Cloudflare tunnel: running"
+else
+    add_crit "Cloudflare tunnel: NOT running"
+fi
+
+# --- Uptime ---
+UPTIME=$(uptime 2>/dev/null | sed 's/.*up /up /' | sed 's/,.*load.*//')
+REPORT="${REPORT}\nUptime: ${UPTIME}\n"
+
+# --- Build final message ---
+if [ "$CRIT_COUNT" -gt 0 ]; then
+    HEADER="CRITICAL"
+elif [ "$WARN_COUNT" -gt 0 ]; then
+    HEADER="WARNING"
+else
+    HEADER="ALL CLEAR"
+fi
+
+SUMMARY="${OK_COUNT}/${TOTAL} healthy"
+if [ "$WARN_COUNT" -gt 0 ]; then
+    SUMMARY="${SUMMARY}, ${WARN_COUNT} warnings"
+fi
+if [ "$CRIT_COUNT" -gt 0 ]; then
+    SUMMARY="${SUMMARY}, ${CRIT_COUNT} critical"
+fi
+SUMMARY="${SUMMARY}, disk ${DISK_PCT:-?}%, mem ${MEM_PCT:-?}%"
+
+MSG="<b>Daily Services Check — ${HEADER}</b>\n\n<pre>$(printf '%b' "$REPORT")</pre>\n<b>${SUMMARY}</b>"
+
+/usr/local/bin/telegram-notify "$(printf '%b' "$MSG")" "HTML"

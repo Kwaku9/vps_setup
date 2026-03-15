@@ -1,0 +1,226 @@
+#!/usr/bin/env python3
+"""Trivy Container Vulnerability Scanner -> Prometheus textfile collector.
+
+Scans all running Podman container images via the Trivy server API,
+writes two levels of Prometheus metrics to .prom files for node-exporter:
+
+  1. trivy.prom         — Aggregate counts by image/severity (overview dashboard)
+  2. trivy-details.prom — Per-CVE metrics with full detail (CVE drill-down dashboard)
+
+Runs daily via cron. Managed by Ansible.
+"""
+OUTPUT = "/opt/compose/textfile-collector/trivy.prom"
+OUTPUT_DETAIL = "/opt/compose/textfile-collector/trivy-details.prom"
+
+{% raw %}
+import json, os, sys, subprocess
+from datetime import datetime, timezone
+from collections import Counter
+
+def get_running_images():
+    """Get unique images from running containers."""
+    result = subprocess.run(
+        ["podman", "ps", "--format", "{{.Image}}\t{{.Names}}"],
+        capture_output=True, text=True
+    )
+    images = {}
+    for line in result.stdout.strip().split("\n"):
+        if not line or "\t" not in line:
+            continue
+        image, name = line.split("\t", 1)
+        if name.endswith("-infra"):
+            continue
+        if image not in images:
+            images[image] = []
+        images[image].append(name)
+    return images
+
+def scan_image(image):
+    """Scan an image using Trivy client mode against the local server."""
+    result = subprocess.run(
+        ["podman", "exec", "trivy-scanner", "trivy", "image",
+         "--server", "http://127.0.0.1:8080",
+         "--format", "json", "--quiet", image],
+        capture_output=True, text=True, timeout=300
+    )
+    if result.returncode != 0:
+        print("  WARN: scan failed for %s: %s" % (image, result.stderr[:200]), file=sys.stderr)
+        return None
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        print("  WARN: invalid JSON for %s" % image, file=sys.stderr)
+        return None
+
+def parse_image(image):
+    """Split full image reference into (repository, tag)."""
+    # docker.io/grafana/loki:3.0.0 -> (grafana/loki, 3.0.0)
+    for prefix in ["docker.io/", "quay.io/", "ghcr.io/"]:
+        if image.startswith(prefix):
+            image = image[len(prefix):]
+    if ":" in image:
+        repo, tag = image.rsplit(":", 1)
+    else:
+        repo, tag = image, "latest"
+    return repo, tag
+
+def prom_escape(s):
+    """Escape a string for use as a Prometheus label value."""
+    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+def main():
+    now = datetime.now(timezone.utc)
+    images = get_running_images()
+    print("Found %d unique images from running containers" % len(images))
+
+    # Aggregate tracking
+    results = {}  # short_image -> {CRITICAL: N, ...}
+    total_by_severity = Counter()
+    scan_errors = 0
+
+    # Detail tracking — list of (repo, tag, vuln_dict) for per-CVE output
+    all_vulns = []
+
+    for image, containers in sorted(images.items()):
+        repo, tag = parse_image(image)
+        short = repo if tag == "latest" else "%s:%s" % (repo, tag)
+        print("Scanning %s (%s)..." % (short, ", ".join(containers)))
+        data = scan_image(image)
+        if data is None:
+            scan_errors += 1
+            results[short] = {"CRITICAL": -1}
+            continue
+
+        counts = Counter()
+        for r in data.get("Results", []):
+            for v in r.get("Vulnerabilities", []):
+                sev = v.get("Severity", "UNKNOWN")
+                counts[sev] += 1
+                total_by_severity[sev] += 1
+                # Collect CVE detail for CRITICAL and HIGH only (keeps cardinality sane)
+                if sev in ("CRITICAL", "HIGH"):
+                    all_vulns.append((repo, tag, v))
+
+        results[short] = dict(counts)
+        total = sum(counts.values())
+        if total > 0:
+            parts = ", ".join("%d %s" % (c, s) for s, c in counts.most_common())
+            print("  -> %d vulnerabilities (%s)" % (total, parts))
+        else:
+            print("  -> clean")
+
+    # --- Build aggregate .prom output ---
+    L = []
+
+    L.append("# HELP trivy_vulnerability_count Vulnerabilities found by Trivy scanner per image and severity")
+    L.append("# TYPE trivy_vulnerability_count gauge")
+    for image, counts in sorted(results.items()):
+        if counts.get("CRITICAL") == -1:
+            L.append('trivy_vulnerability_count{image="%s",severity="scan_error"} 1' % prom_escape(image))
+            continue
+        for sev in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+            L.append('trivy_vulnerability_count{image="%s",severity="%s"} %d' % (prom_escape(image), sev, counts.get(sev, 0)))
+
+    L.append("# HELP trivy_vulnerabilities_total Total vulnerabilities across all images by severity")
+    L.append("# TYPE trivy_vulnerabilities_total gauge")
+    for sev in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+        L.append('trivy_vulnerabilities_total{severity="%s"} %d' % (sev, total_by_severity.get(sev, 0)))
+
+    L.append("# HELP trivy_images_scanned Total images scanned")
+    L.append("# TYPE trivy_images_scanned gauge")
+    L.append("trivy_images_scanned %d" % len(images))
+
+    L.append("# HELP trivy_scan_errors Images that failed to scan")
+    L.append("# TYPE trivy_scan_errors gauge")
+    L.append("trivy_scan_errors %d" % scan_errors)
+
+    crit_count = sum(1 for c in results.values() if c.get("CRITICAL", 0) > 0)
+    L.append("# HELP trivy_images_with_critical Images with CRITICAL vulnerabilities")
+    L.append("# TYPE trivy_images_with_critical gauge")
+    L.append("trivy_images_with_critical %d" % crit_count)
+
+    L.append("# HELP trivy_scan_timestamp Last scan unix timestamp")
+    L.append("# TYPE trivy_scan_timestamp gauge")
+    L.append("trivy_scan_timestamp %d" % int(now.timestamp()))
+
+    write_atomic(OUTPUT, L)
+
+    # --- Build per-CVE detail .prom output ---
+    D = []
+    D.append("# HELP trivy_vulnerability_id Individual CVE details from Trivy scan (CRITICAL and HIGH only)")
+    D.append("# TYPE trivy_vulnerability_id gauge")
+
+    seen = set()  # dedupe by (repo, vuln_id, pkg)
+    for repo, tag, v in all_vulns:
+        vuln_id = v.get("VulnerabilityID", "")
+        if not vuln_id:
+            continue
+        pkg = v.get("PkgName", "")
+        dedup_key = (repo, vuln_id, pkg)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
+        sev = v.get("Severity", "UNKNOWN")
+        title = v.get("Title", "")[:120]  # truncate long titles
+        installed = v.get("InstalledVersion", "")
+        fixed = v.get("FixedVersion", "")
+        score = ""
+        # Extract CVSS score (try NVD first, then any source)
+        cvss = v.get("CVSS", {})
+        for source in ["nvd", "redhat", "ghsa"]:
+            if source in cvss:
+                score = str(cvss[source].get("V3Score", ""))
+                if score:
+                    break
+        if not score:
+            # Fallback: check all CVSS sources
+            for src_data in cvss.values():
+                score = str(src_data.get("V3Score", src_data.get("V2Score", "")))
+                if score:
+                    break
+
+        labels = (
+            'image_repository="%s",'
+            'image_tag="%s",'
+            'vuln_id="%s",'
+            'severity="%s",'
+            'resource="%s",'
+            'installed_version="%s",'
+            'fixed_version="%s",'
+            'vuln_score="%s",'
+            'vuln_title="%s"'
+        ) % (
+            prom_escape(repo),
+            prom_escape(tag),
+            prom_escape(vuln_id),
+            prom_escape(sev.capitalize()),
+            prom_escape(pkg),
+            prom_escape(installed),
+            prom_escape(fixed),
+            prom_escape(score),
+            prom_escape(title),
+        )
+        D.append("trivy_vulnerability_id{%s} 1" % labels)
+
+    D.append("# HELP trivy_vulnerability_detail_timestamp Last detail scan unix timestamp")
+    D.append("# TYPE trivy_vulnerability_detail_timestamp gauge")
+    D.append("trivy_vulnerability_detail_timestamp %d" % int(now.timestamp()))
+
+    write_atomic(OUTPUT_DETAIL, D)
+
+    print("\nOK: scanned %d images, %d errors, %d total vulns (%d critical), %d CVE detail records" % (
+        len(images), scan_errors, sum(total_by_severity.values()),
+        total_by_severity.get("CRITICAL", 0), len(seen)))
+
+def write_atomic(path, lines):
+    """Write lines to file atomically via tmp+rename."""
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.rename(tmp, path)
+    print("Wrote %d lines to %s" % (len(lines), path))
+
+if __name__ == "__main__":
+    main()
+{% endraw %}

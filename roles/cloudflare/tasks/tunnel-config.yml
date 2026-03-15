@@ -1,0 +1,79 @@
+---
+# Cloudflare Tunnel Public Hostname Configuration
+# Configures tunnel ingress rules via Cloudflare API
+# Routes all traffic through Traefik (wildcard + root domain)
+
+- name: Decode tunnel token to get tunnel ID
+  set_fact:
+    tunnel_token_decoded: "{{ cloudflare_tunnel_token | b64decode | from_json }}"
+  tags: ['cloudflare', 'tunnel', 'config']
+
+- name: Extract tunnel ID
+  set_fact:
+    tunnel_id: "{{ tunnel_token_decoded.t }}"
+  tags: ['cloudflare', 'tunnel', 'config']
+
+- name: Display tunnel ID
+  debug:
+    msg: "Configuring tunnel ID: {{ tunnel_id }}"
+  tags: ['cloudflare', 'tunnel', 'config']
+
+- name: Build wildcard ingress rules (all traffic via Traefik)
+  set_fact:
+    tunnel_ingress_rules: >-
+      [
+        {
+          "hostname": "ssh.{{ cf_domain }}",
+          "service": "ssh://host.containers.internal:22"
+        },
+        {
+          "hostname": "*.{{ cf_domain }}",
+          "service": "https://traefik:443",
+          "originRequest": {"noTLSVerify": true}
+        },
+        {
+          "hostname": "{{ cf_domain }}",
+          "service": "https://traefik:443",
+          "originRequest": {"noTLSVerify": true}
+        },
+        {
+          "service": "http_status:404"
+        }
+      ]
+  tags: ['cloudflare', 'tunnel', 'config']
+
+- name: Configure tunnel public hostnames via API
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/cfd_tunnel/{{ tunnel_id }}/configurations"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      config:
+        ingress: "{{ tunnel_ingress_rules | from_json }}"
+    status_code: [200, 201]
+  register: tunnel_config_result
+  tags: ['cloudflare', 'tunnel', 'config']
+
+- name: Display tunnel configuration result
+  debug:
+    msg: |
+      Tunnel configuration updated successfully.
+      Ingress routes:
+        - ssh.{{ cf_domain }} -> ssh://host.containers.internal:22 (TCP proxy)
+        - *.{{ cf_domain }} -> https://traefik:443
+        - {{ cf_domain }} -> https://traefik:443
+      Traefik handles subdomain routing via dynamic config.
+  when:
+    - tunnel_config_result is defined
+    - tunnel_config_result is not skipped
+    - tunnel_config_result.status | default(0) in [200, 201]
+  tags: ['cloudflare', 'tunnel', 'config']
+
+- name: Display tunnel configuration skipped
+  debug:
+    msg: "Tunnel API configuration skipped (cloudflare_account_id not set). Local config file used instead."
+  when: tunnel_config_result is not defined or tunnel_config_result is skipped
+  tags: ['cloudflare', 'tunnel', 'config']

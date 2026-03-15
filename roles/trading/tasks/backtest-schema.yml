@@ -1,0 +1,73 @@
+---
+# PostgreSQL backtest tables for ATLAS
+# Uses same pattern as roles/shared-services/tasks/trading-schema.yml:
+#   container name: postgres, database: enterprise, shell with heredoc
+
+- name: Wait for PostgreSQL to be ready
+  shell: >
+    podman exec -i postgres pg_isready -U postgres -d enterprise
+  register: pg_ready
+  retries: 5
+  delay: 3
+  until: pg_ready.rc == 0
+  changed_when: false
+
+- name: Create trading.backtest_results table
+  shell: |
+    podman exec -i postgres psql -U postgres -d enterprise <<'SQL'
+    CREATE TABLE IF NOT EXISTS trading.backtest_results (
+        id SERIAL PRIMARY KEY,
+        run_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+        strategy_name TEXT NOT NULL,
+        strategy_params JSONB,
+        symbol TEXT NOT NULL,
+        timeframe TEXT NOT NULL,
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        initial_cash NUMERIC(12,2) NOT NULL,
+        final_value NUMERIC(12,2) NOT NULL,
+        total_return_pct NUMERIC(8,4),
+        cagr_pct NUMERIC(8,4),
+        sharpe_ratio NUMERIC(8,4),
+        sortino_ratio NUMERIC(8,4),
+        max_drawdown_pct NUMERIC(8,4),
+        max_drawdown_duration_days INT,
+        win_rate NUMERIC(6,4),
+        profit_factor NUMERIC(8,4),
+        total_trades INT,
+        avg_trade_pnl NUMERIC(10,2),
+        avg_win NUMERIC(10,2),
+        avg_loss NUMERIC(10,2),
+        commission_total NUMERIC(10,2),
+        equity_curve JSONB,
+        monthly_returns JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_backtest_symbol ON trading.backtest_results(symbol);
+    CREATE INDEX IF NOT EXISTS idx_backtest_strategy ON trading.backtest_results(strategy_name);
+    CREATE INDEX IF NOT EXISTS idx_backtest_created ON trading.backtest_results(created_at);
+    SQL
+  register: bt_results_table
+  changed_when: "'CREATE' in bt_results_table.stdout"
+
+- name: Create trading.backtest_trades table
+  shell: |
+    podman exec -i postgres psql -U postgres -d enterprise <<'SQL'
+    CREATE TABLE IF NOT EXISTS trading.backtest_trades (
+        id SERIAL PRIMARY KEY,
+        run_id UUID REFERENCES trading.backtest_results(run_id),
+        entry_date TIMESTAMPTZ NOT NULL,
+        exit_date TIMESTAMPTZ,
+        direction TEXT NOT NULL CHECK (direction IN ('long', 'short')),
+        size INT NOT NULL,
+        entry_price NUMERIC(12,4) NOT NULL,
+        exit_price NUMERIC(12,4),
+        pnl NUMERIC(12,2),
+        pnl_pct NUMERIC(8,4),
+        commission NUMERIC(8,2),
+        bars_held INT
+    );
+    CREATE INDEX IF NOT EXISTS idx_bt_trades_run ON trading.backtest_trades(run_id);
+    SQL
+  register: bt_trades_table
+  changed_when: "'CREATE' in bt_trades_table.stdout"

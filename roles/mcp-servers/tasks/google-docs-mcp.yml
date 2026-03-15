@@ -1,0 +1,90 @@
+---
+# Google Docs/Drive MCP Server Deployment
+# Provides Google Drive and Docs integration via MCP
+
+- name: Set google-docs-mcp variables
+  set_fact:
+    _mcp: "{{ mcp_servers.servers.google_docs }}"
+  tags: ['mcp', 'mcp-google']
+
+- name: Check if google-docs-mcp source exists
+  stat:
+    path: "{{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}"
+  register: google_mcp_source
+  tags: ['mcp', 'mcp-google']
+
+- name: Create google-docs-mcp data directory
+  file:
+    path: "{{ mcp_servers.data_dir }}/google-docs"
+    state: directory
+    mode: '0755'
+  tags: ['mcp', 'mcp-google']
+
+- name: Check for Google credentials file
+  stat:
+    path: "{{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}/{{ _mcp.credentials_file | default('credentials.json') }}"
+  register: google_creds
+  when: google_mcp_source.stat.exists
+  tags: ['mcp', 'mcp-google']
+
+- name: Warn if Google credentials missing
+  debug:
+    msg: "WARNING: Google credentials file not found. Server will start but authentication will fail."
+  when:
+    - google_mcp_source.stat.exists
+    - not google_creds.stat.exists | default(false)
+  tags: ['mcp', 'mcp-google']
+
+- name: Remove existing google-docs-mcp container if rebuilding
+  containers.podman.podman_container:
+    name: "{{ _mcp.container_name }}"
+    state: absent
+  when: mcp_build.force_rebuild | default(false)
+  tags: ['mcp', 'mcp-google']
+
+- name: Check if google-docs-mcp image exists
+  command: podman image exists {{ _mcp.image }}
+  register: google_image_exists
+  failed_when: false
+  changed_when: false
+  when:
+    - _mcp.build | default(true)
+    - google_mcp_source.stat.exists
+  tags: ['mcp', 'mcp-google', 'mcp-build']
+
+- name: Build google-docs-mcp container image
+  command: >
+    podman build
+    -t {{ _mcp.image }}
+    -f Dockerfile
+    {{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}
+  when:
+    - _mcp.build | default(true)
+    - google_mcp_source.stat.exists
+    - google_image_exists.rc != 0 or mcp_build.force_rebuild | default(false)
+  register: google_mcp_build
+  tags: ['mcp', 'mcp-google', 'mcp-build']
+
+- name: Deploy google-docs-mcp container
+  containers.podman.podman_container:
+    name: "{{ _mcp.container_name }}"
+    image: "{{ _mcp.image }}"
+    pull: never
+    state: started
+    network: "{{ mcp_servers.network }}"
+    memory: 128m
+    ports:
+      - "127.0.0.1:{{ _mcp.port }}:{{ _mcp.internal_port | default(_mcp.port) }}"
+    env: "{{ _mcp.env | default({}) }}"
+    volumes:
+      - "{{ mcp_servers.data_dir }}/google-docs:/app/data:Z"
+      - "{{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}/credentials.json:/app/credentials.json:ro"
+    restart_policy: "{{ mcp_runtime.restart_policy | default('unless-stopped') }}"
+  when: google_mcp_source.stat.exists
+  notify: verify mcp containers
+  tags: ['mcp', 'mcp-google']
+
+- name: Display google-docs-mcp status
+  debug:
+    msg: "google-docs-mcp deployed at http://127.0.0.1:{{ _mcp.port }}"
+  tags: ['mcp', 'mcp-google']

@@ -1,0 +1,1739 @@
+---
+# Authentik SSO Setup: Groups, Enrollment, OIDC Providers (Native OIDC)
+# Fully automated via Authentik API — zero manual UI steps
+#
+# Each service (Grafana, Portainer, OpenWebUI) uses native OIDC integration
+# directly with Authentik. No outpost or forward-auth proxy needed.
+#
+# Prerequisites:
+#   - Authentik deployed with bootstrap token
+#   - authentication.authentik.sso.enabled: true in all.yml
+#
+# Produces set_fact vars consumed by downstream roles:
+#   - grafana_oidc_client_id / grafana_oidc_client_secret
+#   - openwebui_oidc_client_id / openwebui_oidc_client_secret
+#   - portainer_oidc_client_id / portainer_oidc_client_secret
+
+- name: Set SSO variables
+  set_fact:
+    authentik_token: "{{ authentik_bootstrap_token }}"
+    sso_config: "{{ authentication.authentik.sso }}"
+    auth_domain: "auth.{{ domain_name }}"
+  tags: ['authentication', 'sso-setup']
+
+# ============================================================
+# Step 1: Wait for Authentik API
+# ============================================================
+
+- name: "[SSO] Wait for Authentik API readiness"
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/users/me/"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+    timeout: 10
+  register: sso_health
+  retries: 30
+  delay: 10
+  until: sso_health.status == 200
+  check_mode: no
+  tags: ['authentication', 'sso-setup']
+
+# ============================================================
+# Step 2: Create groups
+# ============================================================
+
+- name: "[SSO] Check existing groups"
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/groups/?search={{ item.value | urlencode }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_existing_groups
+  loop: "{{ sso_config.groups | dict2items }}"
+  loop_control:
+    label: "{{ item.value }}"
+  check_mode: no
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Create groups"
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/groups/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "{{ item.item.value }}"
+      is_superuser: "{{ item.item.key == 'admin' }}"
+    status_code: [200, 201]
+  loop: "{{ sso_existing_groups.results }}"
+  loop_control:
+    label: "{{ item.item.value }}"
+  when: item.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+# ============================================================
+# Step 3: Get default flows and signing key
+# ============================================================
+
+- name: "[SSO] Get default authorization flow"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/instances/?designation=authorization"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_auth_flows
+  check_mode: no
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Set authorization flow"
+  set_fact:
+    sso_authorization_flow_pk: "{{ sso_auth_flows.json.results[0].pk }}"
+    sso_authorization_flow_slug: "{{ sso_auth_flows.json.results[0].slug }}"
+  when: sso_auth_flows.json.results | length > 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Get default invalidation flow"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/instances/?designation=invalidation"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_invalidation_flows
+  check_mode: no
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Set invalidation flow"
+  set_fact:
+    sso_invalidation_flow_pk: "{{ sso_invalidation_flows.json.results[0].pk }}"
+  when: sso_invalidation_flows.json.results | length > 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Get default authentication flow"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/instances/?designation=authentication"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_authn_flows
+  check_mode: no
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Set authentication flow"
+  set_fact:
+    sso_authentication_flow_pk: "{{ sso_authn_flows.json.results[0].pk }}"
+    sso_authentication_flow_slug: "{{ sso_authn_flows.json.results[0].slug }}"
+  when: sso_authn_flows.json.results | length > 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Get signing certificate keypair"
+  uri:
+    url: "{{ authentik_url }}/api/v3/crypto/certificatekeypairs/?has_key=true"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_cert_keypairs
+  check_mode: no
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Set signing key"
+  set_fact:
+    sso_signing_key_pk: "{{ sso_cert_keypairs.json.results[0].pk }}"
+  when: sso_cert_keypairs.json.results | length > 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Generate signing keypair if none exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/crypto/certificatekeypairs/generate/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      common_name: "authentik SSO Signing Key"
+      subject_alt_name: "DNS:{{ auth_domain }}"
+      validity_days: 365
+    status_code: [200, 201]
+  register: sso_generated_keypair
+  when: sso_cert_keypairs.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Set signing key from generated keypair"
+  set_fact:
+    sso_signing_key_pk: "{{ sso_generated_keypair.json.pk }}"
+  when:
+    - sso_generated_keypair is defined
+    - sso_generated_keypair is not skipped
+  tags: ['authentication', 'sso-setup']
+
+# ============================================================
+# Step 4: Get default property mappings + create groups scope
+# ============================================================
+
+- name: "[SSO] Get default scope mappings"
+  uri:
+    url: "{{ authentik_url }}/api/v3/propertymappings/provider/scope/?ordering=scope_name"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_scope_mappings
+  check_mode: no
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Extract openid/email/profile mapping PKs"
+  set_fact:
+    sso_default_scopes: >-
+      {{ sso_scope_mappings.json.results
+         | selectattr('scope_name', 'in', ['openid', 'email', 'profile'])
+         | map(attribute='pk') | list }}
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Check if groups scope mapping exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/propertymappings/provider/scope/?scope_name=groups"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_groups_scope_check
+  check_mode: no
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Create groups scope mapping"
+  uri:
+    url: "{{ authentik_url }}/api/v3/propertymappings/provider/scope/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "SSO Groups Scope"
+      scope_name: "groups"
+      description: "Returns user group memberships"
+      expression: "return {\"groups\": [g.name for g in request.user.ak_groups.all()]}"
+    status_code: [200, 201]
+  register: sso_groups_scope_created
+  when: sso_groups_scope_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Set groups scope PK"
+  set_fact:
+    sso_groups_scope_pk: >-
+      {{ (sso_groups_scope_check.json.results | length > 0)
+         | ternary(sso_groups_scope_check.json.results[0].pk,
+                   sso_groups_scope_created.json.pk | default('')) }}
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Build complete scope list"
+  set_fact:
+    sso_all_scopes: "{{ sso_default_scopes + [sso_groups_scope_pk] }}"
+  tags: ['authentication', 'sso-setup']
+
+# ============================================================
+# Step 5: Create enrollment flow (self-service registration)
+# ============================================================
+
+- name: "[SSO] Check if enrollment flow exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/instances/?slug=self-service-enrollment"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_enrollment_flow_check
+  check_mode: no
+  when: sso_config.enrollment.enabled | default(true)
+  tags: ['authentication', 'sso-setup']
+
+# --- Create enrollment stages ---
+
+- name: "[SSO] Check if prompt stage exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/prompt/stages/?name=enrollment-prompt"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_prompt_stage_check
+  check_mode: no
+  when:
+    - sso_config.enrollment.enabled | default(true)
+    - sso_enrollment_flow_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Get prompt field definitions"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/prompt/prompts/"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_prompt_fields
+  check_mode: no
+  when:
+    - sso_config.enrollment.enabled | default(true)
+    - sso_enrollment_flow_check.json.results | length == 0
+    - sso_prompt_stage_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Extract prompt field PKs for enrollment"
+  set_fact:
+    sso_prompt_field_pks: >-
+      {{ sso_prompt_fields.json.results
+         | selectattr('field_key', 'in', ['username', 'email', 'name', 'password', 'password_repeat'])
+         | map(attribute='pk') | list }}
+  when:
+    - sso_prompt_fields is defined
+    - sso_prompt_fields is not skipped
+    - sso_prompt_fields.json is defined
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Create prompt stage"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/prompt/stages/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "enrollment-prompt"
+      fields: "{{ sso_prompt_field_pks | default([]) }}"
+      validation_policies: []
+    status_code: [200, 201]
+  register: sso_prompt_stage_created
+  when:
+    - sso_config.enrollment.enabled | default(true)
+    - sso_enrollment_flow_check.json.results | length == 0
+    - sso_prompt_stage_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Set prompt stage PK"
+  set_fact:
+    sso_prompt_stage_pk: >-
+      {{ (sso_prompt_stage_check is defined and sso_prompt_stage_check is not skipped and sso_prompt_stage_check.json.results | length > 0)
+         | ternary(sso_prompt_stage_check.json.results[0].pk | default(''),
+                   sso_prompt_stage_created.json.pk | default('')) }}
+  when: sso_config.enrollment.enabled | default(true)
+  tags: ['authentication', 'sso-setup']
+
+# --- User write stage ---
+
+- name: "[SSO] Check if user-write stage exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/user_write/?name=enrollment-user-write"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_user_write_check
+  check_mode: no
+  when:
+    - sso_config.enrollment.enabled | default(true)
+    - sso_enrollment_flow_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Get free_users group PK (default enrollment group)"
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/groups/?search={{ sso_config.groups.free | urlencode }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_users_group
+  check_mode: no
+  when: sso_config.enrollment.enabled | default(true)
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Create user-write stage"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/user_write/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "enrollment-user-write"
+      create_users_as_inactive: "{{ sso_config.enrollment.email_verification | default(true) }}"
+      create_users_group: "{{ sso_users_group.json.results[0].pk }}"
+      user_creation_mode: "always_create"
+      user_type: "internal"
+    status_code: [200, 201]
+  register: sso_user_write_created
+  when:
+    - sso_config.enrollment.enabled | default(true)
+    - sso_enrollment_flow_check.json.results | length == 0
+    - sso_user_write_check.json.results | length == 0
+    - sso_users_group.json.results | length > 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Set user-write stage PK"
+  set_fact:
+    sso_user_write_stage_pk: >-
+      {{ (sso_user_write_check is defined and sso_user_write_check is not skipped and sso_user_write_check.json.results | length > 0)
+         | ternary(sso_user_write_check.json.results[0].pk | default(''),
+                   sso_user_write_created.json.pk | default('')) }}
+  when: sso_config.enrollment.enabled | default(true)
+  tags: ['authentication', 'sso-setup']
+
+# --- Email verification stage ---
+
+- name: "[SSO] Check if email stage exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/email/?name=enrollment-email-verification"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_email_stage_check
+  check_mode: no
+  when:
+    - sso_config.enrollment.enabled | default(true)
+    - sso_config.enrollment.email_verification | default(true)
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Create email verification stage"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/email/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "enrollment-email-verification"
+      use_global_settings: false
+      host: "{{ authentik_smtp_host }}"
+      port: "{{ authentik_smtp_port | default(587) }}"
+      username: "{{ authentik_smtp_username }}"
+      password: "{{ authentik_smtp_password }}"
+      use_tls: true
+      use_ssl: false
+      timeout: 30
+      from_address: "{{ authentik_smtp_from }}"
+      activate_user_on_success: true
+      token_expiry: "minutes=30"
+      subject: "Verify your AICortex account"
+      template: "email/account_confirmation.html"
+    status_code: [200, 201]
+  register: sso_email_stage_created
+  when:
+    - sso_config.enrollment.enabled | default(true)
+    - sso_config.enrollment.email_verification | default(true)
+    - sso_email_stage_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Ensure email stage SMTP config"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/email/{{ sso_email_stage_check.json.results[0].pk }}/"
+    method: PATCH
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      use_global_settings: false
+      host: "{{ authentik_smtp_host }}"
+      port: "{{ authentik_smtp_port | default(587) }}"
+      username: "{{ authentik_smtp_username }}"
+      password: "{{ authentik_smtp_password }}"
+      use_tls: true
+      use_ssl: false
+      timeout: 30
+      from_address: "{{ authentik_smtp_from }}"
+      subject: "Verify your AICortex account"
+    status_code: [200]
+  when:
+    - sso_config.enrollment.enabled | default(true)
+    - sso_config.enrollment.email_verification | default(true)
+    - sso_email_stage_check.json.results | length > 0
+  changed_when: true
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Set email stage PK"
+  set_fact:
+    sso_email_stage_pk: >-
+      {{ (sso_email_stage_check is defined and sso_email_stage_check is not skipped and sso_email_stage_check.json.results | length > 0)
+         | ternary(sso_email_stage_check.json.results[0].pk | default(''),
+                   sso_email_stage_created.json.pk | default('')) }}
+  when:
+    - sso_config.enrollment.enabled | default(true)
+    - sso_config.enrollment.email_verification | default(true)
+  tags: ['authentication', 'sso-setup']
+
+# --- User login stage ---
+
+- name: "[SSO] Check if user-login stage exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/user_login/?name=enrollment-user-login"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_login_stage_check
+  check_mode: no
+  when:
+    - sso_config.enrollment.enabled | default(true)
+    - sso_enrollment_flow_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Create user-login stage"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/user_login/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "enrollment-user-login"
+      session_duration: "seconds=0"
+    status_code: [200, 201]
+  register: sso_login_stage_created
+  when:
+    - sso_config.enrollment.enabled | default(true)
+    - sso_enrollment_flow_check.json.results | length == 0
+    - sso_login_stage_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Set user-login stage PK"
+  set_fact:
+    sso_login_stage_pk: >-
+      {{ (sso_login_stage_check is defined and sso_login_stage_check is not skipped and sso_login_stage_check.json.results | length > 0)
+         | ternary(sso_login_stage_check.json.results[0].pk | default(''),
+                   sso_login_stage_created.json.pk | default('')) }}
+  when: sso_config.enrollment.enabled | default(true)
+  tags: ['authentication', 'sso-setup']
+
+# --- Create enrollment flow + bind stages ---
+
+- name: "[SSO] Create enrollment flow"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/instances/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "Self-Service Enrollment"
+      slug: "self-service-enrollment"
+      title: "Create an Account"
+      designation: "enrollment"
+      authentication: "none"
+    status_code: [200, 201]
+  register: sso_enrollment_flow_created
+  when:
+    - sso_config.enrollment.enabled | default(true)
+    - sso_enrollment_flow_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Set enrollment flow PK"
+  set_fact:
+    sso_enrollment_flow_pk: >-
+      {{ (sso_enrollment_flow_check is defined and sso_enrollment_flow_check is not skipped and sso_enrollment_flow_check.json.results | length > 0)
+         | ternary(sso_enrollment_flow_check.json.results[0].pk | default(''),
+                   sso_enrollment_flow_created.json.pk | default('')) }}
+    sso_enrollment_flow_slug: "self-service-enrollment"
+  when: sso_config.enrollment.enabled | default(true)
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Build stage binding list"
+  set_fact:
+    sso_enrollment_stages: >-
+      {{ [
+        {'stage': sso_prompt_stage_pk, 'order': 10},
+        {'stage': sso_user_write_stage_pk, 'order': 20}
+      ] + (
+        (sso_config.enrollment.email_verification | default(true))
+        | ternary(
+            [{'stage': sso_email_stage_pk | default(''), 'order': 30}],
+            []
+          )
+      ) + [
+        {'stage': sso_login_stage_pk, 'order': 40}
+      ] }}
+  when:
+    - sso_config.enrollment.enabled | default(true)
+    - sso_enrollment_flow_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Bind stages to enrollment flow"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/bindings/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      target: "{{ sso_enrollment_flow_pk }}"
+      stage: "{{ item.stage }}"
+      order: "{{ item.order }}"
+    status_code: [200, 201]
+  loop: "{{ sso_enrollment_stages }}"
+  loop_control:
+    label: "stage order {{ item.order }}"
+  when:
+    - sso_config.enrollment.enabled | default(true)
+    - sso_enrollment_flow_check.json.results | length == 0
+    - item.stage | default('') | length > 0
+  tags: ['authentication', 'sso-setup']
+
+# --- Link enrollment flow to default authentication flow ---
+
+- name: "[SSO] Link enrollment flow to default authentication flow"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/instances/{{ sso_authentication_flow_slug }}/"
+    method: PATCH
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      enrollment_flow: "{{ sso_enrollment_flow_pk }}"
+    status_code: 200
+  when:
+    - sso_config.enrollment.enabled | default(true)
+    - sso_enrollment_flow_pk is defined
+    - sso_enrollment_flow_pk | length > 0
+    - sso_authentication_flow_slug is defined
+  tags: ['authentication', 'sso-setup']
+
+# ============================================================
+# Step 5.5: MFA — TOTP setup (required for admins, optional for all)
+# ============================================================
+# Two authenticator validation stages bound to the authentication flow:
+#   order 30: mfa-admin-totp-required  (not_configured_action=configure, policy: is admin)
+#   order 31: mfa-user-totp-optional   (not_configured_action=skip, policy: is NOT admin)
+# Both share mfa-totp-setup (QR code enrollment) as the configuration stage.
+
+# --- 5.5a: TOTP setup stage (QR code enrollment) ---
+
+- name: "[MFA] Check if TOTP setup stage exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/authenticator/totp/?name=mfa-totp-setup"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: mfa_totp_setup_check
+  check_mode: no
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+- name: "[MFA] Create TOTP setup stage"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/authenticator/totp/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "mfa-totp-setup"
+      digits: "{{ sso_config.mfa.totp.digits | default(6) }}"
+    status_code: [200, 201]
+  register: mfa_totp_setup_created
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+    - mfa_totp_setup_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+- name: "[MFA] Set TOTP setup stage PK"
+  set_fact:
+    mfa_totp_setup_pk: >-
+      {{ (mfa_totp_setup_check.json.results | length > 0)
+         | ternary(mfa_totp_setup_check.json.results[0].pk,
+                   mfa_totp_setup_created.json.pk | default('')) }}
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+# --- 5.5b: Admin TOTP validation stage (required — configure if missing) ---
+
+- name: "[MFA] Check if admin TOTP validation stage exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/authenticator/validate/?name=mfa-admin-totp-required"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: mfa_admin_validate_check
+  check_mode: no
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+- name: "[MFA] Create admin TOTP validation stage"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/authenticator/validate/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "mfa-admin-totp-required"
+      not_configured_action: "configure"
+      device_classes:
+        - totp
+      configuration_stages:
+        - "{{ mfa_totp_setup_pk }}"
+    status_code: [200, 201]
+  register: mfa_admin_validate_created
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+    - mfa_admin_validate_check.json.results | length == 0
+    - mfa_totp_setup_pk | default('') | length > 0
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+- name: "[MFA] Set admin TOTP validation stage PK"
+  set_fact:
+    mfa_admin_validate_pk: >-
+      {{ (mfa_admin_validate_check.json.results | length > 0)
+         | ternary(mfa_admin_validate_check.json.results[0].pk,
+                   mfa_admin_validate_created.json.pk | default('')) }}
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+# --- 5.5c: User TOTP validation stage (optional — skip if not configured) ---
+
+- name: "[MFA] Check if user TOTP validation stage exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/authenticator/validate/?name=mfa-user-totp-optional"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: mfa_user_validate_check
+  check_mode: no
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+- name: "[MFA] Create user TOTP validation stage"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/authenticator/validate/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "mfa-user-totp-optional"
+      not_configured_action: "skip"
+      device_classes:
+        - totp
+      configuration_stages:
+        - "{{ mfa_totp_setup_pk }}"
+    status_code: [200, 201]
+  register: mfa_user_validate_created
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+    - mfa_user_validate_check.json.results | length == 0
+    - mfa_totp_setup_pk | default('') | length > 0
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+- name: "[MFA] Set user TOTP validation stage PK"
+  set_fact:
+    mfa_user_validate_pk: >-
+      {{ (mfa_user_validate_check.json.results | length > 0)
+         | ternary(mfa_user_validate_check.json.results[0].pk,
+                   mfa_user_validate_created.json.pk | default('')) }}
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+# --- 5.5d: Expression policy — is admin ---
+
+- name: "[MFA] Check if admin expression policy exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/policies/expression/?name=mfa-policy-is-admin"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: mfa_admin_policy_check
+  check_mode: no
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+- name: "[MFA] Create admin expression policy"
+  uri:
+    url: "{{ authentik_url }}/api/v3/policies/expression/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "mfa-policy-is-admin"
+      expression: 'return ak_is_group_member(request.user, name="admins")'
+      execution_logging: false
+    status_code: [200, 201]
+  register: mfa_admin_policy_created
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+    - mfa_admin_policy_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+- name: "[MFA] Set admin expression policy PK"
+  set_fact:
+    mfa_admin_policy_pk: >-
+      {{ (mfa_admin_policy_check.json.results | length > 0)
+         | ternary(mfa_admin_policy_check.json.results[0].pk,
+                   mfa_admin_policy_created.json.pk | default('')) }}
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+# --- 5.5e: Expression policy — is NOT admin ---
+
+- name: "[MFA] Check if non-admin expression policy exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/policies/expression/?name=mfa-policy-is-not-admin"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: mfa_nonadmin_policy_check
+  check_mode: no
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+- name: "[MFA] Create non-admin expression policy"
+  uri:
+    url: "{{ authentik_url }}/api/v3/policies/expression/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "mfa-policy-is-not-admin"
+      expression: 'return not ak_is_group_member(request.user, name="admins")'
+      execution_logging: false
+    status_code: [200, 201]
+  register: mfa_nonadmin_policy_created
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+    - mfa_nonadmin_policy_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+- name: "[MFA] Set non-admin expression policy PK"
+  set_fact:
+    mfa_nonadmin_policy_pk: >-
+      {{ (mfa_nonadmin_policy_check.json.results | length > 0)
+         | ternary(mfa_nonadmin_policy_check.json.results[0].pk,
+                   mfa_nonadmin_policy_created.json.pk | default('')) }}
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+# --- 5.5f: Bind admin TOTP validation stage to authentication flow (order 30) ---
+
+- name: "[MFA] Check if admin TOTP flow binding exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/bindings/?target={{ sso_authentication_flow_pk }}&stage={{ mfa_admin_validate_pk }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: mfa_admin_binding_check
+  check_mode: no
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+    - mfa_admin_validate_pk | default('') | length > 0
+    - sso_authentication_flow_pk is defined
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+- name: "[MFA] Bind admin TOTP validation to authentication flow"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/bindings/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      target: "{{ sso_authentication_flow_pk }}"
+      stage: "{{ mfa_admin_validate_pk }}"
+      order: 30
+      re_evaluate_policies: true
+    status_code: [200, 201]
+  register: mfa_admin_binding_created
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+    - mfa_admin_validate_pk | default('') | length > 0
+    - sso_authentication_flow_pk is defined
+    - mfa_admin_binding_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+- name: "[MFA] Set admin flow binding PK"
+  set_fact:
+    mfa_admin_flow_binding_pk: >-
+      {{ (mfa_admin_binding_check.json.results | length > 0)
+         | ternary(mfa_admin_binding_check.json.results[0].policybindingmodel_ptr_id,
+                   mfa_admin_binding_created.json.policybindingmodel_ptr_id | default('')) }}
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+# --- Bind admin policy to the admin flow stage binding ---
+# Note: /api/v3/policies/bindings/?target=<uuid> rejects FlowStageBinding PKs (400),
+# so we skip the pre-check and make the POST idempotent by accepting 400 (already exists).
+
+- name: "[MFA] Bind admin policy to admin flow stage binding"
+  uri:
+    url: "{{ authentik_url }}/api/v3/policies/bindings/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      target: "{{ mfa_admin_flow_binding_pk }}"
+      policy: "{{ mfa_admin_policy_pk }}"
+      order: 0
+      enabled: true
+      negate: false
+      timeout: 30
+    status_code: [200, 201, 400]
+  register: mfa_admin_policy_binding_result
+  changed_when: mfa_admin_policy_binding_result.status in [200, 201]
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+    - mfa_admin_flow_binding_pk | default('') | length > 0
+    - mfa_admin_policy_pk | default('') | length > 0
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+# --- 5.5g: Bind user TOTP validation stage to authentication flow (order 31) ---
+
+- name: "[MFA] Check if user TOTP flow binding exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/bindings/?target={{ sso_authentication_flow_pk }}&stage={{ mfa_user_validate_pk }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: mfa_user_binding_check
+  check_mode: no
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+    - mfa_user_validate_pk | default('') | length > 0
+    - sso_authentication_flow_pk is defined
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+- name: "[MFA] Bind user TOTP validation to authentication flow"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/bindings/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      target: "{{ sso_authentication_flow_pk }}"
+      stage: "{{ mfa_user_validate_pk }}"
+      order: 31
+      re_evaluate_policies: true
+    status_code: [200, 201]
+  register: mfa_user_binding_created
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+    - mfa_user_validate_pk | default('') | length > 0
+    - sso_authentication_flow_pk is defined
+    - mfa_user_binding_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+- name: "[MFA] Set user flow binding PK"
+  set_fact:
+    mfa_user_flow_binding_pk: >-
+      {{ (mfa_user_binding_check.json.results | length > 0)
+         | ternary(mfa_user_binding_check.json.results[0].policybindingmodel_ptr_id,
+                   mfa_user_binding_created.json.policybindingmodel_ptr_id | default('')) }}
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+# --- Bind non-admin policy to the user flow stage binding ---
+# Same pattern: POST is idempotent, 400 = already exists.
+
+- name: "[MFA] Bind non-admin policy to user flow stage binding"
+  uri:
+    url: "{{ authentik_url }}/api/v3/policies/bindings/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      target: "{{ mfa_user_flow_binding_pk }}"
+      policy: "{{ mfa_nonadmin_policy_pk }}"
+      order: 0
+      enabled: true
+      negate: false
+      timeout: 30
+    status_code: [200, 201, 400]
+  register: mfa_nonadmin_policy_binding_result
+  changed_when: mfa_nonadmin_policy_binding_result.status in [200, 201]
+  when:
+    - sso_config.mfa.enabled | default(false)
+    - sso_config.mfa.totp.enabled | default(false)
+    - mfa_user_flow_binding_pk | default('') | length > 0
+    - mfa_nonadmin_policy_pk | default('') | length > 0
+  tags: ['authentication', 'sso-setup', 'mfa']
+
+# ============================================================
+# Step 5.6: Password Recovery Flow (self-service password reset)
+# ============================================================
+# Sends a password reset link via email (uses global SMTP settings).
+# Flow stages: identification → email → password prompt → user write → user login
+
+# --- 5.6a: Check if recovery flow already exists ---
+
+- name: "[Recovery] Check if recovery flow exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/instances/?slug=password-recovery"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: recovery_flow_check
+  check_mode: no
+  when: sso_config.recovery.enabled | default(false)
+  tags: ['authentication', 'sso-setup']
+
+# --- 5.6b: Identification stage (user enters email/username) ---
+
+- name: "[Recovery] Check if identification stage exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/identification/?name=recovery-identification"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: recovery_ident_check
+  check_mode: no
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_flow_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Create identification stage"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/identification/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "recovery-identification"
+      user_fields:
+        - "email"
+        - "username"
+      show_matched_user: true
+    status_code: [200, 201]
+  register: recovery_ident_created
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_flow_check.json.results | length == 0
+    - recovery_ident_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Set identification stage PK"
+  set_fact:
+    recovery_ident_pk: >-
+      {{ (recovery_ident_check is defined and recovery_ident_check is not skipped and recovery_ident_check.json.results | length > 0)
+         | ternary(recovery_ident_check.json.results[0].pk | default(''),
+                   recovery_ident_created.json.pk | default('')) }}
+  when: sso_config.recovery.enabled | default(false)
+  tags: ['authentication', 'sso-setup']
+
+# --- 5.6c: Email stage (sends password reset link) ---
+
+- name: "[Recovery] Check if email stage exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/email/?name=recovery-email"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: recovery_email_check
+  check_mode: no
+  when:
+    - sso_config.recovery.enabled | default(false)
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Create email stage"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/email/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "recovery-email"
+      use_global_settings: false
+      host: "{{ authentik_smtp_host }}"
+      port: "{{ authentik_smtp_port | default(587) }}"
+      username: "{{ authentik_smtp_username }}"
+      password: "{{ authentik_smtp_password }}"
+      use_tls: true
+      use_ssl: false
+      timeout: 30
+      from_address: "{{ authentik_smtp_from }}"
+      activate_user_on_success: true
+      token_expiry: "minutes={{ sso_config.recovery.token_expiry | default(30) }}"
+      subject: "Reset your password"
+      template: "email/password_reset.html"
+    status_code: [200, 201]
+  register: recovery_email_created
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_email_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Ensure email stage SMTP config"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/email/{{ recovery_email_check.json.results[0].pk }}/"
+    method: PATCH
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      use_global_settings: false
+      host: "{{ authentik_smtp_host }}"
+      port: "{{ authentik_smtp_port | default(587) }}"
+      username: "{{ authentik_smtp_username }}"
+      password: "{{ authentik_smtp_password }}"
+      use_tls: true
+      use_ssl: false
+      timeout: 30
+      from_address: "{{ authentik_smtp_from }}"
+      subject: "Reset your password"
+    status_code: [200]
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_email_check.json.results | length > 0
+  changed_when: true
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Set email stage PK"
+  set_fact:
+    recovery_email_pk: >-
+      {{ (recovery_email_check is defined and recovery_email_check is not skipped and recovery_email_check.json.results | length > 0)
+         | ternary(recovery_email_check.json.results[0].pk | default(''),
+                   recovery_email_created.json.pk | default('')) }}
+  when: sso_config.recovery.enabled | default(false)
+  tags: ['authentication', 'sso-setup']
+
+# --- 5.6d: Password prompt stage (new password + confirm) ---
+
+- name: "[Recovery] Get prompt field definitions"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/prompt/prompts/"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: recovery_prompt_fields
+  check_mode: no
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_flow_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Extract password field PKs"
+  set_fact:
+    recovery_password_field_pks: >-
+      {{ recovery_prompt_fields.json.results
+         | selectattr('field_key', 'in', ['password', 'password_repeat'])
+         | map(attribute='pk') | list }}
+  when:
+    - recovery_prompt_fields is defined
+    - recovery_prompt_fields is not skipped
+    - recovery_prompt_fields.json is defined
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Check if prompt stage exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/prompt/stages/?name=recovery-password-prompt"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: recovery_prompt_check
+  check_mode: no
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_flow_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Create password prompt stage"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/prompt/stages/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "recovery-password-prompt"
+      fields: "{{ recovery_password_field_pks | default([]) }}"
+      validation_policies: []
+    status_code: [200, 201]
+  register: recovery_prompt_created
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_flow_check.json.results | length == 0
+    - recovery_prompt_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Set prompt stage PK"
+  set_fact:
+    recovery_prompt_pk: >-
+      {{ (recovery_prompt_check is defined and recovery_prompt_check is not skipped and recovery_prompt_check.json.results | length > 0)
+         | ternary(recovery_prompt_check.json.results[0].pk | default(''),
+                   recovery_prompt_created.json.pk | default('')) }}
+  when: sso_config.recovery.enabled | default(false)
+  tags: ['authentication', 'sso-setup']
+
+# --- 5.6e: User-write stage (writes new password, never creates user) ---
+
+- name: "[Recovery] Check if user-write stage exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/user_write/?name=recovery-user-write"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: recovery_write_check
+  check_mode: no
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_flow_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Create user-write stage"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/user_write/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "recovery-user-write"
+      create_users_as_inactive: false
+      user_creation_mode: "never_create"
+    status_code: [200, 201]
+  register: recovery_write_created
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_flow_check.json.results | length == 0
+    - recovery_write_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Set user-write stage PK"
+  set_fact:
+    recovery_write_pk: >-
+      {{ (recovery_write_check is defined and recovery_write_check is not skipped and recovery_write_check.json.results | length > 0)
+         | ternary(recovery_write_check.json.results[0].pk | default(''),
+                   recovery_write_created.json.pk | default('')) }}
+  when: sso_config.recovery.enabled | default(false)
+  tags: ['authentication', 'sso-setup']
+
+# --- 5.6f: User-login stage (auto-login after password reset) ---
+
+- name: "[Recovery] Check if user-login stage exists"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/user_login/?name=recovery-user-login"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: recovery_login_check
+  check_mode: no
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_flow_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Create user-login stage"
+  uri:
+    url: "{{ authentik_url }}/api/v3/stages/user_login/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "recovery-user-login"
+      session_duration: "seconds=0"
+    status_code: [200, 201]
+  register: recovery_login_created
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_flow_check.json.results | length == 0
+    - recovery_login_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Set user-login stage PK"
+  set_fact:
+    recovery_login_pk: >-
+      {{ (recovery_login_check is defined and recovery_login_check is not skipped and recovery_login_check.json.results | length > 0)
+         | ternary(recovery_login_check.json.results[0].pk | default(''),
+                   recovery_login_created.json.pk | default('')) }}
+  when: sso_config.recovery.enabled | default(false)
+  tags: ['authentication', 'sso-setup']
+
+# --- 5.6g: Create recovery flow + bind stages ---
+
+- name: "[Recovery] Create recovery flow"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/instances/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "Password Recovery"
+      slug: "password-recovery"
+      title: "Reset Your Password"
+      designation: "recovery"
+      authentication: "none"
+    status_code: [200, 201]
+  register: recovery_flow_created
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_flow_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Set recovery flow PK"
+  set_fact:
+    recovery_flow_pk: >-
+      {{ (recovery_flow_check is defined and recovery_flow_check is not skipped and recovery_flow_check.json.results | length > 0)
+         | ternary(recovery_flow_check.json.results[0].pk | default(''),
+                   recovery_flow_created.json.pk | default('')) }}
+  when: sso_config.recovery.enabled | default(false)
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Build stage binding list"
+  set_fact:
+    recovery_stages:
+      - { stage: "{{ recovery_ident_pk }}", order: 10 }
+      - { stage: "{{ recovery_email_pk }}", order: 20 }
+      - { stage: "{{ recovery_prompt_pk }}", order: 30 }
+      - { stage: "{{ recovery_write_pk }}", order: 40 }
+      - { stage: "{{ recovery_login_pk }}", order: 50 }
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_flow_check.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Bind stages to recovery flow"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/bindings/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      target: "{{ recovery_flow_pk }}"
+      stage: "{{ item.stage }}"
+      order: "{{ item.order }}"
+    status_code: [200, 201]
+  loop: "{{ recovery_stages }}"
+  loop_control:
+    label: "stage order {{ item.order }}"
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_flow_check.json.results | length == 0
+    - item.stage | default('') | length > 0
+  tags: ['authentication', 'sso-setup']
+
+# --- 5.6h: Link recovery flow to the default brand ---
+
+- name: "[Recovery] Get default brand"
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/brands/"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: recovery_brands
+  check_mode: no
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_flow_pk | default('') | length > 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[Recovery] Link recovery flow to default brand"
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/brands/{{ recovery_brands.json.results[0].brand_uuid }}/"
+    method: PATCH
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      flow_recovery: "{{ recovery_flow_pk }}"
+    status_code: 200
+  when:
+    - sso_config.recovery.enabled | default(false)
+    - recovery_flow_pk | default('') | length > 0
+    - recovery_brands.json.results | length > 0
+  tags: ['authentication', 'sso-setup']
+
+# ============================================================
+# Step 6: Create OAuth2/OIDC providers for each service
+# ============================================================
+
+- name: "[SSO] Check existing OIDC providers"
+  uri:
+    url: "{{ authentik_url }}/api/v3/providers/oauth2/?name=sso-{{ item.name }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_oidc_provider_checks
+  loop: "{{ sso_config.oidc_services }}"
+  loop_control:
+    label: "{{ item.name }}"
+  check_mode: no
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Create OIDC providers"
+  uri:
+    url: "{{ authentik_url }}/api/v3/providers/oauth2/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "sso-{{ item.item.name }}"
+      authorization_flow: "{{ sso_authorization_flow_pk }}"
+      invalidation_flow: "{{ sso_invalidation_flow_pk }}"
+      client_type: "confidential"
+      redirect_uris:
+        - url: "{{ item.item.redirect_uri }}"
+          matching_mode: "strict"
+      signing_key: "{{ sso_signing_key_pk }}"
+      property_mappings: "{{ sso_all_scopes }}"
+      sub_mode: "hashed_user_id"
+      include_claims_in_id_token: true
+      issuer_mode: "per_provider"
+    status_code: [200, 201]
+  register: sso_oidc_providers_created
+  loop: "{{ sso_oidc_provider_checks.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.json.results | length == 0
+  tags: ['authentication', 'sso-setup']
+
+# --- Register OIDC client_id/client_secret as facts ---
+
+- name: "[SSO] Set OIDC facts for newly created providers"
+  set_fact:
+    "{{ item.item.item.name }}_oidc_client_id": "{{ item.json.client_id }}"
+    "{{ item.item.item.name }}_oidc_client_secret": "{{ item.json.client_secret }}"
+  loop: "{{ sso_oidc_providers_created.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.item.name | default('skipped') }}"
+  when:
+    - item is not skipped
+    - item.json is defined
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Set OIDC facts for existing providers"
+  set_fact:
+    "{{ item.item.name }}_oidc_client_id": "{{ item.json.results[0].client_id }}"
+    "{{ item.item.name }}_oidc_client_secret": "{{ item.json.results[0].client_secret }}"
+  loop: "{{ sso_oidc_provider_checks.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.json.results | length > 0
+  tags: ['authentication', 'sso-setup']
+
+# ============================================================
+# Step 7: Create applications for each OIDC provider
+# ============================================================
+
+- name: "[SSO] Check existing applications"
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/applications/?slug={{ item.slug }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_app_checks
+  loop: "{{ sso_config.oidc_services }}"
+  loop_control:
+    label: "{{ item.name }}"
+  check_mode: no
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Get provider PKs for application creation"
+  uri:
+    url: "{{ authentik_url }}/api/v3/providers/oauth2/?name=sso-{{ item.item.name }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_provider_pks
+  loop: "{{ sso_app_checks.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.json.pagination.count == 0
+  check_mode: no
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Create applications"
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/applications/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "{{ item.item.item.name | title }}"
+      slug: "{{ item.item.item.slug }}"
+      provider: "{{ item.json.results[0].pk }}"
+      meta_launch_url: "https://{{ item.item.item.slug }}.{{ domain_name }}"
+      policy_engine_mode: "any"
+    status_code: [200, 201]
+  loop: "{{ sso_provider_pks.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.item.name | default('skipped') }}"
+  when:
+    - item is not skipped
+    - item.json is defined
+    - item.json.results | length > 0
+  tags: ['authentication', 'sso-setup']
+
+# ============================================================
+# Step 8: Create bookmark applications (non-OIDC admin services)
+# ============================================================
+
+- name: "[SSO] Check existing bookmark applications"
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/applications/?slug={{ item.slug }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_bookmark_app_checks
+  loop: "{{ sso_config.bookmark_services | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  check_mode: no
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Create bookmark applications"
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/applications/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "{{ item.item.name | title }}"
+      slug: "{{ item.item.slug }}"
+      meta_launch_url: "{{ item.item.launch_url }}"
+      policy_engine_mode: "any"
+    status_code: [200, 201]
+  loop: "{{ sso_bookmark_app_checks.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.name | default('skipped') }}"
+  when:
+    - item.json is defined
+    - item.json.pagination.count == 0
+  tags: ['authentication', 'sso-setup']
+
+# ============================================================
+# Step 9: Create group policy bindings (restrict admin services)
+# ============================================================
+
+- name: "[SSO] Build list of admin-restricted services"
+  set_fact:
+    sso_admin_restricted_services: >-
+      {{ (sso_config.oidc_services | selectattr('access_group', 'defined')
+          | selectattr('access_group', 'equalto', 'admin') | list)
+         + (sso_config.bookmark_services | default([])
+            | selectattr('access_group', 'defined')
+            | selectattr('access_group', 'equalto', 'admin') | list) }}
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Look up admins group PK"
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/groups/?search={{ sso_config.groups.admin | urlencode }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_admins_group_lookup
+  check_mode: no
+  when: sso_admin_restricted_services | length > 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Set admins group PK"
+  set_fact:
+    sso_admins_group_pk: "{{ sso_admins_group_lookup.json.results[0].pk }}"
+  when:
+    - sso_admins_group_lookup is not skipped
+    - sso_admins_group_lookup.json.results | length > 0
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Look up application PKs for binding"
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/applications/?slug={{ item.slug }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_binding_app_lookups
+  loop: "{{ sso_admin_restricted_services }}"
+  loop_control:
+    label: "{{ item.name }}"
+  check_mode: no
+  when: sso_admins_group_pk is defined
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Check existing policy bindings"
+  uri:
+    url: "{{ authentik_url }}/api/v3/policies/bindings/?target={{ item.json.results[0].pk }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: sso_existing_bindings
+  loop: "{{ sso_binding_app_lookups.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.name | default('skipped') }}"
+  when:
+    - item is not skipped
+    - item.json is defined
+    - item.json.results | length > 0
+  check_mode: no
+  tags: ['authentication', 'sso-setup']
+
+- name: "[SSO] Create group policy bindings for admin services"
+  uri:
+    url: "{{ authentik_url }}/api/v3/policies/bindings/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      target: "{{ item.item.json.results[0].pk }}"
+      group: "{{ sso_admins_group_pk }}"
+      order: 0
+      enabled: true
+      negate: false
+      timeout: 30
+    status_code: [200, 201]
+  loop: "{{ sso_existing_bindings.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.item.name | default('skipped') }}"
+  when:
+    - item is not skipped
+    - item.json is defined
+    - item.json.results | selectattr('group', 'equalto', sso_admins_group_pk) | list | length == 0
+  failed_when: false
+  tags: ['authentication', 'sso-setup']
+
+# ============================================================
+# Step 10: Display SSO summary (native OIDC - no outpost)
+# ============================================================
+
+- name: "[SSO] Display SSO setup summary"
+  debug:
+    msg:
+      - "============================================"
+      - "Authentik SSO Setup Complete (Native OIDC)"
+      - "============================================"
+      - ""
+      - "Auth Mode: Native OIDC per service (no outpost)"
+      - ""
+      - "Enrollment:"
+      - "  Self-service: {{ sso_config.enrollment.enabled | default(true) }}"
+      - "  Email verification: {{ sso_config.enrollment.email_verification | default(true) }}"
+      - "  Login page: https://{{ auth_domain }}"
+      - ""
+      - "OIDC Providers:"
+      - "  Grafana: client_id={{ grafana_oidc_client_id | default('(not created)') }}"
+      - "  OpenWebUI: client_id={{ openwebui_oidc_client_id | default('(not created)') }}"
+      - "  Portainer: client_id={{ portainer_oidc_client_id | default('(not created)') }}"
+      - ""
+      - "Bookmark Apps: {{ sso_config.bookmark_services | default([]) | map(attribute='name') | list | join(', ') }}"
+      - ""
+      - "Group Policy Bindings:"
+      - "  Admin-restricted: {{ sso_admin_restricted_services | default([]) | map(attribute='name') | list | join(', ') }}"
+      - "  Group: {{ sso_config.groups.admin }} (PK={{ sso_admins_group_pk | default('n/a') }})"
+      - ""
+      - "MFA (TOTP):"
+      - "  Enabled: {{ sso_config.mfa.enabled | default(false) }}"
+      - "  TOTP: {{ sso_config.mfa.totp.enabled | default(false) }}"
+      - "  Admin requirement: TOTP required (forced setup if missing)"
+      - "  Other users: TOTP optional (prompted if configured, skipped if not)"
+      - "  Admin validation stage: {{ mfa_admin_validate_pk | default('n/a') }}"
+      - "  User validation stage: {{ mfa_user_validate_pk | default('n/a') }}"
+      - ""
+      - "Password Recovery:"
+      - "  Enabled: {{ sso_config.recovery.enabled | default(false) }}"
+      - "  Flow: password-recovery (PK={{ recovery_flow_pk | default('n/a') }})"
+      - "  Token expiry: {{ sso_config.recovery.token_expiry | default(30) }} minutes"
+      - "  Email template: email/password_reset.html"
+      - ""
+      - "Groups: {{ sso_config.groups.admin }}, {{ sso_config.groups.free }}, {{ sso_config.groups.paid }}"
+      - "============================================"
+  tags: ['authentication', 'sso-setup']

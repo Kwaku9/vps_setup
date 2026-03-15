@@ -1,0 +1,173 @@
+---
+# Cloudflare Role Defaults
+# Provides Cloudflare Tunnel, DNS management, and Traefik ACME integration
+
+# Master enable/disable
+cloudflare_enabled: "{{ cloudflare.enabled | default(true) }}"
+
+# Cloudflare Tunnel Configuration
+cloudflare_tunnel:
+  enabled: "{{ cloudflare.tunnel.enabled | default(true) }}"
+  name: "{{ cloudflare.tunnel.name | default('alpine-vps-tunnel') }}"
+  image: "{{ cloudflare.tunnel.image | default('cloudflare/cloudflared:latest') }}"
+  container_name: "{{ cloudflare.tunnel.container_name | default('cloudflared') }}"
+  metrics_port: "{{ cloudflare.tunnel.metrics_port | default(2000) }}"
+  protocol: "{{ cloudflare.tunnel.protocol | default('quic') }}"
+  # Ingress rules - routes directly to services (bypasses Traefik)
+  ingress: "{{ cloudflare.tunnel.ingress | default([]) }}"
+
+# Cloudflare DNS API Configuration
+cloudflare_dns:
+  enabled: "{{ cloudflare.dns_api.enabled | default(true) }}"
+  ttl: "{{ cloudflare.dns_api.ttl | default(300) }}"
+  proxied: "{{ cloudflare.dns_api.proxied | default(true) }}"
+  auto_root_record: "{{ cloudflare.dns_api.auto_root_record | default(true) }}"
+  records: "{{ cloudflare.dns_api.records | default([]) }}"
+
+# Traefik ACME (Let's Encrypt) Configuration
+cloudflare_traefik:
+  enabled: "{{ cloudflare.traefik_integration.enabled | default(true) }}"
+  acme:
+    enabled: "{{ cloudflare.traefik_integration.acme.enabled | default(true) }}"
+    storage: "{{ cloudflare.traefik_integration.acme.storage | default('/etc/traefik/acme.json') }}"
+    ca_server: "{{ cloudflare.traefik_integration.acme.ca_server | default('https://acme-v02.api.letsencrypt.org/directory') }}"
+    # Use staging for testing: https://acme-staging-v02.api.letsencrypt.org/directory
+    dns_challenge:
+      delay_before_check: "{{ cloudflare.traefik_integration.acme.dns_challenge.delay_before_check | default('10s') }}"
+      resolvers: "{{ cloudflare.traefik_integration.acme.dns_challenge.resolvers | default(['1.1.1.1:53', '8.8.8.8:53']) }}"
+  # Domains for wildcard certificate
+  domains: "{{ cloudflare.traefik_integration.domains | default([]) }}"
+
+# Directory Configuration
+cloudflare_data_dir: "/opt/podman-data/cloudflare"
+cloudflare_config_dir: "/opt/compose/cloudflare"
+traefik_config_dir: "/opt/compose"
+traefik_dynamic_dir: "/opt/compose/traefik/dynamic"
+
+# Runtime Configuration
+cloudflare_restart_policy: "unless-stopped"
+cloudflare_memory_limit: "256m"
+cloudflare_cpu_limit: "0.5"
+
+# Network Configuration (use existing enterprise network)
+cloudflare_network: "{{ podman_network_name | default('enterprise_network') }}"
+
+# Credentials (loaded from vault.yml)
+# These are placeholders - actual values come from vault.yml
+cf_email: "{{ cloudflare_email | default('') }}"
+cf_api_token: "{{ cloudflare_api_token | default('') }}"
+cf_zone_id: "{{ cloudflare_zone_id | default('') }}"
+cf_tunnel_token: "{{ cloudflare_tunnel_token | default('') }}"
+cf_account_id: "{{ cloudflare_account_id | default('') }}"
+
+# Domain name (from all.yml or vault.yml)
+cf_domain: "{{ domain_name | default('') }}"
+
+# Cloudflare Access Configuration
+# Protects admin services with email OTP, bypasses public services
+cloudflare_access:
+  enabled: true
+  admin_email: "{{ cf_email }}"
+  session_duration: "24h"
+  public_services:
+    - "chat"
+    - "auth"
+    # hooks removed — orphaned (no Traefik route, no service behind it)
+    # otlp removed — internal telemetry uses Podman DNS (monitoring-pod:4318), public URL now behind CF Access
+  ssh_browser:
+    enabled: true
+    subdomain: "ssh"
+  authentik_idp:
+    enabled: "{{ authentication.authentik.cloudflare_integration.enabled | default(false) }}"
+    admin_group: "admins"
+
+# Default middleware chain applied to all Traefik routers unless overridden per-service
+traefik_default_middlewares:
+  - "internal-only"
+  - "secure-headers"
+  - "rate-limit"
+
+# External IP for DNS records
+cf_external_ip: "{{ external_ip | default(ansible_default_ipv4.address) }}"
+
+# Service routing - Traefik subdomain routing table
+# Tunnel sends all traffic to Traefik via wildcard; Traefik routes subdomains to services
+# Auth strategy: Native OIDC per service (no outpost/forward-auth)
+#   - grafana, portainer, openwebui: native OIDC with Authentik
+#   - n8n: built-in user management
+#   - prometheus, checkmk, litellm, traefik, kokoro-tts: internal only (bound to 127.0.0.1)
+cloudflare_exposed_services:
+  # NOTE: service_url uses Podman pod names, not container names.
+  # Containers inside pods are only DNS-resolvable by their pod name
+  # on the enterprise_network. Pod-to-service mapping:
+  #   monitoring-pod:    grafana, prometheus, checkmk, loki, node-exporter, cadvisor
+  #   management-pod:    portainer
+  #   ai-stack-pod:      open-webui, n8n-claude, litellm, kokoro-tts, ollama
+  #   authentication-pod: authentik-server, authentik-worker
+  #   frontend-pod:      nginx
+  #   traefik:           standalone (not in a pod)
+  - name: grafana
+    host: "grafana.{{ cf_domain }}"
+    service_url: "http://monitoring-pod:3000"
+    enabled: "{{ monitoring.grafana.enabled | default(true) }}"
+  - name: portainer
+    host: "portainer.{{ cf_domain }}"
+    service_url: "https://management-pod:9443"
+    enabled: "{{ management.portainer.enabled | default(true) }}"
+    tls_skip_verify: true
+  - name: n8n
+    host: "n8n.{{ cf_domain }}"
+    service_url: "http://ai-stack-pod:5678"
+    enabled: "{{ ai_stack.n8n_claude.enabled | default(true) }}"
+  - name: openwebui
+    host: "chat.{{ cf_domain }}"
+    service_url: "http://ai-stack-pod:8080"
+    enabled: "{{ ai_stack.openwebui.enabled | default(true) }}"
+  - name: prometheus
+    host: "prometheus.{{ cf_domain }}"
+    service_url: "http://monitoring-pod:9090"
+    enabled: "{{ monitoring.prometheus.enabled | default(true) }}"
+  - name: authentik
+    host: "auth.{{ cf_domain }}"
+    service_url: "http://authentication-pod:9000"
+    enabled: "{{ authentication.authentik.enabled | default(true) }}"
+    middlewares:
+      - "internal-only"
+      - "secure-headers"
+      # No rate-limit — OIDC token exchanges are bursty
+  - name: checkmk
+    host: "checkmk.{{ cf_domain }}"
+    service_url: "http://monitoring-pod:5000"
+    enabled: "{{ monitoring.checkmk.enabled | default(true) }}"
+  - name: litellm
+    host: "litellm.{{ cf_domain }}"
+    service_url: "http://ai-stack-pod:4000"
+    enabled: "{{ ai_stack.litellm.enabled | default(true) }}"
+  - name: traefik
+    host: "traefik.{{ cf_domain }}"
+    service_url: "http://traefik:8080"
+    enabled: "{{ shared_services.traefik.enabled | default(true) }}"
+  - name: kokoro-tts
+    host: "tts.{{ cf_domain }}"
+    service_url: "http://ai-stack-pod:8880"
+    enabled: "{{ ai_stack.kokoro_tts.enabled | default(true) }}"
+  - name: portal
+    host: "portal.{{ cf_domain }}"
+    service_url: "http://frontend-pod:80"
+    enabled: true
+  - name: otlp
+    host: "otlp.{{ cf_domain }}"
+    service_url: "http://monitoring-pod:4318"
+    enabled: true
+  - name: telegram-bot
+    host: "telegram-bot.{{ cf_domain }}"
+    service_url: "http://telegram-gateway:7555"
+    enabled: "{{ mcp_servers.servers.telegram_gateway.enabled | default(false) }}"
+  - name: worldview
+    host: "geo.{{ cf_domain }}"
+    service_url: "http://worldview-dev:5173"
+    enabled: true
+  - name: atlas-charts
+    host: "charts.{{ cf_domain }}"
+    service_url: "http://atlas-charts:3080"
+    enabled: "{{ trading.charts.enabled | default(true) }}"

@@ -1,0 +1,186 @@
+---
+# MCP Servers Role - Deploy and Configure MCP Servers for Claude Code
+# Builds containers, starts services, and generates mcp_settings.json
+#
+# Usage:
+#   ansible-playbook -i hosts site.yml --tags "mcp"
+#   ansible-playbook -i hosts site.yml --tags "mcp-n8n"
+#   ansible-playbook -i hosts site.yml --tags "mcp-config"
+
+- name: Display MCP servers deployment info
+  debug:
+    msg:
+      - "============================================"
+      - "Deploying MCP Servers for Claude Code"
+      - "============================================"
+      - "Workspace: {{ mcp_servers.workspace_base }}"
+      - "Config: {{ mcp_servers.config_dir }}"
+      - "Network: {{ mcp_servers.network }}"
+  tags: ['mcp', 'mcp-info']
+
+# =============================================================================
+# Prerequisites
+# =============================================================================
+
+- name: Ensure Claude prep has run
+  stat:
+    path: "{{ mcp_servers.workspace_base }}"
+  register: workspace_check
+  failed_when: not workspace_check.stat.exists
+  tags: ['mcp', 'prerequisites']
+
+- name: Create MCP data directory
+  file:
+    path: "{{ mcp_servers.data_dir }}"
+    state: directory
+    mode: '0755'
+  tags: ['mcp', 'directories']
+
+- name: Create MCP server data directories
+  file:
+    path: "{{ mcp_servers.data_dir }}/{{ item.key }}"
+    state: directory
+    mode: '0755'
+  loop: "{{ mcp_servers.servers | dict2items }}"
+  when: item.value.enabled | default(false)
+  tags: ['mcp', 'directories']
+
+- name: Ensure Claude config directory exists
+  file:
+    path: "{{ mcp_servers.config_dir }}"
+    state: directory
+    mode: '0700'
+  tags: ['mcp', 'directories']
+
+# =============================================================================
+# Individual MCP Server Deployments
+# =============================================================================
+
+- name: Deploy n8n-mcp server
+  include_tasks: n8n-mcp.yml
+  when: mcp_servers.servers.n8n_mcp.enabled | default(false)
+  tags: ['mcp', 'mcp-n8n']
+
+- name: Deploy Google Docs MCP server
+  include_tasks: google-docs-mcp.yml
+  when: mcp_servers.servers.google_docs.enabled | default(false)
+  tags: ['mcp', 'mcp-google']
+
+- name: Deploy Context7 MCP server
+  include_tasks: context7-mcp.yml
+  when: mcp_servers.servers.context7.enabled | default(false)
+  tags: ['mcp', 'mcp-context7']
+
+- name: Deploy IB MCP server (Interactive Brokers)
+  include_tasks: ib-mcp.yml
+  when: mcp_servers.servers.ib_mcp.enabled | default(false)
+  tags: ['mcp', 'mcp-ib']
+
+- name: Deploy Scrapy MCP server
+  include_tasks: scrapy-mcp.yml
+  when: mcp_servers.servers.scrapy.enabled | default(false)
+  tags: ['mcp', 'mcp-scrapy']
+
+- name: Deploy Telegram Gateway MCP server
+  include_tasks: telegram-gateway.yml
+  when: mcp_servers.servers.telegram_gateway.enabled | default(false)
+  tags: ['mcp', 'mcp-telegram']
+
+# =============================================================================
+# Claude CLI Registration
+# =============================================================================
+
+- name: Register HTTP MCP servers with Claude CLI
+  shell: |
+    claude mcp remove {{ item.value.name }} 2>/dev/null || true
+    claude mcp add --transport http {{ item.value.name }} \
+      http://127.0.0.1:{{ item.value.port }}{{ item.value.endpoint | default('/mcp') }} \
+      {% if item.value.requires_auth | default(false) %}--header "Authorization: Bearer {{ item.value.env.AUTH_TOKEN }}"{% endif %}
+  loop: "{{ mcp_servers.servers | dict2items }}"
+  when:
+    - item.value.enabled | default(false)
+    - item.value.transport | default('stdio') == 'http'
+  register: claude_mcp_http_add
+  changed_when: "'Added' in claude_mcp_http_add.stdout"
+  tags: ['mcp', 'mcp-register']
+
+- name: Register stdio MCP servers with Claude CLI
+  shell: |
+    claude mcp remove {{ item.value.name }} 2>/dev/null || true
+    claude mcp add {{ item.value.name }} -- podman exec -i {{ item.value.container_name }} {{ item.value.command | default('python /app/server.py') }}
+  loop: "{{ mcp_servers.servers | dict2items }}"
+  when:
+    - item.value.enabled | default(false)
+    - item.value.transport | default('stdio') == 'stdio'
+  register: claude_mcp_stdio_add
+  changed_when: "'Added' in claude_mcp_stdio_add.stdout"
+  tags: ['mcp', 'mcp-register']
+
+# =============================================================================
+# Configuration Generation (backup/reference)
+# =============================================================================
+
+- name: Generate Claude MCP settings file (reference)
+  template:
+    src: mcp_settings.json.j2
+    dest: "{{ mcp_servers.config_dir }}/mcp_settings.reference.json"
+    mode: '0600'
+  tags: ['mcp', 'mcp-config']
+
+- name: Generate workspace MCP settings (project-level reference)
+  template:
+    src: mcp_settings.json.j2
+    dest: "{{ mcp_servers.workspace_base }}/.claude/mcp_settings.reference.json"
+    mode: '0644'
+  when: mcp_servers.workspace_base is defined
+  failed_when: false
+  tags: ['mcp', 'mcp-config']
+
+# =============================================================================
+# Health Checks and Verification
+# =============================================================================
+
+- name: Wait for HTTP MCP servers to be ready
+  uri:
+    url: "http://127.0.0.1:{{ item.value.port }}{{ item.value.health_endpoint | default('/health') }}"
+    method: GET
+    status_code: [200, 204]
+  loop: "{{ mcp_servers.servers | dict2items }}"
+  when:
+    - item.value.enabled | default(false)
+    - item.value.transport | default('stdio') == 'http'
+    - item.value.health_endpoint is defined
+  retries: 5
+  delay: 5
+  register: mcp_health_checks
+  failed_when: false
+  tags: ['mcp', 'mcp-health']
+
+- name: Verify MCP containers are running
+  containers.podman.podman_container_info:
+    name: "{{ item.value.container_name }}"
+  loop: "{{ mcp_servers.servers | dict2items }}"
+  when: item.value.enabled | default(false)
+  register: mcp_container_status
+  failed_when: false
+  tags: ['mcp', 'mcp-verify']
+
+# =============================================================================
+# Summary
+# =============================================================================
+
+- name: Display MCP deployment summary
+  debug:
+    msg:
+      - "============================================"
+      - "MCP Servers Deployment Complete"
+      - "============================================"
+      - "Enabled servers:"
+      - "{% for server in mcp_servers.servers | dict2items %}{% if server.value.enabled | default(false) %}  - {{ server.value.name }}: {{ 'http://127.0.0.1:' ~ server.value.port if server.value.transport == 'http' else 'stdio' }}{% endif %}{% endfor %}"
+      - ""
+      - "Configuration written to:"
+      - "  {{ mcp_servers.config_dir }}/mcp_settings.json"
+      - ""
+      - "To verify: claude mcp list"
+      - "============================================"
+  tags: ['mcp', 'mcp-summary']

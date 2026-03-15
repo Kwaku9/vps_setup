@@ -1,0 +1,62 @@
+#!/bin/sh
+# {{ ansible_managed }}
+# Daily market scan summary — sends IV scanner results via Telegram Gateway.
+# Runs Mon-Fri after market close, after ivscan-daily.py has populated the DB.
+
+set -e
+
+# Only run on weekdays
+DOW=$(date +%u)
+if [ "$DOW" -gt 5 ]; then
+    exit 0
+fi
+
+TODAY=$(date +%Y-%m-%d)
+
+# Query today's IV scan results from PostgreSQL
+RESULTS=$(podman exec postgres psql -U postgres -d enterprise -t -A -F '|' -c "
+    SELECT ticker, score, signal, iv, z_score, iv_rank
+    FROM trading.iv_scan_results
+    WHERE scan_time::date = '${TODAY}'
+    ORDER BY score DESC
+    LIMIT 10
+" 2>/dev/null || echo "")
+
+if [ -z "$RESULTS" ]; then
+    # Check if the scan ran at all
+    if [ -f /usr/local/bin/ivscan-daily.py ]; then
+        MSG="<b>Daily Market Scan</b>\n\n<pre>No IV scan results for ${TODAY}.\nScanner may not have run yet or market was closed.</pre>"
+    else
+        MSG="<b>Daily Market Scan</b>\n\n<pre>IV scanner not installed.</pre>"
+    fi
+    /usr/local/bin/telegram-notify "$(printf '%b' "$MSG")" "HTML"
+    exit 0
+fi
+
+# Count total flagged stocks
+TOTAL_COUNT=$(printf '%s\n' "$RESULTS" | wc -l)
+
+# Build the report
+REPORT="Date: ${TODAY}\nStocks flagged: ${TOTAL_COUNT}\n\n"
+REPORT="${REPORT}Ticker  | Score | Signal     | IV     | Z-Score | IV Rank\n"
+REPORT="${REPORT}--------|-------|------------|--------|---------|--------\n"
+
+# Process each row
+printf '%s\n' "$RESULTS" | while IFS='|' read -r TICKER SCORE SIGNAL IV ZSCORE IVRANK; do
+    # Trim whitespace
+    TICKER=$(printf '%s' "$TICKER" | tr -d ' ')
+    SCORE=$(printf '%s' "$SCORE" | tr -d ' ')
+    SIGNAL=$(printf '%s' "$SIGNAL" | tr -d ' ')
+    IV=$(printf '%s' "$IV" | tr -d ' ')
+    ZSCORE=$(printf '%s' "$ZSCORE" | tr -d ' ')
+    IVRANK=$(printf '%s' "$IVRANK" | tr -d ' ')
+    printf '%-7s | %5s | %-10s | %6s | %7s | %s\n' \
+        "$TICKER" "$SCORE" "$SIGNAL" "$IV" "$ZSCORE" "$IVRANK"
+done > /tmp/market-report.txt
+
+REPORT="${REPORT}$(cat /tmp/market-report.txt)"
+rm -f /tmp/market-report.txt
+
+MSG="<b>Daily IV Scanner Report</b>\n\n<pre>$(printf '%b' "$REPORT")</pre>"
+
+/usr/local/bin/telegram-notify "$(printf '%b' "$MSG")" "HTML"

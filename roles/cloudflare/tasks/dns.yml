@@ -1,0 +1,89 @@
+---
+# Cloudflare DNS Record Management
+# Creates/updates DNS records via Cloudflare API
+
+- name: Debug API token value
+  debug:
+    msg: "Using token: [{{ cf_api_token }}] Zone: [{{ cf_zone_id }}]"
+  tags: ['cloudflare', 'dns', 'debug']
+
+- name: Fetch existing DNS records from Cloudflare
+  uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ cf_zone_id }}/dns_records"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: existing_dns_records
+  tags: ['cloudflare', 'dns', 'fetch']
+
+- name: Parse existing DNS records
+  set_fact:
+    existing_records_map: >-
+      {{ existing_dns_records.json.result | default([]) |
+         items2dict(key_name='name', value_name='id') }}
+    existing_records_list: "{{ existing_dns_records.json.result | default([]) }}"
+  tags: ['cloudflare', 'dns', 'parse']
+
+- name: Display existing DNS records
+  debug:
+    msg: |
+      Found {{ existing_records_list | length }} existing DNS records for zone {{ cf_zone_id }}
+      Records: {{ existing_records_list | map(attribute='name') | list | join(', ') }}
+    verbosity: 1
+  tags: ['cloudflare', 'dns', 'debug']
+
+# Create root CNAME record pointing to tunnel if tunnel is enabled
+# Otherwise create A record pointing to external IP
+- name: Create/update root record ({{ cf_domain }}) - Tunnel CNAME
+  include_tasks: dns-record.yml
+  vars:
+    dns_record:
+      name: "{{ cf_domain }}"
+      type: "CNAME"
+      content: "{{ tunnel_id }}.cfargotunnel.com"
+      proxied: "{{ cloudflare_dns.proxied }}"
+      ttl: "{{ cloudflare_dns.ttl }}"
+  when:
+    - cloudflare_dns.auto_root_record | bool
+    - cloudflare_tunnel.enabled | bool
+    - tunnel_id is defined
+  tags: ['cloudflare', 'dns', 'root', 'tunnel']
+
+- name: Create/update root record ({{ cf_domain }}) - A record (no tunnel)
+  include_tasks: dns-record.yml
+  vars:
+    dns_record:
+      name: "{{ cf_domain }}"
+      type: "A"
+      content: "{{ cf_external_ip }}"
+      proxied: "{{ cloudflare_dns.proxied }}"
+      ttl: "{{ cloudflare_dns.ttl }}"
+  when:
+    - cloudflare_dns.auto_root_record | bool
+    - not (cloudflare_tunnel.enabled | bool) or tunnel_id is not defined
+  tags: ['cloudflare', 'dns', 'root']
+
+# Process configured DNS records
+- name: Create/update configured DNS records
+  include_tasks: dns-record.yml
+  vars:
+    dns_record: "{{ item }}"
+  loop: "{{ cloudflare_dns.records }}"
+  loop_control:
+    label: "{{ item.name | default('unknown') }}"
+  when: cloudflare_dns.records | length > 0
+  tags: ['cloudflare', 'dns', 'records']
+
+- name: Display DNS configuration summary
+  debug:
+    msg: |
+      DNS Configuration Summary:
+        Zone ID: {{ cf_zone_id }}
+        Domain: {{ cf_domain }}
+        Auto root record: {{ cloudflare_dns.auto_root_record }}
+        Configured records: {{ cloudflare_dns.records | length }}
+        Default TTL: {{ cloudflare_dns.ttl }}
+        Default proxied: {{ cloudflare_dns.proxied }}
+  tags: ['cloudflare', 'dns', 'summary']

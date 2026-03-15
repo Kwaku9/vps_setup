@@ -1,0 +1,541 @@
+---
+# Grafana Unified Alerting — Telegram contact point, notification policy, and 5 alert rules
+# Runs after Grafana container is deployed. All calls use the Grafana Provisioning API.
+#
+# Alert rules:
+#   1. Disk > 80%       — fires immediately, re-notifies every 24h until resolved
+#   2. CPU > 93%        — sustained 8 consecutive minutes
+#   3. Memory > 95%     — sustained 7 minutes
+#   4. Memory > 99%     — sustained 2 minutes  (critical)
+#   5. Memory > 99%     — sustained 30 minutes (escalation)
+#   6. OOM Kill         — fires immediately on kernel OOM kill, re-notifies every 30m
+#   7. Authentik Login  — 3+ failed logins in 5 min, re-notifies every 10m
+
+- name: "[Grafana Alerting] Wait for Grafana API"
+  uri:
+    url: "http://127.0.0.1:3000/api/health"
+    method: GET
+    status_code: 200
+  register: grafana_health
+  retries: 18
+  delay: 10
+  until: grafana_health.status == 200
+  changed_when: false
+  tags: ['monitoring', 'grafana', 'grafana-alerting']
+
+# --- Folder ---
+
+- name: "[Grafana Alerting] Create Infra Alerts folder"
+  uri:
+    url: "http://127.0.0.1:3000/api/folders"
+    method: POST
+    url_username: "{{ monitoring.grafana.admin_user | default('admin') }}"
+    url_password: "{{ grafana_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      uid: "infra-alerts"
+      title: "Infra Alerts"
+    status_code: [200, 409, 412]
+  changed_when: false
+  tags: ['monitoring', 'grafana', 'grafana-alerting']
+
+# --- Telegram Contact Point ---
+
+- name: "[Grafana Alerting] Get existing contact points"
+  uri:
+    url: "http://127.0.0.1:3000/api/v1/provisioning/contact-points"
+    method: GET
+    url_username: "{{ monitoring.grafana.admin_user | default('admin') }}"
+    url_password: "{{ grafana_password }}"
+    force_basic_auth: true
+    status_code: 200
+  register: grafana_contact_points
+  changed_when: false
+  tags: ['monitoring', 'grafana', 'grafana-alerting']
+
+- name: "[Grafana Alerting] Set contact point existence fact"
+  set_fact:
+    grafana_telegram_cp_exists: "{{ grafana_contact_points.json | selectattr('uid', 'eq', 'telegram-personal') | list | length > 0 }}"
+  tags: ['monitoring', 'grafana', 'grafana-alerting']
+
+- name: "[Grafana Alerting] Create Telegram contact point"
+  uri:
+    url: "http://127.0.0.1:3000/api/v1/provisioning/contact-points"
+    method: POST
+    url_username: "{{ monitoring.grafana.admin_user | default('admin') }}"
+    url_password: "{{ grafana_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      uid: "telegram-personal"
+      name: "Telegram"
+      type: "telegram"
+      settings:
+        bottoken: "{{ telegram_bot_token }}"
+        chatid: "{{ monitoring.grafana.alerting_telegram_chat_id }}"
+        message: |
+          {{ '{{' }} template "default.message" . {{ '}}' }}
+      disableResolveMessage: false
+    status_code: [200, 201, 202]
+  when: not grafana_telegram_cp_exists
+  tags: ['monitoring', 'grafana', 'grafana-alerting']
+
+- name: "[Grafana Alerting] Update Telegram contact point"
+  uri:
+    url: "http://127.0.0.1:3000/api/v1/provisioning/contact-points/telegram-personal"
+    method: PUT
+    url_username: "{{ monitoring.grafana.admin_user | default('admin') }}"
+    url_password: "{{ grafana_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      uid: "telegram-personal"
+      name: "Telegram"
+      type: "telegram"
+      settings:
+        bottoken: "{{ telegram_bot_token }}"
+        chatid: "{{ monitoring.grafana.alerting_telegram_chat_id }}"
+        message: |
+          {{ '{{' }} template "default.message" . {{ '}}' }}
+      disableResolveMessage: false
+    status_code: [200, 202]
+  when: grafana_telegram_cp_exists
+  tags: ['monitoring', 'grafana', 'grafana-alerting']
+
+# --- Notification Policy ---
+
+- name: "[Grafana Alerting] Set notification policy"
+  uri:
+    url: "http://127.0.0.1:3000/api/v1/provisioning/policies"
+    method: PUT
+    url_username: "{{ monitoring.grafana.admin_user | default('admin') }}"
+    url_password: "{{ grafana_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      receiver: "Telegram"
+      group_by: ["alertname"]
+      group_wait: "30s"
+      group_interval: "5m"
+      repeat_interval: "4h"
+      routes:
+        - receiver: "Telegram"
+          matchers: ["alertname=DiskHigh"]
+          repeat_interval: "24h"
+          continue: false
+        - receiver: "Telegram"
+          matchers: ["alertname=MemCritical30m"]
+          repeat_interval: "1h"
+          continue: false
+        - receiver: "Telegram"
+          matchers: ["alertname=OomKillDetected"]
+          repeat_interval: "30m"
+          continue: false
+        - receiver: "Telegram"
+          matchers: ["alertname=LokiOomKill"]
+          repeat_interval: "30m"
+          continue: false
+        - receiver: "Telegram"
+          matchers: ["alertname=AuthentikLoginFailed"]
+          repeat_interval: "10m"
+          continue: false
+        - receiver: "Telegram"
+          matchers: ["alertname=CloudflareTunnelDown"]
+          repeat_interval: "30m"
+          continue: false
+        - receiver: "Telegram"
+          matchers: ["alertname=HighUserSpend"]
+          repeat_interval: "24h"
+          continue: false
+    status_code: [202]
+  tags: ['monitoring', 'grafana', 'grafana-alerting']
+
+# --- Alert Rules ---
+
+- name: "[Grafana Alerting] Get existing alert rules"
+  uri:
+    url: "http://127.0.0.1:3000/api/v1/provisioning/alert-rules"
+    method: GET
+    url_username: "{{ monitoring.grafana.admin_user | default('admin') }}"
+    url_password: "{{ grafana_password }}"
+    force_basic_auth: true
+    status_code: 200
+  register: grafana_existing_rules
+  changed_when: false
+  tags: ['monitoring', 'grafana', 'grafana-alerting']
+
+- name: "[Grafana Alerting] Set existing rule UIDs fact"
+  set_fact:
+    grafana_existing_rule_uids: "{{ grafana_existing_rules.json | map(attribute='uid') | list }}"
+  tags: ['monitoring', 'grafana', 'grafana-alerting']
+
+- name: "[Grafana Alerting] Define alert rules"
+  set_fact:
+    grafana_alert_rules:
+      - uid: "disk-high-80"
+        title: "DiskHigh"
+        for: "0s"
+        condition: "C"
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "Disk usage > 80% on {{ '{{' }} $labels.instance {{ '}}' }} ({{ '{{' }} $labels.mountpoint {{ '}}' }})"
+          description: "Disk is at {{ '{{' }} $value | printf \"%.1f\" {{ '}}' }}%. Will re-alert every 24h until below 80%."
+        expr: "100 * (1 - node_filesystem_avail_bytes{mountpoint='/',fstype!~'tmpfs|overlay'} / node_filesystem_size_bytes{mountpoint='/',fstype!~'tmpfs|overlay'})"
+        threshold: 80
+
+      - uid: "cpu-sustained-93"
+        title: "CpuSustained"
+        for: "8m"
+        condition: "C"
+        labels:
+          severity: "critical"
+        annotations:
+          summary: "CPU > 93% for 8+ minutes on {{ '{{' }} $labels.instance {{ '}}' }}"
+          description: "CPU usage has been above 93% for 8 consecutive minutes."
+        expr: "100 - avg(rate(node_cpu_seconds_total{mode='idle'}[2m])) * 100"
+        threshold: 93
+
+      - uid: "mem-high-95"
+        title: "MemHigh"
+        for: "7m"
+        condition: "C"
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "Memory > 95% for 7+ minutes on {{ '{{' }} $labels.instance {{ '}}' }}"
+          description: "Memory usage has been above 95% for 7 consecutive minutes."
+        expr: "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)"
+        threshold: 95
+
+      - uid: "mem-critical-99-2m"
+        title: "MemCritical2m"
+        for: "2m"
+        condition: "C"
+        labels:
+          severity: "critical"
+        annotations:
+          summary: "Memory at 100% for 2+ minutes on {{ '{{' }} $labels.instance {{ '}}' }}"
+          description: "Memory is essentially fully exhausted (>99%) for over 2 minutes. Immediate action required."
+        expr: "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)"
+        threshold: 99
+
+      - uid: "mem-critical-99-30m"
+        title: "MemCritical30m"
+        for: "30m"
+        condition: "C"
+        labels:
+          severity: "page"
+        annotations:
+          summary: "ESCALATION — Memory at 100% for 30+ minutes on {{ '{{' }} $labels.instance {{ '}}' }}"
+          description: "Memory has been fully exhausted (>99%) for over 30 minutes. Critical escalation."
+        expr: "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)"
+        threshold: 99
+
+      - uid: "authentik-login-failed"
+        title: "AuthentikLoginFailed"
+        for: "0s"
+        condition: "C"
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "3+ failed logins in 5 minutes on Authentik"
+          description: "Authentik detected 3 or more failed login attempts in the last 5-minute window. Check `authentik_events_recent_by_user` for affected users and `authentik_login_failed_by_ip` for source IPs."
+        expr: "authentik_events_recent{action='login_failed'}"
+        threshold: 2
+
+      - uid: "oom-kill-detected"
+        title: "OomKillDetected"
+        for: "0s"
+        condition: "C"
+        labels:
+          severity: "critical"
+        annotations:
+          summary: "OOM kill detected on {{ '{{' }} $labels.instance {{ '}}' }}"
+          description: "The kernel OOM killer terminated a process in the last 5 minutes. Check `dmesg` for details."
+        expr: "increase(node_vmstat_oom_kill{job='node-exporter'}[5m])"
+        threshold: 0
+
+      - uid: "container-down"
+        title: "ContainerDown"
+        for: "5m"
+        condition: "C"
+        labels:
+          severity: "critical"
+        annotations:
+          summary: "Container {{ '{{' }} $labels.name {{ '}}' }} is down (pod: {{ '{{' }} $labels.pod_name {{ '}}' }})"
+          description: "Container {{ '{{' }} $labels.name {{ '}}' }} has been in a non-running state for more than 5 minutes. State value: {{ '{{' }} $value {{ '}}' }} (3=stopped 4=paused 7=exited 8=dead)"
+        expr: "podman_container_state * on(id) group_left(name, pod_name) podman_container_info{name!~'.*-infra|wazuh-indexer|wazuh-manager|wazuh-dashboard|wazuh-agent|n8n-mcp|context7-mcp|scrapy-mcp|scrapy-mcp-server|n8n-claude'}"
+        threshold: 2
+
+      - uid: "loki-oom-kill"
+        title: "LokiOomKill"
+        for: "0s"
+        condition: "C"
+        datasourceUid: "loki"
+        instant: false
+        labels:
+          severity: "critical"
+        annotations:
+          summary: "OOM kill: {{ '{{' }} $labels.oom_process {{ '}}' }} terminated on {{ '{{' }} $labels.host {{ '}}' }}"
+          description: "The kernel OOM killer terminated process '{{ '{{' }} $labels.oom_process {{ '}}' }}' on host {{ '{{' }} $labels.host {{ '}}' }}. Open the incident dashboard for PID, container cgroup, and full context: https://grafana.REDACTED_DOMAIN/d/host-incident?var-instance={{ '{{' }} $labels.host {{ '}}' }}&from=now-2h&to=now"
+        expr: "sum by (host, oom_process) (count_over_time({job=~\"syslog|system_logs\", oom_process!=\"\"} [5m]))"
+        threshold: 0
+
+      - uid: "cloudflare-tunnel-down"
+        title: "CloudflareTunnelDown"
+        for: "2m"
+        condition: "C"
+        labels:
+          severity: "critical"
+        annotations:
+          summary: "Cloudflare tunnel has no HA connections"
+          description: "The Cloudflare tunnel has lost all HA connections. All public ingress is down."
+        expr: "(1 - clamp_max(cloudflared_tunnel_ha_connections, 1)) or absent(cloudflared_tunnel_ha_connections)"
+        threshold: 0
+
+      - uid: "traefik-high-error-rate"
+        title: "TraefikHighErrorRate"
+        for: "5m"
+        condition: "C"
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "Traefik 5xx error rate above 5%"
+          description: "Traefik is returning 5xx errors on more than 5% of requests for 5+ minutes."
+        expr: "sum(rate(traefik_service_requests_total{code=~'5..'}[5m])) / clamp_min(traefik:requests:rate5m, 0.001)"
+        threshold: 0.05
+
+      - uid: "traefik-5xx-spike"
+        title: "Traefik5xxSpike"
+        for: "3m"
+        condition: "C"
+        labels:
+          severity: "critical"
+        annotations:
+          summary: "5xx error spike — backend failures above 10%"
+          description: "Traefik 5xx error ratio exceeded 10% for 3+ minutes. Likely a backend is down or crashing."
+        expr: "sum(rate(traefik_service_requests_total{code=~'5..'}[3m])) / clamp_min(sum(rate(traefik_service_requests_total[3m])), 0.001)"
+        threshold: 0.10
+
+      - uid: "high-4xx-rate"
+        title: "High4xxRate"
+        for: "5m"
+        condition: "C"
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "High 4xx rate — possible scanning or credential stuffing"
+          description: "4xx error ratio exceeded 30% for 5+ minutes. May indicate reconnaissance or brute-force activity."
+        expr: "sum(rate(traefik_service_requests_total{code=~'4..'}[5m])) / clamp_min(sum(rate(traefik_service_requests_total[5m])), 0.001)"
+        threshold: 0.30
+
+      - uid: "traffic-spike"
+        title: "TrafficSpike"
+        for: "3m"
+        condition: "C"
+        labels:
+          severity: "critical"
+        annotations:
+          summary: "Traffic spike — 10x normal rate"
+          description: "Current request rate is more than 10x the 1-hour average. Possible DDoS or bot flood."
+        expr: "sum(rate(traefik_entrypoint_requests_total[3m])) / clamp_min(avg_over_time(sum(rate(traefik_entrypoint_requests_total[5m]))[1h:5m]), 0.001)"
+        threshold: 10
+
+      - uid: "litellm-high-error-rate"
+        title: "LiteLLMHighErrorRate"
+        for: "5m"
+        condition: "C"
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "LiteLLM error rate above 5%"
+          description: "LiteLLM is failing more than 5% of requests for 5+ minutes. Check provider status and API keys."
+        expr: "litellm:error_ratio:ratio5m"
+        threshold: 0.05
+
+      - uid: "litellm-high-latency"
+        title: "LiteLLMHighLatency"
+        for: "5m"
+        condition: "C"
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "LiteLLM P95 latency above 30 seconds"
+          description: "LiteLLM P95 request latency has exceeded 30 seconds for 5+ minutes. Check provider response times."
+        expr: "max(model:litellm_latency:p95_5m)"
+        threshold: 30
+
+      - uid: "high-user-spend"
+        title: "HighUserSpend"
+        for: "1m"
+        condition: "C"
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "A user has exceeded $50 in LiteLLM spend"
+          description: "At least one user has accumulated over $50 in LiteLLM API spend. Check the AI stack dashboard for a breakdown."
+        expr: "max(user:litellm_spend:total)"
+        threshold: 50
+
+      - uid: "alloy-otel-failures"
+        title: "AlloyOTELFailures"
+        for: "5m"
+        condition: "C"
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "Alloy OTEL exporter failing to send spans"
+          description: "Alloy has been dropping spans for 5+ minutes. Traces may be incomplete. Check Tempo and Alloy logs."
+        expr: "rate(otelcol_exporter_send_failed_spans_total[5m])"
+        threshold: 0
+
+      - uid: "prometheus-target-missing"
+        title: "PrometheusTargetMissing"
+        for: "5m"
+        condition: "C"
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "Critical Prometheus scrape target has disappeared"
+          description: "One of litellm, traefik, or authentik is no longer being scraped by Prometheus. Metrics may be stale."
+        expr: "absent(up{job='litellm'}) or absent(up{job='traefik'}) or absent(up{job='authentik'})"
+        threshold: 0
+  tags: ['monitoring', 'grafana', 'grafana-alerting']
+
+- name: "[Grafana Alerting] Create new alert rules"
+  uri:
+    url: "http://127.0.0.1:3000/api/v1/provisioning/alert-rules"
+    method: POST
+    url_username: "{{ monitoring.grafana.admin_user | default('admin') }}"
+    url_password: "{{ grafana_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      uid: "{{ item.uid }}"
+      title: "{{ item.title }}"
+      ruleGroup: "infra"
+      folderUID: "infra-alerts"
+      for: "{{ item.for }}"
+      condition: "{{ item.condition }}"
+      noDataState: "OK"
+      execErrState: "Error"
+      isPaused: false
+      labels: "{{ item.labels }}"
+      annotations: "{{ item.annotations }}"
+      data:
+        - refId: "A"
+          queryType: ""
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: "{{ item.datasourceUid | default('prometheus') }}"
+          model:
+            expr: "{{ item.expr }}"
+            refId: "A"
+            instant: "{{ item.instant | default(true) }}"
+        - refId: "B"
+          queryType: "__expr__"
+          relativeTimeRange:
+            from: 0
+            to: 0
+          datasourceUid: "-100"
+          model:
+            refId: "B"
+            type: "reduce"
+            expression: "A"
+            reducer: "last"
+            settings:
+              mode: "dropNN"
+        - refId: "C"
+          queryType: "__expr__"
+          relativeTimeRange:
+            from: 0
+            to: 0
+          datasourceUid: "-100"
+          model:
+            refId: "C"
+            type: "threshold"
+            expression: "B"
+            conditions:
+              - evaluator:
+                  params: ["{{ item.threshold }}"]
+                  type: "gt"
+                unloadEvaluator: null
+    status_code: [200, 201]
+  loop: "{{ grafana_alert_rules }}"
+  when: item.uid not in grafana_existing_rule_uids
+  tags: ['monitoring', 'grafana', 'grafana-alerting']
+
+- name: "[Grafana Alerting] Update existing alert rules"
+  uri:
+    url: "http://127.0.0.1:3000/api/v1/provisioning/alert-rules/{{ item.uid }}"
+    method: PUT
+    url_username: "{{ monitoring.grafana.admin_user | default('admin') }}"
+    url_password: "{{ grafana_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      uid: "{{ item.uid }}"
+      title: "{{ item.title }}"
+      ruleGroup: "infra"
+      folderUID: "infra-alerts"
+      for: "{{ item.for }}"
+      condition: "{{ item.condition }}"
+      noDataState: "OK"
+      execErrState: "Error"
+      isPaused: false
+      labels: "{{ item.labels }}"
+      annotations: "{{ item.annotations }}"
+      data:
+        - refId: "A"
+          queryType: ""
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: "{{ item.datasourceUid | default('prometheus') }}"
+          model:
+            expr: "{{ item.expr }}"
+            refId: "A"
+            instant: "{{ item.instant | default(true) }}"
+        - refId: "B"
+          queryType: "__expr__"
+          relativeTimeRange:
+            from: 0
+            to: 0
+          datasourceUid: "-100"
+          model:
+            refId: "B"
+            type: "reduce"
+            expression: "A"
+            reducer: "last"
+            settings:
+              mode: "dropNN"
+        - refId: "C"
+          queryType: "__expr__"
+          relativeTimeRange:
+            from: 0
+            to: 0
+          datasourceUid: "-100"
+          model:
+            refId: "C"
+            type: "threshold"
+            expression: "B"
+            conditions:
+              - evaluator:
+                  params: ["{{ item.threshold }}"]
+                  type: "gt"
+                unloadEvaluator: null
+    status_code: [200, 202]
+  loop: "{{ grafana_alert_rules }}"
+  when: item.uid in grafana_existing_rule_uids
+  tags: ['monitoring', 'grafana', 'grafana-alerting']
+
+- name: "[Grafana Alerting] Summary"
+  debug:
+    msg:
+      - "Grafana Alerting configured:"
+      - "  Contact point: Telegram → chat {{ monitoring.grafana.alerting_telegram_chat_id }}"
+      - "  Rules: DiskHigh, CpuSustained, MemHigh, MemCritical2m, MemCritical30m, OomKillDetected, AuthentikLoginFailed, ContainerDown, LokiOomKill, CloudflareTunnelDown, TraefikHighErrorRate, Traefik5xxSpike, High4xxRate, TrafficSpike, LiteLLMHighErrorRate, LiteLLMHighLatency, HighUserSpend, AlloyOTELFailures, PrometheusTargetMissing"
+  tags: ['monitoring', 'grafana', 'grafana-alerting']

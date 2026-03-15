@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""CrowdSec CAPI → GeoIP → VictoriaMetrics feed.
+
+Samples active CAPI community blocklist decisions, batch-geolocates via
+ip-api.com, and pushes cs_lapi_decision metrics to VictoriaMetrics so
+the WorldView globe threat layer renders live attack arcs.
+
+Runs every 5 minutes via cron. Maintains a state file to avoid
+re-pushing the same IPs within a cycle. Resets when all decisions
+have been shown.
+"""
+
+import json
+import os
+import subprocess
+import sys
+import time
+import random
+import urllib.request
+
+LAPI_URL = "http://127.0.0.1:{{ security.crowdsec.lapi_port | default(8083) }}"
+VM_URL = "http://127.0.0.1:8428/api/v1/import"
+STATE_FILE = "/opt/podman-data/crowdsec/geo-feed-state.json"
+BATCH_SIZE = 10          # IPs to push per run
+GEO_BATCH = 100          # ip-api.com max per request
+INSTANCE = "{{ ansible_hostname | default('vps') }}"
+
+
+def get_capi_decisions():
+    """Get active CAPI decisions from CrowdSec LAPI."""
+    try:
+        result = subprocess.run(
+            ["podman", "exec", "crowdsec", "cscli", "decisions", "list",
+             "-a", "-o", "json"],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode != 0:
+            return []
+        data = json.loads(result.stdout)
+        # Flatten: each alert contains multiple decisions
+        ips = {}
+        for alert in data:
+            for d in alert.get("decisions", []):
+                if d.get("scope") == "Ip" and d.get("origin") == "CAPI":
+                    ip = d["value"]
+                    ips[ip] = d.get("scenario", "unknown")
+        return ips
+    except Exception as e:
+        print(f"Error getting decisions: {e}", file=sys.stderr)
+        return {}
+
+
+def batch_geolocate(ips):
+    """Batch geolocate IPs via ip-api.com (free, 100/request, 45 req/min)."""
+    results = {}
+    ip_list = list(ips)
+
+    for i in range(0, len(ip_list), GEO_BATCH):
+        batch = ip_list[i:i + GEO_BATCH]
+        payload = json.dumps([
+            {"query": ip, "fields": "status,query,country,countryCode,lat,lon,isp,as,org"}
+            for ip in batch
+        ]).encode()
+
+        req = urllib.request.Request(
+            "http://ip-api.com/batch",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read())
+                for entry in data:
+                    if entry.get("status") == "success":
+                        results[entry["query"]] = entry
+        except Exception as e:
+            print(f"Geo batch error: {e}", file=sys.stderr)
+
+        # Rate limit: 45 req/min = 1.3s between requests
+        if i + GEO_BATCH < len(ip_list):
+            time.sleep(1.5)
+
+    return results
+
+
+def push_to_victoriametrics(events):
+    """Push cs_lapi_decision metrics to VictoriaMetrics."""
+    if not events:
+        return
+
+    now_ms = int(time.time() * 1000)
+    lines = []
+
+    for evt in events:
+        metric = {
+            "metric": {
+                "__name__": "cs_lapi_decision",
+                "instance": INSTANCE,
+                "country": evt.get("countryCode", ""),
+                "asname": evt.get("org", evt.get("isp", "")),
+                "asnumber": (evt.get("as", "").split()[0]
+                             if evt.get("as") else ""),
+                "latitude": str(evt.get("lat", 0)),
+                "longitude": str(evt.get("lon", 0)),
+                "iprange": "",
+                "scenario": evt.get("scenario", ""),
+                "type": "ban",
+                "duration": "4h",
+                "scope": "Ip",
+                "ip": evt.get("ip", ""),
+            },
+            "values": [1],
+            "timestamps": [now_ms],
+        }
+        lines.append(json.dumps(metric))
+
+    payload = "\n".join(lines).encode()
+    req = urllib.request.Request(
+        VM_URL, data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resp.read()
+    except Exception as e:
+        print(f"VM push error: {e}", file=sys.stderr)
+
+
+def load_state():
+    """Load set of already-pushed IPs."""
+    try:
+        with open(STATE_FILE) as f:
+            return set(json.load(f))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return set()
+
+
+def save_state(seen):
+    """Persist already-pushed IPs."""
+    tmp = STATE_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(list(seen), f)
+    os.rename(tmp, STATE_FILE)
+
+
+def main():
+    # Get all active CAPI decisions {ip: scenario}
+    decisions = get_capi_decisions()
+    if not decisions:
+        print("No CAPI decisions found")
+        return
+
+    # Load state
+    seen = load_state()
+
+    # Find IPs not yet pushed
+    new_ips = {ip: sc for ip, sc in decisions.items() if ip not in seen}
+
+    # If all IPs have been shown, reset cycle
+    if not new_ips:
+        print(f"All {len(decisions)} IPs shown, resetting cycle")
+        seen = set()
+        new_ips = decisions
+
+    # Sample up to BATCH_SIZE IPs
+    sample_ips = dict(random.sample(list(new_ips.items()),
+                                     min(BATCH_SIZE, len(new_ips))))
+
+    # Geolocate
+    geo = batch_geolocate(sample_ips)
+
+    # Build events (only IPs with valid geo)
+    events = []
+    for ip, scenario in sample_ips.items():
+        g = geo.get(ip)
+        if g and g.get("lat") and g.get("lon"):
+            events.append({
+                "ip": ip,
+                "countryCode": g.get("countryCode", ""),
+                "lat": g["lat"],
+                "lon": g["lon"],
+                "isp": g.get("isp", ""),
+                "org": g.get("org", ""),
+                "as": g.get("as", ""),
+                "scenario": f"crowdsecurity/{scenario}",
+            })
+
+    # Push to VictoriaMetrics
+    if events:
+        push_to_victoriametrics(events)
+        print(f"Pushed {len(events)} threat events to VM "
+              f"({len(decisions) - len(seen) - len(sample_ips)} remaining)")
+
+    # Update state
+    seen.update(sample_ips.keys())
+    save_state(seen)
+
+
+if __name__ == "__main__":
+    main()

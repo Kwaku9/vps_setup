@@ -1,0 +1,121 @@
+---
+# Scrapy Extractor MCP Server Deployment
+# Web scraping orchestration with Docker-in-Docker pattern
+
+- name: Set scrapy-mcp variables
+  set_fact:
+    _mcp: "{{ mcp_servers.servers.scrapy }}"
+  tags: ['mcp', 'mcp-scrapy']
+
+- name: Check if scrapy-mcp source exists
+  stat:
+    path: "{{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}"
+  register: scrapy_mcp_source
+  tags: ['mcp', 'mcp-scrapy']
+
+- name: Create scrapy-mcp data directory
+  file:
+    path: "{{ mcp_servers.data_dir }}/scrapy"
+    state: directory
+    mode: '0755'
+  tags: ['mcp', 'mcp-scrapy']
+
+- name: Remove existing scrapy-mcp container if rebuilding
+  containers.podman.podman_container:
+    name: "{{ _mcp.container_name }}"
+    state: absent
+  when: mcp_build.force_rebuild | default(false)
+  tags: ['mcp', 'mcp-scrapy']
+
+# Check for docker-compose in scrapy project
+- name: Check for docker-compose.yml in ScrapyExtractor
+  stat:
+    path: "{{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}/docker-compose.yml"
+  register: scrapy_compose_file
+  tags: ['mcp', 'mcp-scrapy']
+
+- name: Build scrapy-mcp using podman-compose
+  shell: |
+    cd {{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}
+    podman-compose build {{ '--no-cache' if mcp_build.no_cache | default(false) else '' }}
+  when:
+    - _mcp.build | default(true)
+    - scrapy_mcp_source.stat.exists
+    - scrapy_compose_file.stat.exists
+  register: scrapy_mcp_build
+  changed_when: "'Successfully built' in scrapy_mcp_build.stdout"
+  tags: ['mcp', 'mcp-scrapy', 'mcp-build']
+
+- name: Create scraper-network for scrapy-mcp
+  containers.podman.podman_network:
+    name: scraper-network
+    state: present
+  when:
+    - scrapy_mcp_source.stat.exists
+    - scrapy_compose_file.stat.exists
+  tags: ['mcp', 'mcp-scrapy']
+
+- name: Start scrapy-mcp using podman-compose
+  shell: |
+    cd {{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}
+    podman-compose up -d
+  when:
+    - scrapy_mcp_source.stat.exists
+    - scrapy_compose_file.stat.exists
+  register: scrapy_mcp_start
+  notify: verify mcp containers
+  tags: ['mcp', 'mcp-scrapy']
+
+# Alternative: Build standalone if no compose
+- name: Check if scrapy-mcp image exists
+  command: podman image exists {{ _mcp.image }}
+  register: scrapy_image_exists
+  failed_when: false
+  changed_when: false
+  when:
+    - _mcp.build | default(true)
+    - scrapy_mcp_source.stat.exists
+    - not scrapy_compose_file.stat.exists
+  tags: ['mcp', 'mcp-scrapy', 'mcp-build']
+
+- name: Build scrapy-mcp container image (standalone)
+  command: >
+    podman build
+    -t {{ _mcp.image }}
+    -f Dockerfile
+    {{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}/scrapy-mcp-server
+  when:
+    - _mcp.build | default(true)
+    - scrapy_mcp_source.stat.exists
+    - not scrapy_compose_file.stat.exists
+    - scrapy_image_exists.rc != 0 or mcp_build.force_rebuild | default(false)
+  register: scrapy_mcp_build
+  tags: ['mcp', 'mcp-scrapy', 'mcp-build']
+
+- name: Deploy scrapy-mcp container (standalone with DinD)
+  containers.podman.podman_container:
+    name: "{{ _mcp.container_name }}"
+    image: "{{ _mcp.image }}"
+    pull: never
+    state: started
+    network: "{{ mcp_servers.network }}"
+    memory: 128m
+    ports:
+      - "127.0.0.1:{{ _mcp.port }}:{{ _mcp.internal_port | default(_mcp.port) }}"
+    env: "{{ _mcp.env | default({}) }}"
+    volumes:
+      - "{{ mcp_servers.data_dir }}/scrapy:/app/data:Z"
+      - "/var/run/podman/podman.sock:/var/run/docker.sock:ro"  # DinD access
+    restart_policy: "{{ mcp_runtime.restart_policy | default('unless-stopped') }}"
+  when:
+    - scrapy_mcp_source.stat.exists
+    - not scrapy_compose_file.stat.exists
+  notify: verify mcp containers
+  tags: ['mcp', 'mcp-scrapy']
+
+- name: Display scrapy-mcp status
+  debug:
+    msg:
+      - "scrapy-mcp deployed at http://127.0.0.1:{{ _mcp.port }}"
+      - "Docker-in-Docker enabled for Scrapy orchestration"
+  tags: ['mcp', 'mcp-scrapy']

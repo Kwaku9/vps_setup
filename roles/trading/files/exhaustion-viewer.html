@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATLAS Exhaustion Signal Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0e17; color: #c8ccd4; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; }
+
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px; background: #111827; border-bottom: 1px solid #1e293b;
+  }
+  .header h1 { font-size: 14px; font-weight: 600; color: #e2e8f0; letter-spacing: 0.5px; }
+  .header .subtitle { font-size: 11px; color: #64748b; margin-left: 12px; }
+
+  .controls {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  }
+  .controls label {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 11px; cursor: pointer; padding: 4px 10px;
+    border-radius: 4px; border: 1px solid #1e293b; background: #0f172a;
+    transition: all 0.15s;
+  }
+  .controls label:hover { border-color: #334155; }
+  .controls label.active { border-color: #3b82f6; background: #1e3a5f; }
+  .controls input[type="checkbox"] { display: none; }
+
+  .dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  }
+  .dot-ext-short { background: #f97316; }
+  .dot-ext-long { background: #8b5cf6; }
+  .dot-vol-short { background: #ef4444; }
+  .dot-vol-long { background: #22c55e; }
+  .dot-wick-short { background: #f59e0b; }
+  .dot-wick-long { background: #06b6d4; }
+
+  #chart-container {
+    width: 100%; height: calc(100vh - 120px);
+  }
+
+  .stats-bar {
+    display: flex; gap: 24px; padding: 8px 20px;
+    background: #111827; border-top: 1px solid #1e293b;
+    font-size: 11px;
+  }
+  .stat { display: flex; gap: 6px; }
+  .stat-label { color: #64748b; }
+  .stat-value { color: #e2e8f0; font-weight: 600; }
+
+  .legend-row {
+    display: flex; gap: 16px; padding: 4px 20px 8px;
+    background: #111827; font-size: 10px; color: #94a3b8;
+  }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="display:flex;align-items:baseline;">
+    <h1>ATLAS EXHAUSTION SIGNALS</h1>
+    <span class="subtitle">SPY 4H &mdash; Raw Detection, No Confluence</span>
+  </div>
+  <div class="controls">
+    <label class="active" id="lbl-ext-short">
+      <input type="checkbox" checked data-type="extension" data-dir="short">
+      <span class="dot dot-ext-short"></span> Ext Short
+    </label>
+    <label class="active" id="lbl-ext-long">
+      <input type="checkbox" checked data-type="extension" data-dir="long">
+      <span class="dot dot-ext-long"></span> Ext Long
+    </label>
+    <label class="active" id="lbl-vol-short">
+      <input type="checkbox" checked data-type="vol_exhaust" data-dir="short">
+      <span class="dot dot-vol-short"></span> VolExh Short
+    </label>
+    <label class="active" id="lbl-vol-long">
+      <input type="checkbox" checked data-type="vol_exhaust" data-dir="long">
+      <span class="dot dot-vol-long"></span> VolExh Long
+    </label>
+    <label class="active" id="lbl-wick-short">
+      <input type="checkbox" checked data-type="wick" data-dir="short">
+      <span class="dot dot-wick-short"></span> Wick Short
+    </label>
+    <label class="active" id="lbl-wick-long">
+      <input type="checkbox" checked data-type="wick" data-dir="long">
+      <span class="dot dot-wick-long"></span> Wick Long
+    </label>
+  </div>
+</div>
+
+<div class="legend-row">
+  <div class="legend-item"><span style="color:#f97316">&#x25BC;</span> Short Extension: large bullish body after sustained uptrend</div>
+  <div class="legend-item"><span style="color:#8b5cf6">&#x25B2;</span> Long Extension: large bearish body after sustained downtrend</div>
+  <div class="legend-item"><span style="color:#ef4444">&#x25BC;</span> Short VolExh: higher highs + declining volume</div>
+  <div class="legend-item"><span style="color:#22c55e">&#x25B2;</span> Long VolExh: lower lows + declining volume</div>
+  <div class="legend-item"><span style="color:#f59e0b">&#x25BC;</span> Short Wick: large upper wick rejection</div>
+  <div class="legend-item"><span style="color:#06b6d4">&#x25B2;</span> Long Wick: large lower wick rejection</div>
+</div>
+
+<div id="chart-container"></div>
+
+<div class="stats-bar">
+  <div class="stat"><span class="stat-label">Visible Signals:</span> <span class="stat-value" id="stat-visible">0</span></div>
+  <div class="stat"><span class="stat-label">Short:</span> <span class="stat-value" id="stat-short">0</span></div>
+  <div class="stat"><span class="stat-label">Long:</span> <span class="stat-value" id="stat-long">0</span></div>
+  <div class="stat"><span class="stat-label">Bars:</span> <span class="stat-value" id="stat-bars">0</span></div>
+</div>
+
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+// ── Data (injected by build script) ──
+let OHLC_DATA = /*OHLC_PLACEHOLDER*/[];
+let SIGNAL_DATA = /*SIGNAL_PLACEHOLDER*/[];
+
+// ── Color map ──
+const COLORS = {
+  'extension_short': '#f97316',
+  'extension_long': '#8b5cf6',
+  'vol_exhaust_short': '#ef4444',
+  'vol_exhaust_long': '#22c55e',
+  'wick_short': '#f59e0b',
+  'wick_long': '#06b6d4',
+};
+
+// ── Chart setup ──
+const container = document.getElementById('chart-container');
+const chart = LightweightCharts.createChart(container, {
+  layout: {
+    background: { type: 'solid', color: '#0a0e17' },
+    textColor: '#64748b',
+    fontSize: 11,
+  },
+  grid: {
+    vertLines: { color: '#111827' },
+    horzLines: { color: '#111827' },
+  },
+  crosshair: {
+    mode: LightweightCharts.CrosshairMode.Normal,
+    vertLine: { color: '#334155', labelBackgroundColor: '#1e293b' },
+    horzLine: { color: '#334155', labelBackgroundColor: '#1e293b' },
+  },
+  timeScale: {
+    borderColor: '#1e293b',
+    timeVisible: true,
+    secondsVisible: false,
+  },
+  rightPriceScale: {
+    borderColor: '#1e293b',
+  },
+});
+
+const candleSeries = chart.addCandlestickSeries({
+  upColor: '#22c55e',
+  downColor: '#ef4444',
+  borderUpColor: '#22c55e',
+  borderDownColor: '#ef4444',
+  wickUpColor: '#22c55e80',
+  wickDownColor: '#ef444480',
+});
+
+const volumeSeries = chart.addHistogramSeries({
+  priceFormat: { type: 'volume' },
+  priceScaleId: 'volume',
+});
+
+chart.priceScale('volume').applyOptions({
+  scaleMargins: { top: 0.85, bottom: 0 },
+});
+
+// ── Load data ──
+candleSeries.setData(OHLC_DATA);
+
+const volData = OHLC_DATA.map(b => ({
+  time: b.time,
+  value: b.volume,
+  color: b.close >= b.open ? '#22c55e30' : '#ef444430',
+}));
+volumeSeries.setData(volData);
+
+document.getElementById('stat-bars').textContent = OHLC_DATA.length.toLocaleString();
+
+// ── Signal markers ──
+function buildMarkers() {
+  const checks = document.querySelectorAll('.controls input[type="checkbox"]');
+  const enabled = new Set();
+  checks.forEach(cb => {
+    if (cb.checked) enabled.add(cb.dataset.type + '_' + cb.dataset.dir);
+  });
+
+  const markers = [];
+  let shortCount = 0, longCount = 0;
+
+  for (const sig of SIGNAL_DATA) {
+    const key = sig.type + '_' + sig.dir;
+    if (!enabled.has(key)) continue;
+
+    const isShort = sig.dir === 'short';
+    if (isShort) shortCount++; else longCount++;
+
+    markers.push({
+      time: sig.time,
+      position: isShort ? 'aboveBar' : 'belowBar',
+      color: COLORS[key],
+      shape: isShort ? 'arrowDown' : 'arrowUp',
+      text: '',
+    });
+  }
+
+  // Sort by time (required by lightweight-charts)
+  markers.sort((a, b) => a.time - b.time);
+  candleSeries.setMarkers(markers);
+
+  document.getElementById('stat-visible').textContent = markers.length.toLocaleString();
+  document.getElementById('stat-short').textContent = shortCount.toLocaleString();
+  document.getElementById('stat-long').textContent = longCount.toLocaleString();
+}
+
+// ── Toggle handlers ──
+document.querySelectorAll('.controls label').forEach(label => {
+  const cb = label.querySelector('input');
+  label.addEventListener('click', () => {
+    cb.checked = !cb.checked;
+    label.classList.toggle('active', cb.checked);
+    buildMarkers();
+  });
+});
+
+buildMarkers();
+chart.timeScale().fitContent();
+
+// ── Resize ──
+const ro = new ResizeObserver(() => {
+  chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+});
+ro.observe(container);
+</script>
+</body>
+</html>

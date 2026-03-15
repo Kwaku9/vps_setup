@@ -1,0 +1,26 @@
+---
+# ATLAS Trading Role — Main Tasks
+# Deploys: Backtrader container, Lightweight Charts, OHLC ingestion, cron jobs
+
+- name: Include backtest schema setup
+  ansible.builtin.include_tasks: backtest-schema.yml
+  when: trading.schema.enabled | default(true)
+  tags: [trading, trading-schema]
+
+- name: Include Backtrader container build
+  ansible.builtin.include_tasks: backtrader.yml
+  when: trading.backtrader.enabled | default(true)
+  tags: [trading, backtrader]
+
+- name: Include data ingestion scripts
+  ansible.builtin.include_tasks: data-ingestion.yml
+  tags: [trading, trading-ingestion]
+
+- name: Include Lightweight Charts frontend
+  ansible.builtin.include_tasks: lightweight-charts.yml
+  when: trading.charts.enabled | default(true)
+  tags: [trading, trading-charts]
+
+- name: Include trading cron jobs
+  ansible.builtin.include_tasks: cron-jobs.yml
+  tags: [trading, trading-cron]

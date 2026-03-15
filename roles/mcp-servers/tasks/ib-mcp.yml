@@ -1,0 +1,311 @@
+---
+# IB MCP Server Deployment (Interactive Brokers Web API)
+# Two-container deployment:
+#   1. IBeam (voyz/ibeam) — Headless Client Portal Gateway with automated login
+#   2. ib-mcp-server (FastAPI/FastMCP) — MCP protocol wrapper with 79 endpoints
+#
+# IBeam handles:
+#   - Automated browser-based IBKR SSO login via headless Chrome
+#   - Session maintenance (replaces tickler.sh)
+#   - Auto re-authentication on session expiry
+#   - 2FA: IBeam waits for IB Key approval on your phone (IBKR uses proprietary
+#     IB Key push notifications, NOT standard TOTP)
+#
+# Prerequisites:
+#   - ibkr_username, ibkr_password in vault.yml
+#   - IB_MCP source at /workspace/pycharm-projects/IB_MCP/
+#   - ib_mcp_auth_token in vault.yml (bearer token for MCP API auth)
+#
+# 2FA Flow:
+#   1. IBeam starts and submits username/password automatically
+#   2. IBKR sends IB Key push notification to your phone
+#   3. Approve on IBKR Mobile app
+#   4. IBeam completes login and maintains session
+#   5. Re-approval needed on session expiry (~24h) or container restart
+#   Monitor: podman logs -f ibeam
+
+- name: Set ib-mcp variables
+  set_fact:
+    _mcp: "{{ mcp_servers.servers.ib_mcp }}"
+  tags: ['mcp', 'mcp-ib']
+
+- name: Check if IB_MCP source exists
+  stat:
+    path: "{{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}"
+  register: ib_mcp_source
+  tags: ['mcp', 'mcp-ib']
+
+- name: Create IB MCP data directory
+  file:
+    path: "{{ mcp_servers.data_dir }}/ib-mcp"
+    state: directory
+    mode: '0755'
+  tags: ['mcp', 'mcp-ib']
+
+# --- Network ---
+
+- name: Create IB MCP network (gateway <-> mcp_server)
+  containers.podman.podman_network:
+    name: ib-mcp-network
+    state: present
+    driver: bridge
+  tags: ['mcp', 'mcp-ib']
+
+# =============================================================================
+# Container 1: IBeam (replaces api_gateway)
+# =============================================================================
+
+# --- Download latest Client Portal Gateway ---
+# IBeam ships a Gateway from April 2023 which is incompatible with current
+# IBKR auth infrastructure (/reauthenticate was deprecated Feb 2024).
+# We download the latest Gateway and volume-mount it into the container.
+
+- name: Create Gateway download directory
+  file:
+    path: "{{ mcp_servers.data_dir }}/ib-mcp/clientportal.gw"
+    state: directory
+    mode: '0755'
+  tags: ['mcp', 'mcp-ib']
+
+- name: Check if Gateway already downloaded
+  stat:
+    path: "{{ mcp_servers.data_dir }}/ib-mcp/clientportal.gw/bin/run.sh"
+  register: gw_exists
+  tags: ['mcp', 'mcp-ib']
+
+- name: Download latest Client Portal Gateway
+  get_url:
+    url: "https://download2.interactivebrokers.com/portal/clientportal.gw.zip"
+    dest: "/tmp/clientportal.gw.zip"
+    mode: '0644'
+  when: not gw_exists.stat.exists or mcp_build.force_rebuild | default(false)
+  tags: ['mcp', 'mcp-ib']
+
+- name: Extract Client Portal Gateway
+  command: unzip -o /tmp/clientportal.gw.zip -d {{ mcp_servers.data_dir }}/ib-mcp/clientportal.gw/
+  when: not gw_exists.stat.exists or mcp_build.force_rebuild | default(false)
+  tags: ['mcp', 'mcp-ib']
+
+- name: Add Podman network IPs to Gateway allow list
+  lineinfile:
+    path: "{{ mcp_servers.data_dir }}/ib-mcp/clientportal.gw/root/conf.yaml"
+    insertafter: "allow:"
+    line: "        - 10.*"
+  when: not gw_exists.stat.exists or mcp_build.force_rebuild | default(false)
+  tags: ['mcp', 'mcp-ib']
+
+- name: Create Gateway logs directory
+  file:
+    path: "{{ mcp_servers.data_dir }}/ib-mcp/clientportal.gw/logs"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: '0755'
+  tags: ['mcp', 'mcp-ib']
+
+- name: Fix Gateway permissions for IBeam user (UID 1000)
+  file:
+    path: "{{ mcp_servers.data_dir }}/ib-mcp/clientportal.gw"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    recurse: true
+  tags: ['mcp', 'mcp-ib']
+
+- name: Clean up Gateway zip
+  file:
+    path: "/tmp/clientportal.gw.zip"
+    state: absent
+  tags: ['mcp', 'mcp-ib']
+
+- name: Pull IBeam image
+  containers.podman.podman_image:
+    name: "docker.io/voyz/ibeam:latest"
+    state: present
+    force: "{{ mcp_build.force_rebuild | default(false) }}"
+  tags: ['mcp', 'mcp-ib', 'mcp-build']
+
+# Must remove dependent ib-mcp-server first — Podman refuses to remove
+# ibeam while a container with `requires: ibeam` exists
+- name: Remove existing ib-mcp-server container (dependency of ibeam)
+  containers.podman.podman_container:
+    name: "{{ _mcp.container_name }}"
+    state: absent
+  failed_when: false
+  tags: ['mcp', 'mcp-ib']
+
+- name: Remove existing ibeam container for config update
+  containers.podman.podman_container:
+    name: "ibeam"
+    state: absent
+  tags: ['mcp', 'mcp-ib']
+
+- name: Deploy IBeam container (headless IBKR gateway)
+  containers.podman.podman_container:
+    name: "ibeam"
+    image: "docker.io/voyz/ibeam:latest"
+    state: started
+    network:
+      - ib-mcp-network
+    memory: 1g
+    ports:
+      - "127.0.0.1:5055:5000"
+    volumes:
+      # Mount latest Gateway over the stale April 2023 version bundled in image
+      - "{{ mcp_servers.data_dir }}/ib-mcp/clientportal.gw:/srv/clientportal.gw:Z"
+    env:
+      IBEAM_ACCOUNT: "{{ ibkr_username }}"
+      IBEAM_PASSWORD: "{{ ibkr_password }}"
+      # Gateway listens on 5000 INSIDE the container (IBeam default)
+      # Host port 5055 maps to container port 5000
+      IBEAM_GATEWAY_BASE_URL: "https://localhost:5000"
+      # Gateway needs time to start Java process — 20s default is too short
+      IBEAM_GATEWAY_STARTUP: "120"
+      IBEAM_REQUEST_RETRIES: "10"
+      IBEAM_REQUEST_TIMEOUT: "30"
+      IBEAM_PAGE_LOAD_TIMEOUT: "60"
+      # 2FA: Wait up to 60s for IB Key push approval on your phone (default 15s is too short)
+      IBEAM_OAUTH_TIMEOUT: "60"
+      # Don't kill Gateway after failed reauthentication — prevents restart loop
+      IBEAM_RESTART_FAILED_SESSIONS: "false"
+      # Give more time between reauthenticate attempts
+      IBEAM_REAUTHENTICATE_WAIT: "30"
+      IBEAM_MAX_REAUTHENTICATE_RETRIES: "10"
+      IBEAM_MAX_STATUS_CHECK_RETRIES: "300"
+    restart_policy: "unless-stopped"
+    healthcheck: "curl -sk https://localhost:5000/v1/api/tickle || exit 1"
+    healthcheck_interval: "30s"
+    healthcheck_timeout: "10s"
+    healthcheck_retries: 10
+    healthcheck_start_period: "120s"
+  tags: ['mcp', 'mcp-ib']
+
+- name: Wait for IBeam Gateway to start (not auth — just Gateway process)
+  uri:
+    url: "https://127.0.0.1:5055/v1/api/tickle"
+    method: POST
+    validate_certs: false
+    status_code: [200, 401, 403, 500]
+  retries: 10
+  delay: 15
+  register: ibeam_gateway_status
+  until: ibeam_gateway_status.status is defined and ibeam_gateway_status.status > 0
+  failed_when: false
+  tags: ['mcp', 'mcp-ib']
+
+- name: Check IBeam auth status
+  uri:
+    url: "https://127.0.0.1:5055/v1/api/iserver/auth/status"
+    method: GET
+    validate_certs: false
+    status_code: [200, 401, 403, 500]
+  register: ibeam_auth_status
+  failed_when: false
+  tags: ['mcp', 'mcp-ib']
+
+- name: Display IBeam status
+  debug:
+    msg: >-
+      {% if ibeam_gateway_status.status is not defined or ibeam_gateway_status.status == -1 %}
+      IBeam Gateway NOT REACHABLE — Gateway Java process may still be starting.
+      Check: podman logs -f ibeam
+      {% elif ibeam_auth_status.json.authenticated | default(false) %}
+      IBeam: AUTHENTICATED — Gateway is ready for trading.
+      {% else %}
+      IBeam Gateway is RUNNING but NOT AUTHENTICATED.
+      Open IBKR Mobile app and approve the IB Key push notification.
+      Monitor: podman logs -f ibeam
+      Verify: curl -sk https://127.0.0.1:5055/v1/api/iserver/auth/status
+      {% endif %}
+  tags: ['mcp', 'mcp-ib']
+
+# =============================================================================
+# Container 2: MCP Server (FastAPI/FastMCP)
+# =============================================================================
+
+- name: Remove existing ib-mcp-server container if rebuilding
+  containers.podman.podman_container:
+    name: "{{ _mcp.container_name }}"
+    state: absent
+  when: mcp_build.force_rebuild | default(false)
+  tags: ['mcp', 'mcp-ib']
+
+- name: Check if ib-mcp-server image exists
+  command: podman image exists {{ _mcp.image }}
+  register: mcp_image_exists
+  failed_when: false
+  changed_when: false
+  when:
+    - _mcp.build | default(true)
+    - ib_mcp_source.stat.exists
+  tags: ['mcp', 'mcp-ib', 'mcp-build']
+
+- name: Build ib-mcp-server image
+  command: >
+    podman build
+    -t {{ _mcp.image }}
+    -f Dockerfile
+    {{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}/mcp_server
+  when:
+    - _mcp.build | default(true)
+    - ib_mcp_source.stat.exists
+    - mcp_image_exists.rc != 0 or mcp_build.force_rebuild | default(false)
+  register: ib_mcp_build
+  tags: ['mcp', 'mcp-ib', 'mcp-build']
+
+- name: Deploy ib-mcp-server container
+  containers.podman.podman_container:
+    name: "{{ _mcp.container_name }}"
+    image: "{{ _mcp.image }}"
+    pull: never
+    state: started
+    network:
+      - ib-mcp-network
+      - "{{ mcp_servers.network }}"
+    memory: 256m
+    ports:
+      - "127.0.0.1:{{ _mcp.port }}:{{ _mcp.internal_port | default(_mcp.port) }}"
+    env:
+      GATEWAY_ENDPOINT: "/v1/api"
+      # Container-to-container: use IBeam container name + internal port 5000
+      # GATEWAY_PORT is not needed — port is already in GATEWAY_INTERNAL_BASE_URL
+      GATEWAY_INTERNAL_BASE_URL: "https://ibeam:5000"
+      MCP_SERVER_HOST: "0.0.0.0"
+      MCP_SERVER_PORT: "{{ _mcp.port }}"
+      MCP_SERVER_PATH: "/mcp"
+      MCP_TRANSPORT_PROTOCOL: "stateless-http"
+      MCP_SERVER_LOG_LEVEL: "info"
+      ROUTERS_PATH: "/app/mcp_server/routers"
+      # Enable ALL routers — Options Chains and Orders are essential for trading
+      INCLUDED_TAGS: "Alerts,Contract,Market Data,Options Chains,Order Monitoring,Orders,Portfolio,Portfolio Analyst,Scanner,Session,FYIs and Notifications,Watchlists"
+      EXCLUDED_TAGS: ""
+      AUTH_TOKEN: "{{ ib_mcp_auth_token | default('') }}"
+    restart_policy: "unless-stopped"
+    requires:
+      - "ibeam"
+  when: ib_mcp_source.stat.exists
+  notify: verify mcp containers
+  tags: ['mcp', 'mcp-ib']
+
+# Restart MCP server to ensure DNS resolution of ibeam container
+- name: Restart ib-mcp-server for DNS registration
+  containers.podman.podman_container:
+    name: "{{ _mcp.container_name }}"
+    state: started
+    force_restart: true
+  when: ib_mcp_source.stat.exists
+  tags: ['mcp', 'mcp-ib']
+
+- name: Display ib-mcp deployment status
+  debug:
+    msg:
+      - "IB MCP Server deployed:"
+      - "  IBeam Gateway: https://127.0.0.1:5055 (automated login)"
+      - "  MCP Server: http://127.0.0.1:{{ _mcp.port }}{{ _mcp.endpoint | default('/mcp') }}"
+      - "  Auth: Bearer token required"
+      - ""
+      - "  2FA: IBeam waits for IB Key approval on your IBKR Mobile app."
+      - "  Monitor login: podman logs -f ibeam"
+      - "  Verify auth: curl -sk https://127.0.0.1:5055/v1/api/iserver/auth/status"
+      - "  Test MCP: curl -H 'Authorization: Bearer <token>' http://127.0.0.1:{{ _mcp.port }}/tickle"
+  tags: ['mcp', 'mcp-ib']

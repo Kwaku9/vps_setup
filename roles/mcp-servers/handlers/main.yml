@@ -1,0 +1,47 @@
+---
+# MCP Servers Handlers
+# Triggered by notify directives in tasks
+
+- name: reload claude mcp
+  debug:
+    msg: "MCP settings updated. Run 'claude mcp list' to verify configuration."
+  # Note: Claude CLI automatically reloads mcp_settings.json on each invocation
+  # No explicit reload command needed
+
+- name: verify mcp containers
+  shell: |
+    podman ps --filter "name=mcp" --format "{{ '{{' }}.Names{{ '}}' }}: {{ '{{' }}.Status{{ '}}' }}"
+  register: mcp_container_status
+  changed_when: false
+  listen: "verify mcp containers"
+
+- name: display mcp container status
+  debug:
+    var: mcp_container_status.stdout_lines
+  when: mcp_container_status is defined
+  listen: "verify mcp containers"
+
+- name: restart mcp container
+  containers.podman.podman_container:
+    name: "{{ mcp_container_to_restart }}"
+    state: started
+    restart: true
+  when: mcp_container_to_restart is defined
+  listen: "restart mcp container"
+
+- name: rebuild mcp container
+  shell: |
+    podman stop {{ mcp_container_to_rebuild }} || true
+    podman rm {{ mcp_container_to_rebuild }} || true
+    podman rmi {{ mcp_image_to_rebuild }} || true
+  when:
+    - mcp_container_to_rebuild is defined
+    - mcp_image_to_rebuild is defined
+  listen: "rebuild mcp container"
+
+- name: restart n8n-mcp
+  containers.podman.podman_container:
+    name: "n8n-mcp"
+    state: started
+    restart: true
+  listen: "restart n8n-mcp"

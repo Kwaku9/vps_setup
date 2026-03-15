@@ -1,0 +1,47 @@
+---
+# Deploy ATLAS Lightweight Charts frontend
+
+- name: Create charts build directory
+  ansible.builtin.file:
+    path: /opt/compose/atlas-charts-build
+    state: directory
+    mode: "0755"
+
+- name: Copy Lightweight Charts files
+  ansible.builtin.copy:
+    src: "lightweight-charts/{{ item }}"
+    dest: "/opt/compose/atlas-charts-build/{{ item }}"
+    mode: "0644"
+  loop:
+    - Dockerfile
+    - package.json
+    - nginx.conf
+    - index.html
+    - app.js
+    - style.css
+
+- name: Build ATLAS Charts container image
+  containers.podman.podman_image:
+    name: "{{ trading.charts.image }}"
+    path: /opt/compose/atlas-charts-build
+    force: true
+  register: charts_build
+
+- name: Deploy ATLAS Charts container
+  containers.podman.podman_container:
+    name: "{{ trading.charts.container_name }}"
+    image: "{{ trading.charts.image }}"
+    state: started
+    recreate: "{{ charts_build.changed }}"
+    restart_policy: always
+    network:
+      - "{{ podman_network_name }}"
+    ports:
+      - "127.0.0.1:{{ trading.charts.port }}:3080"
+    volumes:
+      - "{{ trading.backtrader.results_dir }}:/usr/share/nginx/html/backtest-results:ro,Z"
+    memory: 768m
+
+- name: Display charts deployment
+  ansible.builtin.debug:
+    msg: "ATLAS Charts deployed on port {{ trading.charts.port }}"

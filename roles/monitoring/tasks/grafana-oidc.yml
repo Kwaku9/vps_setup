@@ -1,0 +1,256 @@
+# grafana-oidc.yml
+# Resolves Grafana OIDC credentials from Authentik when not already set by
+# the authentication role. Allows the monitoring role to run standalone
+# (--tags "monitoring" or --tags "grafana") without depending on a prior
+# authentication role run in the same play.
+#
+# Flow:
+#   1. Skip entirely if grafana_oidc_client_id is already a defined fact
+#      (i.e. authentication role ran earlier in the same play).
+#   2. Query Authentik for the sso-grafana OAuth2 provider.
+#   3. If found  → set facts from the existing provider.
+#   4. If missing → create the provider + application, then set facts.
+
+- name: "[Grafana OIDC] Skip if credentials already resolved by authentication role"
+  debug:
+    msg: "grafana_oidc_client_id already set — skipping Authentik lookup"
+  when: grafana_oidc_client_id is defined
+  tags: ['monitoring', 'grafana']
+
+- name: "[Grafana OIDC] Check for existing sso-grafana provider in Authentik"
+  uri:
+    url: "{{ authentik_url }}/api/v3/providers/oauth2/?name=sso-grafana"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_bootstrap_token }}"
+    status_code: 200
+  register: grafana_oidc_provider_check
+  when: grafana_oidc_client_id is not defined
+  check_mode: no
+  tags: ['monitoring', 'grafana']
+
+# ── Credentials already exist in Authentik ───────────────────────────────────
+
+- name: "[Grafana OIDC] Set facts from existing provider"
+  set_fact:
+    grafana_oidc_client_id: "{{ grafana_oidc_provider_check.json.results[0].client_id }}"
+    grafana_oidc_client_secret: "{{ grafana_oidc_provider_check.json.results[0].client_secret }}"
+    grafana_oidc_provider_pk: "{{ grafana_oidc_provider_check.json.results[0].pk }}"
+    grafana_oidc_existing_mappings: "{{ grafana_oidc_provider_check.json.results[0].property_mappings }}"
+  when:
+    - grafana_oidc_client_id is not defined
+    - grafana_oidc_provider_check.json.results | length > 0
+  tags: ['monitoring', 'grafana']
+
+# ── Ensure groups scope is attached to existing provider ─────────────────────
+
+- name: "[Grafana OIDC] Fetch groups scope PK for patch"
+  uri:
+    url: "{{ authentik_url }}/api/v3/propertymappings/provider/scope/?managed=goauthentik.io%2Fproviders%2Foauth2%2Fscope-profile"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_bootstrap_token }}"
+    status_code: 200
+  register: grafana_oidc_all_scopes_check
+  when:
+    - grafana_oidc_provider_pk is defined
+  check_mode: no
+  tags: ['monitoring', 'grafana']
+
+- name: "[Grafana OIDC] Fetch all standard scope PKs for patch"
+  uri:
+    url: "{{ authentik_url }}/api/v3/propertymappings/provider/scope/?managed=goauthentik.io%2Fproviders%2Foauth2%2Fscope-{{ item }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_bootstrap_token }}"
+    status_code: 200
+  register: grafana_oidc_std_scopes
+  loop: ["openid", "email", "profile"]
+  when:
+    - grafana_oidc_provider_pk is defined
+  check_mode: no
+  tags: ['monitoring', 'grafana']
+
+- name: "[Grafana OIDC] Fetch groups scope PK for patch"
+  uri:
+    url: "{{ authentik_url }}/api/v3/propertymappings/provider/scope/?search=groups"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_bootstrap_token }}"
+    status_code: 200
+  register: grafana_oidc_groups_scope_patch
+  when:
+    - grafana_oidc_provider_pk is defined
+  check_mode: no
+  tags: ['monitoring', 'grafana']
+
+- name: "[Grafana OIDC] Patch existing provider to ensure all scopes including groups"
+  uri:
+    url: "{{ authentik_url }}/api/v3/providers/oauth2/{{ grafana_oidc_provider_pk }}/"
+    method: PATCH
+    headers:
+      Authorization: "Bearer {{ authentik_bootstrap_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      property_mappings: >-
+        {{
+          (grafana_oidc_std_scopes.results | map(attribute='json') |
+           map(attribute='results') | map('first') | map(attribute='pk') | list)
+          + (grafana_oidc_groups_scope_patch.json.results | map(attribute='pk') | list)
+        }}
+    status_code: [200]
+  when:
+    - grafana_oidc_provider_pk is defined
+    - grafana_oidc_std_scopes is not skipped
+    - grafana_oidc_groups_scope_patch is not skipped
+    - grafana_oidc_groups_scope_patch.json.results | length > 0
+  tags: ['monitoring', 'grafana']
+
+# ── Provider missing — create it ─────────────────────────────────────────────
+
+- name: "[Grafana OIDC] Fetch Authentik authorization flow PK"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/instances/?designation=authorization"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_bootstrap_token }}"
+    status_code: 200
+  register: grafana_oidc_authz_flow
+  when:
+    - grafana_oidc_client_id is not defined
+    - grafana_oidc_provider_check.json.results | length == 0
+  check_mode: no
+  tags: ['monitoring', 'grafana']
+
+- name: "[Grafana OIDC] Fetch Authentik invalidation flow PK"
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/instances/?designation=invalidation"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_bootstrap_token }}"
+    status_code: 200
+  register: grafana_oidc_inval_flow
+  when:
+    - grafana_oidc_client_id is not defined
+    - grafana_oidc_provider_check.json.results | length == 0
+  check_mode: no
+  tags: ['monitoring', 'grafana']
+
+- name: "[Grafana OIDC] Fetch signing key PK"
+  uri:
+    url: "{{ authentik_url }}/api/v3/crypto/certificatekeypairs/?has_key=true"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_bootstrap_token }}"
+    status_code: 200
+  register: grafana_oidc_signing_key
+  when:
+    - grafana_oidc_client_id is not defined
+    - grafana_oidc_provider_check.json.results | length == 0
+  check_mode: no
+  tags: ['monitoring', 'grafana']
+
+- name: "[Grafana OIDC] Fetch scope mapping PKs (openid, email, profile, groups)"
+  uri:
+    url: "{{ authentik_url }}/api/v3/propertymappings/provider/scope/?managed=goauthentik.io%2Fproviders%2Foauth2%2Fscope-{{ item }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_bootstrap_token }}"
+    status_code: 200
+  register: grafana_oidc_scope_results
+  loop: ["openid", "email", "profile"]
+  when:
+    - grafana_oidc_client_id is not defined
+    - grafana_oidc_provider_check.json.results | length == 0
+  check_mode: no
+  tags: ['monitoring', 'grafana']
+
+- name: "[Grafana OIDC] Fetch groups scope PK"
+  uri:
+    url: "{{ authentik_url }}/api/v3/propertymappings/provider/scope/?search=groups"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_bootstrap_token }}"
+    status_code: 200
+  register: grafana_oidc_groups_scope
+  when:
+    - grafana_oidc_client_id is not defined
+    - grafana_oidc_provider_check.json.results | length == 0
+  check_mode: no
+  tags: ['monitoring', 'grafana']
+
+- name: "[Grafana OIDC] Create sso-grafana OAuth2 provider"
+  uri:
+    url: "{{ authentik_url }}/api/v3/providers/oauth2/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_bootstrap_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "sso-grafana"
+      authorization_flow: "{{ grafana_oidc_authz_flow.json.results[0].pk }}"
+      invalidation_flow: "{{ grafana_oidc_inval_flow.json.results[0].pk }}"
+      client_type: "confidential"
+      redirect_uris:
+        - url: "https://grafana.{{ domain_name }}/login/generic_oauth"
+          matching_mode: "strict"
+      signing_key: "{{ grafana_oidc_signing_key.json.results[0].pk }}"
+      property_mappings: >-
+        {{
+          (grafana_oidc_scope_results.results | map(attribute='json') |
+           map(attribute='results') | map('first') | map(attribute='pk') | list)
+          + (grafana_oidc_groups_scope.json.results | map(attribute='pk') | list)
+        }}
+      sub_mode: "hashed_user_id"
+      include_claims_in_id_token: true
+      issuer_mode: "per_provider"
+    status_code: [200, 201]
+  register: grafana_oidc_provider_created
+  when:
+    - grafana_oidc_client_id is not defined
+    - grafana_oidc_provider_check.json.results | length == 0
+    - grafana_oidc_authz_flow is not skipped
+  tags: ['monitoring', 'grafana']
+
+- name: "[Grafana OIDC] Set facts from newly created provider"
+  set_fact:
+    grafana_oidc_client_id: "{{ grafana_oidc_provider_created.json.client_id }}"
+    grafana_oidc_client_secret: "{{ grafana_oidc_provider_created.json.client_secret }}"
+  when:
+    - grafana_oidc_provider_created is not skipped
+    - grafana_oidc_provider_created.json is defined
+  tags: ['monitoring', 'grafana']
+
+- name: "[Grafana OIDC] Create Grafana application in Authentik"
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/applications/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_bootstrap_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "Grafana"
+      slug: "grafana"
+      provider: "{{ grafana_oidc_provider_created.json.pk }}"
+      meta_launch_url: "https://grafana.{{ domain_name }}"
+      policy_engine_mode: "any"
+    status_code: [200, 201]
+  when:
+    - grafana_oidc_provider_created is not skipped
+    - grafana_oidc_provider_created.json is defined
+  tags: ['monitoring', 'grafana']
+
+- name: "[Grafana OIDC] Warn if Authentik unavailable and credentials missing"
+  debug:
+    msg: >
+      WARNING: Could not resolve Grafana OIDC credentials from Authentik and
+      grafana_oidc_client_id is not set. Grafana will start without OIDC.
+      Run with --tags "authentication,monitoring" to provision SSO, or set
+      grafana_oidc_client_id / grafana_oidc_client_secret in vault.yml.
+  when:
+    - grafana_oidc_client_id is not defined
+    - grafana_oidc_provider_check is skipped or grafana_oidc_provider_check.failed | default(false)
+  tags: ['monitoring', 'grafana']

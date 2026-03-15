@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Authentik Events -> Prometheus textfile collector.
+
+Queries the Authentik Events API for auth events and writes
+Prometheus-format metrics to a .prom file for node-exporter.
+
+Authentik's Events API ignores date filters (created__gte etc.),
+so we fetch the latest 200 events and filter client-side by timestamp.
+
+Runs every 5 minutes via cron. Managed by Ansible.
+"""
+API_URL = "http://localhost:9000/api/v3"
+TOKEN = "{{ authentik_bootstrap_token }}"
+OUTPUT = "/opt/compose/textfile-collector/authentik-events.prom"
+
+{% raw %}
+import json, os, sys, urllib.request, urllib.error
+from datetime import datetime, timedelta, timezone
+from collections import Counter
+
+HEADERS = {"Authorization": "Bearer " + TOKEN, "Accept": "application/json"}
+
+TRACKED_ACTIONS = [
+    "login", "login_failed", "logout",
+    "authorize_application",
+    "model_created", "model_updated", "model_deleted",
+    "email_sent", "suspicious_request",
+    "system_task_exception", "user_write",
+    "policy_exception", "configuration_error",
+    "secret_view", "invitation_used",
+]
+
+def api_get(path):
+    req = urllib.request.Request(API_URL + path, headers=HEADERS)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except Exception as ex:
+        print("Authentik API error: " + str(ex), file=sys.stderr)
+        return None
+
+def parse_ts(ts_str):
+    """Parse Authentik ISO timestamp to datetime (handles both Z and +00:00)."""
+    ts_str = ts_str.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(ts_str)
+    except Exception:
+        return None
+
+def main():
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=5)
+
+    # Fetch latest 200 events (API ignores date filters — must filter client-side)
+    data = api_get("/events/events/?ordering=-created&page_size=200")
+    if not data or not data.get("results"):
+        print("No data from Authentik API", file=sys.stderr)
+        # Write zeroed metrics so alert auto-resolves
+        write_prom([], 0, now)
+        return
+
+    events = data["results"]
+    total_count = data.get("pagination", {}).get("count", 0)
+
+    # Split into recent (last 5 min) vs all fetched
+    recent_actions = Counter()
+    recent_by_user = Counter()
+    recent_failed_ips = Counter()
+    total_actions = Counter()
+
+    for e in events:
+        action = e.get("action", "unknown")
+        total_actions[action] += 1
+
+        created = parse_ts(e.get("created", ""))
+        if created and created >= cutoff:
+            recent_actions[action] += 1
+            user = (e.get("user") or {}).get("username", "unknown")
+            recent_by_user[(action, user)] += 1
+            if action == "login_failed":
+                ip = e.get("client_ip", "unknown")
+                recent_failed_ips[ip] += 1
+
+    write_prom(recent_actions, recent_by_user, recent_failed_ips,
+               total_actions, total_count, now)
+
+def write_prom(recent_actions, recent_by_user, recent_failed_ips,
+               total_actions, total_count, now):
+    L = []
+
+    L.append("# HELP authentik_events_total Total events in Authentik event log")
+    L.append("# TYPE authentik_events_total gauge")
+    L.append("authentik_events_total %d" % total_count)
+
+    # Recent events by action (last 5 min — client-side filtered)
+    L.append("# HELP authentik_events_recent Events in the last 5 minutes by action")
+    L.append("# TYPE authentik_events_recent gauge")
+    for action in TRACKED_ACTIONS:
+        L.append('authentik_events_recent{action="%s"} %d' % (action, recent_actions.get(action, 0)))
+
+    # Recent events by action+user (last 5 min)
+    if recent_by_user:
+        L.append("# HELP authentik_events_recent_by_user Events in last 5 minutes by action and user")
+        L.append("# TYPE authentik_events_recent_by_user gauge")
+        for (action, user), count in recent_by_user.most_common(50):
+            L.append('authentik_events_recent_by_user{action="%s",user="%s"} %d' % (action, user, count))
+
+    # Failed login IPs (last 5 min)
+    if recent_failed_ips:
+        L.append("# HELP authentik_login_failed_by_ip Failed logins by source IP in last 5 minutes")
+        L.append("# TYPE authentik_login_failed_by_ip gauge")
+        for ip, count in recent_failed_ips.most_common(20):
+            L.append('authentik_login_failed_by_ip{client_ip="%s"} %d' % (ip, count))
+
+    # All-time action breakdown (last 200 events window)
+    L.append("# HELP authentik_events_by_action Event counts by action (last 200 events)")
+    L.append("# TYPE authentik_events_by_action gauge")
+    for action, count in total_actions.most_common():
+        L.append('authentik_events_by_action{action="%s"} %d' % (action, count))
+
+    # Scrape timestamp
+    L.append("# HELP authentik_events_scrape_timestamp Last scrape unix timestamp")
+    L.append("# TYPE authentik_events_scrape_timestamp gauge")
+    L.append("authentik_events_scrape_timestamp %d" % int(now.timestamp()))
+
+    tmp = OUTPUT + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("\n".join(L) + "\n")
+    os.rename(tmp, OUTPUT)
+    recent_total = sum(recent_actions.values()) if isinstance(recent_actions, Counter) else 0
+    print("OK: wrote %d lines (%d recent events in last 5min, %d total)" % (len(L), recent_total, total_count))
+
+if __name__ == "__main__":
+    main()
+{% endraw %}

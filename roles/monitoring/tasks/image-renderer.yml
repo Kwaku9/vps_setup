@@ -1,0 +1,41 @@
+---
+# Grafana Image Renderer — Chromium-based sidecar for server-side PNG rendering
+# Runs in monitoring-pod alongside Grafana, accessible via localhost:8081
+
+- name: Deploy Grafana Image Renderer
+  containers.podman.podman_container:
+    name: renderer
+    image: "docker.io/grafana/grafana-image-renderer:{{ monitoring.image_renderer.version | default('latest') }}"
+    state: started
+    pod: monitoring-pod
+    memory: 256m
+    recreate: true
+    env:
+      RENDERING_SERVER_BIND_ADDRESS: "0.0.0.0:8081"
+    restart_policy: unless-stopped
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.image_renderer.enabled | default(false)
+  tags: ['monitoring', 'image-renderer']
+
+- name: Wait for Image Renderer to be ready (check via pod-internal networking)
+  shell: podman exec grafana curl -sf -o /dev/null --max-time 5 http://localhost:8081/render/version 2>&1 && echo "RENDERER_OK" || echo "RENDERER_FAIL"
+  register: renderer_check
+  retries: 6
+  delay: 10
+  until: "'RENDERER_OK' in renderer_check.stdout"
+  changed_when: false
+  failed_when: false
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.image_renderer.enabled | default(false)
+  tags: ['monitoring', 'image-renderer']
+
+- name: WARN — Image Renderer not responding
+  debug:
+    msg: "WARNING: Grafana Image Renderer not responding on localhost:8081 inside monitoring-pod. Chart rendering will fail."
+  when:
+    - renderer_check is defined
+    - renderer_check.stdout is defined
+    - "'RENDERER_FAIL' in renderer_check.stdout"
+  tags: ['monitoring', 'image-renderer']

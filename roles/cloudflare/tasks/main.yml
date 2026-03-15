@@ -1,0 +1,122 @@
+---
+# Cloudflare Role - Main Task Orchestrator
+# Provides Cloudflare Tunnel, DNS management, and Traefik ACME integration
+
+- name: Validate Cloudflare credentials
+  assert:
+    that:
+      - cf_api_token | length > 0
+      - cf_zone_id | length > 0
+      - cf_domain | length > 0
+    fail_msg: |
+      Cloudflare credentials are missing. Please ensure the following are set in vault.yml:
+        - cloudflare_api_token
+        - cloudflare_zone_id
+        - domain_name
+    success_msg: "Cloudflare credentials validated"
+  when: cloudflare_enabled | bool
+  tags: ['cloudflare', 'validate']
+
+- name: Validate tunnel token if tunnel enabled
+  assert:
+    that:
+      - cf_tunnel_token | length > 0
+    fail_msg: |
+      Cloudflare tunnel token is missing. Please ensure cloudflare_tunnel_token is set in vault.yml.
+      To create a tunnel token:
+        1. Install cloudflared locally: brew install cloudflared
+        2. Run: cloudflared tunnel create alpine-vps
+        3. Get token: cloudflared tunnel token alpine-vps
+    success_msg: "Cloudflare tunnel token validated"
+  when:
+    - cloudflare_enabled | bool
+    - cloudflare_tunnel.enabled | bool
+  tags: ['cloudflare', 'tunnel', 'validate']
+
+- name: Create Cloudflare data directory
+  file:
+    path: "{{ cloudflare_data_dir }}"
+    state: directory
+    mode: '0755'
+  when: cloudflare_enabled | bool
+  tags: ['cloudflare', 'directories']
+
+- name: Create Cloudflare config directory
+  file:
+    path: "{{ cloudflare_config_dir }}"
+    state: directory
+    mode: '0755'
+  when: cloudflare_enabled | bool
+  tags: ['cloudflare', 'directories']
+
+- name: Create Traefik dynamic config directory
+  file:
+    path: "{{ traefik_dynamic_dir }}"
+    state: directory
+    mode: '0755'
+  when: cloudflare_enabled | bool
+  tags: ['cloudflare', 'directories', 'traefik']
+
+# Deploy Cloudflare Tunnel
+- name: Deploy Cloudflare Tunnel
+  import_tasks: tunnel.yml
+  when:
+    - cloudflare_enabled | bool
+    - cloudflare_tunnel.enabled | bool
+  tags: ['cloudflare', 'tunnel']
+
+# Configure DNS Records
+- name: Configure DNS Records
+  import_tasks: dns.yml
+  when:
+    - cloudflare_enabled | bool
+    - cloudflare_dns.enabled | bool
+  tags: ['cloudflare', 'dns']
+
+# Configure Zone Settings (Always Use HTTPS, etc.)
+- name: Configure Cloudflare Zone Settings
+  import_tasks: zone-settings.yml
+  when:
+    - cloudflare_enabled | bool
+  tags: ['cloudflare', 'zone-settings']
+
+# Configure Traefik with ACME
+- name: Configure Traefik ACME
+  import_tasks: traefik-acme.yml
+  when:
+    - cloudflare_enabled | bool
+    - cloudflare_traefik.enabled | bool
+  tags: ['cloudflare', 'acme', 'traefik']
+
+# Configure Cloudflare Access
+- name: Configure Cloudflare Access
+  include_tasks: access.yml
+  when:
+    - cloudflare_enabled | bool
+    - cloudflare_access.enabled | default(false) | bool
+  tags: ['cloudflare', 'access']
+
+# Display deployment summary
+- name: Display Cloudflare deployment summary
+  debug:
+    msg:
+      - "============================================"
+      - "Cloudflare Integration Deployed!"
+      - "============================================"
+      - "Domain: {{ cf_domain }}"
+      - ""
+      - "Tunnel Status:"
+      - "  Enabled: {{ cloudflare_tunnel.enabled | bool }}"
+      - "  Container: {{ cloudflare_tunnel.container_name }}"
+      - "  Metrics: http://127.0.0.1:{{ cloudflare_tunnel.metrics_port }}/metrics"
+      - ""
+      - "DNS Records: {{ cloudflare_dns.enabled | bool }}"
+      - "ACME (Let's Encrypt): {{ cloudflare_traefik.acme.enabled | bool }}"
+      - ""
+      - "Verification Commands:"
+      - "  podman logs cloudflared"
+      - "  curl -I https://{{ cf_domain }}"
+      - "  dig grafana.{{ cf_domain }}"
+      - "============================================"
+  when: cloudflare_enabled | bool
+  tags: ['cloudflare', 'summary']

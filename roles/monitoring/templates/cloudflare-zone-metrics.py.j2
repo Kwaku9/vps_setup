@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""Cloudflare Zone Analytics -> Prometheus textfile collector.
+
+Queries the CF GraphQL API for zone HTTP analytics and writes
+Prometheus-format metrics to a .prom file for node-exporter.
+
+Runs every 5 minutes via cron. Managed by Ansible.
+"""
+import json, os, sys, urllib.request, urllib.error
+from datetime import datetime, timedelta, timezone
+
+API_URL = "https://api.cloudflare.com/client/v4/graphql"
+TOKEN = "{{ cloudflare_exporter_token }}"
+ZONE_ID = "{{ cloudflare_zone_id }}"
+OUTPUT = "/opt/compose/textfile-collector/cloudflare.prom"
+
+{% raw %}
+TOTALS_QUERY = """{
+  viewer {
+    zones(filter: {zoneTag: "%s"}) {
+      httpRequests1hGroups(limit: 1, filter: {datetime_geq: "%s", datetime_lt: "%s"}) {
+        sum { requests cachedRequests bytes cachedBytes threats pageViews }
+      }
+    }
+  }
+}"""
+
+COUNTRY_QUERY = """{
+  viewer {
+    zones(filter: {zoneTag: "%s"}) {
+      httpRequests1dGroups(limit: 1, filter: {date: "%s"}) {
+        sum {
+          countryMap { clientCountryName requests bytes threats }
+        }
+      }
+    }
+  }
+}"""
+
+def gql(query):
+    req = urllib.request.Request(API_URL, json.dumps({"query": query}).encode(),
+        {"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except Exception as ex:
+        print("CF API error: " + str(ex), file=sys.stderr)
+        return None
+
+def main():
+    now = datetime.now(timezone.utc)
+    end = now.replace(minute=0, second=0, microsecond=0)
+    start = end - timedelta(hours=1)
+    s = start.strftime("%Y-%m-%dT%H:%M:%SZ")
+    e = end.strftime("%Y-%m-%dT%H:%M:%SZ")
+    today = now.strftime("%Y-%m-%d")
+
+    # Query 1: totals (last hour)
+    r1 = gql(TOTALS_QUERY % (ZONE_ID, s, e))
+    if not r1 or r1.get("errors"):
+        print("Totals error: " + str(r1), file=sys.stderr)
+        sys.exit(1)
+    zones = r1.get("data", {}).get("viewer", {}).get("zones", [])
+    if not zones:
+        print("No zone data", file=sys.stderr)
+        sys.exit(1)
+    groups = zones[0].get("httpRequests1hGroups", [])
+    tr = sum(g["sum"]["requests"] for g in groups)
+    tc = sum(g["sum"]["cachedRequests"] for g in groups)
+    tb = sum(g["sum"]["bytes"] for g in groups)
+    tcb = sum(g["sum"]["cachedBytes"] for g in groups)
+    tt = sum(g["sum"]["threats"] for g in groups)
+    tp = sum(g["sum"]["pageViews"] for g in groups)
+
+    # Query 2: country breakdown (today)
+    countries = {}
+    r2 = gql(COUNTRY_QUERY % (ZONE_ID, today))
+    if r2 and not r2.get("errors"):
+        z2 = r2.get("data", {}).get("viewer", {}).get("zones", [])
+        if z2:
+            for g in z2[0].get("httpRequests1dGroups", []):
+                for c in g["sum"].get("countryMap", []):
+                    n = c["clientCountryName"]
+                    if n not in countries:
+                        countries[n] = {"requests": 0, "bytes": 0, "threats": 0}
+                    countries[n]["requests"] += c["requests"]
+                    countries[n]["bytes"] += c["bytes"]
+                    countries[n]["threats"] += c["threats"]
+    else:
+        print("Country query failed (non-fatal): " + str(r2), file=sys.stderr)
+
+    zl = 'zone="' + ZONE_ID + '"'
+    cr = (tc / tr * 100) if tr > 0 else 0
+    L = []
+    for name, typ, val in [
+        ("cloudflare_zone_requests_total", "gauge", tr),
+        ("cloudflare_zone_cached_requests_total", "gauge", tc),
+        ("cloudflare_zone_bandwidth_bytes_total", "gauge", tb),
+        ("cloudflare_zone_cached_bandwidth_bytes_total", "gauge", tcb),
+        ("cloudflare_zone_threats_total", "gauge", tt),
+        ("cloudflare_zone_pageviews_total", "gauge", tp),
+        ("cloudflare_zone_cache_ratio", "gauge", "%.2f" % cr),
+    ]:
+        L.append("# HELP %s %s" % (name, name))
+        L.append("# TYPE %s %s" % (name, typ))
+        L.append('%s{%s} %s' % (name, zl, val))
+    if countries:
+        L.append("# HELP cloudflare_zone_requests_by_country requests by country (today)")
+        L.append("# TYPE cloudflare_zone_requests_by_country gauge")
+        for co, d in sorted(countries.items(), key=lambda x: -x[1]["requests"]):
+            L.append('cloudflare_zone_requests_by_country{%s,country="%s"} %s' % (zl, co, d["requests"]))
+        L.append("# HELP cloudflare_zone_bandwidth_by_country bytes by country (today)")
+        L.append("# TYPE cloudflare_zone_bandwidth_by_country gauge")
+        for co, d in sorted(countries.items(), key=lambda x: -x[1]["bytes"]):
+            L.append('cloudflare_zone_bandwidth_by_country{%s,country="%s"} %s' % (zl, co, d["bytes"]))
+        L.append("# HELP cloudflare_zone_threats_by_country threats by country (today)")
+        L.append("# TYPE cloudflare_zone_threats_by_country gauge")
+        for co, d in countries.items():
+            if d["threats"] > 0:
+                L.append('cloudflare_zone_threats_by_country{%s,country="%s"} %s' % (zl, co, d["threats"]))
+    L.append("# HELP cloudflare_zone_scrape_timestamp last scrape unix ts")
+    L.append("# TYPE cloudflare_zone_scrape_timestamp gauge")
+    L.append('cloudflare_zone_scrape_timestamp{%s} %d' % (zl, int(datetime.now(timezone.utc).timestamp())))
+    tmp = OUTPUT + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("\n".join(L) + "\n")
+    os.rename(tmp, OUTPUT)
+    print("OK: wrote %d lines to %s" % (len(L), OUTPUT))
+
+if __name__ == "__main__":
+    main()
+{% endraw %}

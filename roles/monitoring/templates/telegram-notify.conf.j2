@@ -1,0 +1,5 @@
+# {{ ansible_managed }}
+# Telegram Gateway notification configuration
+TELEGRAM_GATEWAY_URL="http://localhost:7555"
+TELEGRAM_GATEWAY_AUTH_TOKEN="{{ telegram_gateway_auth_token }}"
+TELEGRAM_CHAT_ID="{{ telegram_notification_chat_id | default(telegram_allowed_user_ids.split(',') | first) }}"

@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Cloudflare Access Audit Logs -> Prometheus textfile collector.
+
+Queries the CF Access audit logs API for authentication events and writes
+Prometheus-format metrics to a .prom file for node-exporter.
+
+Runs every 5 minutes via cron. Managed by Ansible.
+"""
+import json, os, sys, urllib.request, urllib.error
+from datetime import datetime, timedelta, timezone
+
+API_BASE = "https://api.cloudflare.com/client/v4"
+TOKEN = "{{ cloudflare_api_token }}"
+ACCOUNT_ID = "{{ cloudflare_account_id }}"
+OUTPUT = "/opt/compose/textfile-collector/cloudflare-access.prom"
+
+{% raw %}
+def api_get(path, params=""):
+    url = "%s/accounts/%s/%s%s" % (API_BASE, ACCOUNT_ID, path, params)
+    req = urllib.request.Request(url, headers={
+        "Authorization": "Bearer " + TOKEN,
+        "Content-Type": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except Exception as ex:
+        print("CF Access API error: " + str(ex), file=sys.stderr)
+        return None
+
+
+def main():
+    now = datetime.now(timezone.utc)
+    since = (now - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Fetch access audit logs from the last 5 minutes
+    data = api_get("access/logs/access_requests", "?since=%s&limit=1000" % since)
+    if not data or not data.get("success", False):
+        errors = data.get("errors", []) if data else [{"message": "no response"}]
+        print("CF Access API error: %s" % errors, file=sys.stderr)
+        sys.exit(1)
+
+    events = data.get("result", [])
+
+    # Aggregate metrics
+    by_action_app = {}   # (action, app_name) -> count
+    by_user_app = {}     # (user_email, app_name) -> count
+    by_country = {}      # country -> count
+    blocked_total = 0
+
+    for ev in events:
+        action = ev.get("action", "unknown")
+        app_name = ev.get("app_name", "unknown")
+        user_email = ev.get("user_email", "")
+        country = ev.get("country", "unknown")
+
+        key = (action, app_name)
+        by_action_app[key] = by_action_app.get(key, 0) + 1
+
+        if user_email:
+            ukey = (user_email, app_name)
+            by_user_app[ukey] = by_user_app.get(ukey, 0) + 1
+
+        by_country[country] = by_country.get(country, 0) + 1
+
+        if action in ("block", "Block"):
+            blocked_total += 1
+
+    # Build .prom output
+    L = []
+
+    L.append("# HELP cloudflare_access_requests_total CF Access auth events by action and app (last 5 min)")
+    L.append("# TYPE cloudflare_access_requests_total gauge")
+    for (action, app_name), count in sorted(by_action_app.items()):
+        L.append('cloudflare_access_requests_total{action="%s",app_name="%s"} %d' % (action, app_name, count))
+
+    L.append("# HELP cloudflare_access_by_user CF Access events by user and app (last 5 min)")
+    L.append("# TYPE cloudflare_access_by_user gauge")
+    for (user_email, app_name), count in sorted(by_user_app.items()):
+        L.append('cloudflare_access_by_user{user_email="%s",app_name="%s"} %d' % (user_email, app_name, count))
+
+    L.append("# HELP cloudflare_access_by_country CF Access events by country (last 5 min)")
+    L.append("# TYPE cloudflare_access_by_country gauge")
+    for country, count in sorted(by_country.items(), key=lambda x: -x[1]):
+        L.append('cloudflare_access_by_country{country="%s"} %d' % (country, count))
+
+    L.append("# HELP cloudflare_access_blocked_total CF Access blocked requests (last 5 min)")
+    L.append("# TYPE cloudflare_access_blocked_total gauge")
+    L.append("cloudflare_access_blocked_total %d" % blocked_total)
+
+    L.append("# HELP cloudflare_access_scrape_timestamp last scrape unix timestamp")
+    L.append("# TYPE cloudflare_access_scrape_timestamp gauge")
+    L.append("cloudflare_access_scrape_timestamp %d" % int(now.timestamp()))
+
+    # Atomic write
+    tmp = OUTPUT + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("\n".join(L) + "\n")
+    os.rename(tmp, OUTPUT)
+    print("OK: %d events, wrote %d lines to %s" % (len(events), len(L), OUTPUT))
+
+
+if __name__ == "__main__":
+    main()
+{% endraw %}

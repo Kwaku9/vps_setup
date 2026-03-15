@@ -1,0 +1,139 @@
+---
+# CrowdSec WAF Engine Deployment
+# Reads Traefik logs, applies community blocklists, exposes LAPI for bouncer
+
+- name: Create CrowdSec directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /opt/podman-data/crowdsec/config
+    - /opt/podman-data/crowdsec/config/notifications
+    - /opt/podman-data/crowdsec/data
+  tags: ['security', 'crowdsec']
+
+- name: Deploy CrowdSec acquisition config
+  template:
+    src: crowdsec-acquis.yaml.j2
+    dest: /opt/podman-data/crowdsec/config/acquis.yaml
+    mode: '0644'
+  tags: ['security', 'crowdsec']
+
+- name: Deploy CrowdSec HTTP notifier config
+  template:
+    src: crowdsec-http-notifier.yaml.j2
+    dest: /opt/podman-data/crowdsec/config/notifications/http.yaml
+    mode: '0644'
+  tags: ['security', 'crowdsec']
+
+- name: Deploy CrowdSec profiles
+  template:
+    src: crowdsec-profiles.yaml.j2
+    dest: /opt/podman-data/crowdsec/config/profiles.yaml
+    mode: '0644'
+  tags: ['security', 'crowdsec']
+
+- name: Stop existing CrowdSec container
+  containers.podman.podman_container:
+    name: crowdsec
+    state: stopped
+  failed_when: false
+  tags: ['security', 'crowdsec']
+
+- name: Remove existing CrowdSec container
+  containers.podman.podman_container:
+    name: crowdsec
+    state: absent
+  failed_when: false
+  tags: ['security', 'crowdsec']
+
+- name: Deploy CrowdSec container
+  containers.podman.podman_container:
+    name: crowdsec
+    image: "docker.io/crowdsecurity/crowdsec:{{ security.crowdsec.version | default('latest') }}"
+    state: started
+    network: "{{ podman_network_name | default('enterprise_network') }}"
+    memory: 256m
+    ports:
+      - "127.0.0.1:{{ security.crowdsec.lapi_port | default(8081) }}:8080"
+    env:
+      COLLECTIONS: "crowdsecurity/traefik crowdsecurity/http-cve"
+      GID: "{{ 0 if ansible_user == 'root' else omit }}"
+    volumes:
+      - /opt/podman-data/crowdsec/config/acquis.yaml:/etc/crowdsec/acquis.yaml:ro,Z
+      - /opt/podman-data/crowdsec/config/profiles.yaml:/etc/crowdsec/profiles.yaml:ro,Z
+      - /opt/podman-data/crowdsec/config/notifications/http.yaml:/etc/crowdsec/notifications/http.yaml:ro,Z
+      - /opt/podman-data/crowdsec/data:/var/lib/crowdsec/data:Z
+      - /opt/podman-data/crowdsec/traefik-logs:/var/log/traefik:ro
+      - /run/podman/podman.sock:/var/run/docker.sock:ro
+    restart_policy: unless-stopped
+  tags: ['security', 'crowdsec']
+
+- name: Wait for CrowdSec LAPI to start
+  wait_for:
+    host: 127.0.0.1
+    port: "{{ security.crowdsec.lapi_port | default(8081) }}"
+    delay: 10
+    timeout: 60
+  tags: ['security', 'crowdsec']
+
+- name: Check if bouncer key already exists
+  stat:
+    path: /opt/podman-data/crowdsec/bouncer-key
+  register: bouncer_key_file
+  tags: ['security', 'crowdsec']
+
+- name: Generate CrowdSec bouncer API key
+  shell: |
+    podman exec crowdsec cscli bouncers add traefik-bouncer -o raw 2>/dev/null || \
+    podman exec crowdsec cscli bouncers list -o raw | grep traefik-bouncer | awk '{print $2}'
+  register: crowdsec_bouncer_key_result
+  when: not bouncer_key_file.stat.exists
+  changed_when: crowdsec_bouncer_key_result.stdout | length > 0
+  tags: ['security', 'crowdsec']
+
+- name: Save bouncer key to file
+  copy:
+    content: "{{ crowdsec_bouncer_key_result.stdout | trim }}"
+    dest: /opt/podman-data/crowdsec/bouncer-key
+    mode: '0600'
+  when:
+    - not bouncer_key_file.stat.exists
+    - crowdsec_bouncer_key_result.stdout | default('') | length > 0
+  tags: ['security', 'crowdsec']
+
+- name: Read existing bouncer key
+  slurp:
+    src: /opt/podman-data/crowdsec/bouncer-key
+  register: bouncer_key_content
+  when: bouncer_key_file.stat.exists
+  tags: ['security', 'crowdsec']
+
+- name: Set bouncer key fact
+  set_fact:
+    crowdsec_bouncer_api_key: "{{ (bouncer_key_content.content | b64decode | trim) if bouncer_key_file.stat.exists else (crowdsec_bouncer_key_result.stdout | default('') | trim) }}"
+  tags: ['security', 'crowdsec']
+
+- name: Re-render Traefik dynamic config with bouncer key
+  template:
+    src: "../../cloudflare/templates/traefik-dynamic.yml.j2"
+    dest: "{{ traefik_dynamic_dir | default('/opt/compose/traefik/dynamic') }}/services.yml"
+    mode: '0644'
+  when: crowdsec_bouncer_api_key | default('') | length > 0
+  tags: ['security', 'crowdsec']
+  # Security role runs after cloudflare role. The initial render has an empty bouncer key.
+  # This re-renders with the actual key. Traefik hot-reloads via file provider watch.
+
+- name: Display CrowdSec status
+  debug:
+    msg: |
+      CrowdSec WAF Engine:
+        Container: crowdsec
+        LAPI: 127.0.0.1:{{ security.crowdsec.lapi_port | default(8081) }}
+        Collections: crowdsecurity/traefik, crowdsecurity/http-cve
+        Bouncer key: {{ '/opt/podman-data/crowdsec/bouncer-key' if crowdsec_bouncer_api_key | length > 0 else 'FAILED - check logs' }}
+
+      Verify: podman exec crowdsec cscli decisions list
+              podman exec crowdsec cscli bouncers list
+  tags: ['security', 'crowdsec']

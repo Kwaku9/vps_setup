@@ -1,0 +1,60 @@
+---
+# ATLAS trading data cron jobs
+
+- name: IBKR daily OHLC ingestion (Mon-Fri 5:00 PM ET)
+  ansible.builtin.cron:
+    name: "atlas-ibkr-ohlc-ingest"
+    minute: "0"
+    hour: "17"
+    weekday: "1-5"
+    job: >-
+      CRON_TZ=America/New_York
+      /usr/local/bin/ibkr-ohlc-ingest.py
+      --batch {{ trading.ingestion.ibkr.symbols }}
+      {{ trading.ingestion.ibkr.timeframes }}
+      >> /var/log/atlas-ibkr-ingest.log 2>&1
+    state: "{{ 'present' if trading.ingestion.ibkr.enabled else 'absent' }}"
+
+- name: IBKR intraday OHLC ingestion (Mon-Fri every 4 hours during market hours)
+  ansible.builtin.cron:
+    name: "atlas-ibkr-intraday-ingest"
+    minute: "30"
+    hour: "10,14"
+    weekday: "1-5"
+    job: >-
+      CRON_TZ=America/New_York
+      /usr/local/bin/ibkr-ohlc-ingest.py
+      --batch {{ trading.ingestion.ibkr.symbols }}
+      1h
+      >> /var/log/atlas-ibkr-ingest.log 2>&1
+    state: "{{ 'present' if trading.ingestion.ibkr.enabled else 'absent' }}"
+
+- name: Resample all symbols after daily ingest (Mon-Fri 5:15 PM ET)
+  ansible.builtin.cron:
+    name: "atlas-ohlc-resample"
+    minute: "15"
+    hour: "17"
+    weekday: "1-5"
+    job: >-
+      CRON_TZ=America/New_York
+      /usr/local/bin/ohlc-resample.py --all
+      >> /var/log/atlas-ibkr-ingest.log 2>&1
+    state: "{{ 'present' if trading.ingestion.ibkr.enabled else 'absent' }}"
+
+- name: Create ingestion log file
+  ansible.builtin.file:
+    path: /var/log/atlas-ibkr-ingest.log
+    state: touch
+    mode: "0644"
+  changed_when: false
+
+- name: Rotate ingestion logs weekly
+  ansible.builtin.cron:
+    name: "atlas-log-rotate"
+    minute: "0"
+    hour: "0"
+    weekday: "0"
+    job: >-
+      cp /var/log/atlas-ibkr-ingest.log
+      /var/log/atlas-ibkr-ingest.log.prev
+      && : > /var/log/atlas-ibkr-ingest.log

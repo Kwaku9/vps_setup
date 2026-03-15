@@ -1,0 +1,91 @@
+---
+# Cloudflare Tunnel Deployment
+# Deploys cloudflared as a standalone container with token-based auth
+
+- name: Generate cloudflared config file
+  template:
+    src: cloudflared-config.yml.j2
+    dest: "{{ cloudflare_config_dir }}/config.yml"
+    mode: '0644'
+  notify: restart cloudflared
+  tags: ['cloudflare', 'tunnel', 'config']
+
+- name: Remove existing cloudflared container (if any)
+  containers.podman.podman_container:
+    name: "{{ cloudflare_tunnel.container_name }}"
+    state: absent
+  failed_when: false
+  tags: ['cloudflare', 'tunnel', 'cleanup']
+
+- name: Pull cloudflared image
+  containers.podman.podman_image:
+    name: "{{ cloudflare_tunnel.image }}"
+    state: present
+    pull: true
+  tags: ['cloudflare', 'tunnel', 'image']
+
+- name: Deploy cloudflared container
+  containers.podman.podman_container:
+    name: "{{ cloudflare_tunnel.container_name }}"
+    image: "{{ cloudflare_tunnel.image }}"
+    state: started
+    network: "{{ cloudflare_network }}"
+    env:
+      TUNNEL_TOKEN: "{{ cf_tunnel_token }}"
+      TUNNEL_METRICS: "0.0.0.0:{{ cloudflare_tunnel.metrics_port }}"
+      TUNNEL_TRANSPORT_PROTOCOL: "{{ cloudflare_tunnel.protocol }}"
+    command: "tunnel --no-autoupdate run"
+    ports:
+      - "127.0.0.1:{{ cloudflare_tunnel.metrics_port }}:{{ cloudflare_tunnel.metrics_port }}"
+    volumes:
+      - "{{ cloudflare_config_dir }}/config.yml:/etc/cloudflared/config.yml:ro,Z"
+    restart_policy: "{{ cloudflare_restart_policy }}"
+    memory: "{{ cloudflare_memory_limit }}"
+    cpu_quota: "{{ (cloudflare_cpu_limit | float * 100000) | int }}"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:{{ cloudflare_tunnel.metrics_port }}/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+  register: cloudflared_container
+  tags: ['cloudflare', 'tunnel', 'container']
+
+- name: Wait for cloudflared to establish connection
+  wait_for:
+    port: "{{ cloudflare_tunnel.metrics_port }}"
+    host: 127.0.0.1
+    delay: 5
+    timeout: 60
+  tags: ['cloudflare', 'tunnel', 'healthcheck']
+
+- name: Verify tunnel connection status
+  uri:
+    url: "http://127.0.0.1:{{ cloudflare_tunnel.metrics_port }}/ready"
+    method: GET
+    status_code: 200
+  register: tunnel_ready
+  retries: 6
+  delay: 10
+  until: tunnel_ready.status == 200
+  failed_when: false
+  tags: ['cloudflare', 'tunnel', 'healthcheck']
+
+- name: Display tunnel status
+  debug:
+    msg: |
+      Cloudflare Tunnel Status:
+        Container: {{ cloudflare_tunnel.container_name }}
+        Image: {{ cloudflare_tunnel.image }}
+        Network: {{ cloudflare_network }}
+        Ready: {{ tunnel_ready.status | default('unknown') == 200 }}
+        Metrics: http://127.0.0.1:{{ cloudflare_tunnel.metrics_port }}/metrics
+
+      View logs: podman logs {{ cloudflare_tunnel.container_name }}
+  tags: ['cloudflare', 'tunnel', 'status']
+
+# Configure tunnel public hostnames via Cloudflare API
+- name: Configure tunnel public hostnames
+  import_tasks: tunnel-config.yml
+  when: cloudflare_account_id | default('') | length > 0
+  tags: ['cloudflare', 'tunnel', 'config']

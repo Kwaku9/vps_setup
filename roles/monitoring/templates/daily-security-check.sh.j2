@@ -1,0 +1,129 @@
+#!/bin/sh
+# {{ ansible_managed }}
+# Daily security and health audit — sends report via Telegram Gateway.
+
+set -e
+
+REPORT=""
+
+section() { REPORT="${REPORT}\n--- $1 ---\n"; }
+
+# --- Trivy vulnerability scan ---
+section "Vulnerability Scan"
+if command -v /usr/local/bin/trivy-scan-all >/dev/null 2>&1; then
+    TRIVY_OUT=$(/usr/local/bin/trivy-scan-all 2>&1 || true)
+    HIGH_COUNT=$(printf '%s' "$TRIVY_OUT" | grep -c "HIGH" 2>/dev/null || echo "0")
+    HIGH_COUNT=$(printf '%s' "$HIGH_COUNT" | tr -d '[:space:]')
+    CRIT_COUNT=$(printf '%s' "$TRIVY_OUT" | grep -c "CRITICAL" 2>/dev/null || echo "0")
+    CRIT_COUNT=$(printf '%s' "$CRIT_COUNT" | tr -d '[:space:]')
+    if [ "$CRIT_COUNT" -gt 0 ] || [ "$HIGH_COUNT" -gt 0 ]; then
+        REPORT="${REPORT}[WARN] HIGH: ${HIGH_COUNT}, CRITICAL: ${CRIT_COUNT}\n"
+    else
+        REPORT="${REPORT}[OK] No HIGH/CRITICAL vulnerabilities\n"
+    fi
+else
+    REPORT="${REPORT}[SKIP] trivy-scan-all not found\n"
+fi
+
+# --- Fail2ban status ---
+section "Fail2ban"
+if command -v fail2ban-client >/dev/null 2>&1; then
+    JAILS=$(fail2ban-client status 2>/dev/null | grep "Jail list" | sed 's/.*://; s/,/ /g' || echo "")
+    if [ -n "$JAILS" ]; then
+        for jail in $JAILS; do
+            jail=$(printf '%s' "$jail" | tr -d ' ')
+            BANNED=$(fail2ban-client status "$jail" 2>/dev/null | grep "Currently banned" | awk '{print $NF}' || echo 0)
+            TOTAL_BANS=$(fail2ban-client status "$jail" 2>/dev/null | grep "Total banned" | awk '{print $NF}' || echo 0)
+            if [ "$BANNED" -gt 0 ]; then
+                REPORT="${REPORT}[WARN] $jail: ${BANNED} currently banned (${TOTAL_BANS} total)\n"
+            else
+                REPORT="${REPORT}[OK] $jail: 0 banned (${TOTAL_BANS} total)\n"
+            fi
+        done
+    else
+        REPORT="${REPORT}[WARN] No jails configured\n"
+    fi
+else
+    REPORT="${REPORT}[SKIP] fail2ban not installed\n"
+fi
+
+# --- Failed SSH logins (last 24h) ---
+section "SSH Security"
+if [ -f /var/log/messages ]; then
+    YESTERDAY=$(date -d "yesterday" "+%b %e" 2>/dev/null || date -d "-1 day" "+%b %e" 2>/dev/null || echo "")
+    TODAY=$(date "+%b %e" 2>/dev/null || echo "")
+    FAILED_COUNT=0
+    if [ -n "$TODAY" ]; then
+        FAILED_COUNT=$(grep -c "sshd.*Failed password" /var/log/messages 2>/dev/null || echo "0")
+        FAILED_COUNT=$(printf '%s' "$FAILED_COUNT" | tr -d '[:space:]')
+    fi
+    if [ "$FAILED_COUNT" -gt 20 ]; then
+        REPORT="${REPORT}[WARN] ${FAILED_COUNT} failed SSH attempts in log\n"
+    else
+        REPORT="${REPORT}[OK] ${FAILED_COUNT} failed SSH attempts in log\n"
+    fi
+else
+    REPORT="${REPORT}[SKIP] /var/log/messages not found\n"
+fi
+
+# --- Firewall rules ---
+section "Firewall"
+RULE_COUNT=$(iptables -L -n 2>/dev/null | grep -c "^[A-Z]" || echo "0")
+RULE_COUNT=$(printf '%s' "$RULE_COUNT" | tr -d '[:space:]')
+if [ "$RULE_COUNT" -gt 5 ]; then
+    REPORT="${REPORT}[OK] ${RULE_COUNT} iptables chains loaded\n"
+else
+    REPORT="${REPORT}[WARN] Only ${RULE_COUNT} iptables chains (rules may not be loaded)\n"
+fi
+
+# --- System updates ---
+section "System Updates"
+apk update >/dev/null 2>&1 || true
+UPDATES=$(apk version -l '<' 2>/dev/null | grep -c "^[a-z]" || echo "0")
+UPDATES=$(printf '%s' "$UPDATES" | tr -d '[:space:]')
+if [ "$UPDATES" -gt 0 ]; then
+    REPORT="${REPORT}[INFO] ${UPDATES} packages have updates available\n"
+else
+    REPORT="${REPORT}[OK] All packages up to date\n"
+fi
+
+# --- Wazuh alerts ---
+section "Wazuh SIEM"
+WAZUH_LOG="/var/log/wazuh-alerts/alerts.json"
+if [ -f "$WAZUH_LOG" ]; then
+    # Count alerts from last 24h (approximate: last 1000 lines)
+    ALERT_COUNT=$(tail -1000 "$WAZUH_LOG" 2>/dev/null | wc -l | tr -d '[:space:]')
+    HIGH_ALERTS=$(tail -1000 "$WAZUH_LOG" 2>/dev/null | grep -c '"level":1[0-5]' || echo "0")
+    HIGH_ALERTS=$(printf '%s' "$HIGH_ALERTS" | tr -d '[:space:]')
+    if [ "$HIGH_ALERTS" -gt 0 ]; then
+        REPORT="${REPORT}[WARN] ${HIGH_ALERTS} high-level alerts (of ${ALERT_COUNT} recent)\n"
+    else
+        REPORT="${REPORT}[OK] ${ALERT_COUNT} recent alerts, none high-level\n"
+    fi
+else
+    REPORT="${REPORT}[SKIP] Wazuh alerts log not found\n"
+fi
+
+# --- Backup age ---
+section "Backups"
+if [ -d /opt/backups ]; then
+    LATEST=$(find /opt/backups -type f -name "*.tar*" -o -name "*.gpg" 2>/dev/null | \
+        xargs ls -t 2>/dev/null | head -1)
+    if [ -n "$LATEST" ]; then
+        FILE_AGE=$(( ($(date +%s) - $(stat -c %Y "$LATEST" 2>/dev/null || echo 0)) / 86400 ))
+        if [ "$FILE_AGE" -gt 7 ]; then
+            REPORT="${REPORT}[WARN] Latest backup is ${FILE_AGE} days old: $(basename "$LATEST")\n"
+        else
+            REPORT="${REPORT}[OK] Latest backup: $(basename "$LATEST") (${FILE_AGE}d ago)\n"
+        fi
+    else
+        REPORT="${REPORT}[WARN] No backup files found in /opt/backups\n"
+    fi
+else
+    REPORT="${REPORT}[SKIP] /opt/backups does not exist\n"
+fi
+
+# --- Build final message ---
+MSG="<b>Daily Security Audit</b>\n\n<pre>$(printf '%b' "$REPORT")</pre>"
+
+/usr/local/bin/telegram-notify "$(printf '%b' "$MSG")" "HTML"

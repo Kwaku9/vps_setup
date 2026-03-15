@@ -1,0 +1,108 @@
+---
+# CheckMK Host Configuration
+# Adds the VPS host, discovers services, and activates changes via REST API
+# Requires CheckMK to be running and the admin password from vault.yml
+
+- name: Wait for CheckMK API to be ready
+  uri:
+    url: "http://127.0.0.1:5000/{{ monitoring.checkmk.site_name | default('cmk') }}/check_mk/api/1.0/version"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ monitoring.checkmk.admin_user | default('cmkadmin') }} {{ checkmk_password }}"
+      Accept: "application/json"
+    status_code: [200]
+  retries: 12
+  delay: 10
+  register: checkmk_api_ready
+  until: checkmk_api_ready.status == 200
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.checkmk.enabled | default(true)
+  tags: ['monitoring', 'checkmk-setup']
+
+- name: Check if host already exists in CheckMK
+  uri:
+    url: "http://127.0.0.1:5000/{{ monitoring.checkmk.site_name | default('cmk') }}/check_mk/api/1.0/objects/host_config/alpine-vps"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ monitoring.checkmk.admin_user | default('cmkadmin') }} {{ checkmk_password }}"
+      Accept: "application/json"
+    status_code: [200, 404]
+  register: checkmk_host_check
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.checkmk.enabled | default(true)
+  tags: ['monitoring', 'checkmk-setup']
+
+- name: Create host in CheckMK
+  uri:
+    url: "http://127.0.0.1:5000/{{ monitoring.checkmk.site_name | default('cmk') }}/check_mk/api/1.0/domain-types/host_config/collections/all"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ monitoring.checkmk.admin_user | default('cmkadmin') }} {{ checkmk_password }}"
+      Accept: "application/json"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      folder: "/"
+      host_name: "alpine-vps"
+      attributes:
+        ipaddress: "127.0.0.1"
+        tag_agent: "cmk-agent"
+    status_code: [200, 201]
+  register: checkmk_host_create
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.checkmk.enabled | default(true)
+    - checkmk_host_check.status == 404
+  tags: ['monitoring', 'checkmk-setup']
+
+- name: Discover services on host
+  uri:
+    url: "http://127.0.0.1:5000/{{ monitoring.checkmk.site_name | default('cmk') }}/check_mk/api/1.0/objects/host/alpine-vps/actions/discover_services/invoke"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ monitoring.checkmk.admin_user | default('cmkadmin') }} {{ checkmk_password }}"
+      Accept: "application/json"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      mode: "fix_all"
+    status_code: [200, 302]
+  register: checkmk_discover
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.checkmk.enabled | default(true)
+  failed_when: false
+  tags: ['monitoring', 'checkmk-setup']
+
+- name: Activate CheckMK changes
+  uri:
+    url: "http://127.0.0.1:5000/{{ monitoring.checkmk.site_name | default('cmk') }}/check_mk/api/1.0/domain-types/activation_run/actions/activate-changes/invoke"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ monitoring.checkmk.admin_user | default('cmkadmin') }} {{ checkmk_password }}"
+      Accept: "application/json"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      force_foreign_changes: true
+    status_code: [200, 302, 422]
+  register: checkmk_activate
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.checkmk.enabled | default(true)
+  failed_when: false
+  tags: ['monitoring', 'checkmk-setup']
+
+- name: Display CheckMK setup result
+  debug:
+    msg:
+      - "CheckMK host configuration:"
+      - "  Host 'alpine-vps': {{ 'created' if (checkmk_host_create.status | default(0)) in [200, 201] else 'already exists' }}"
+      - "  Service discovery: {{ 'completed' if (checkmk_discover.status | default(0)) == 200 else 'pending' }}"
+      - "  Changes activated: {{ 'yes' if (checkmk_activate.status | default(0)) in [200, 302] else 'pending or no changes' }}"
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.checkmk.enabled | default(true)
+  tags: ['monitoring', 'checkmk-setup']

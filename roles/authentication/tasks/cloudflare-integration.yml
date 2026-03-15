@@ -1,0 +1,468 @@
+---
+# Authentik <-> Cloudflare Zero Trust OIDC Integration
+# Creates OAuth2/OIDC Provider in Authentik + Generic OIDC IdP in Cloudflare
+#
+# Prerequisites:
+#   - Authentik deployed with bootstrap token (AUTHENTIK_BOOTSTRAP_TOKEN)
+#   - Cloudflare tunnel routing traffic through Traefik
+#   - auth.{{ domain_name }} resolving to Authentik via Traefik
+#
+# Variables required:
+#   - authentik_bootstrap_token (from vault.yml)
+#   - cloudflare_api_token (from vault.yml)
+#   - cloudflare_account_id (from vault.yml)
+#   - cloudflare_team_name (from vault.yml)
+#   - domain_name (from all.yml/vault.yml)
+#   - authentication.authentik.cloudflare_integration.* (from all.yml)
+
+- name: Set integration variables
+  set_fact:
+    authentik_token: "{{ authentik_bootstrap_token }}"
+    cf_integration: "{{ authentication.authentik.cloudflare_integration }}"
+    auth_domain: "auth.{{ domain_name }}"
+  tags: ['authentication', 'cloudflare-integration']
+
+# ============================================================
+# Step 1: Wait for Authentik API to be ready
+# ============================================================
+
+- name: Wait for Authentik API readiness
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/users/me/"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+    timeout: 10
+  register: authentik_health
+  retries: 30
+  delay: 10
+  until: authentik_health.status == 200
+  check_mode: no
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Display authenticated user
+  debug:
+    msg: "Authenticated as: {{ authentik_user.json.user.username }}"
+  when: authentik_user.json is defined
+  tags: ['authentication', 'cloudflare-integration']
+
+# ============================================================
+# Step 2: Get default authorization flow
+# ============================================================
+
+- name: Get default authorization flow
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/instances/?designation=authorization"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: auth_flows
+  check_mode: no
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Set authorization flow
+  set_fact:
+    authorization_flow_slug: "{{ auth_flows.json.results[0].slug }}"
+    authorization_flow_pk: "{{ auth_flows.json.results[0].pk }}"
+  when:
+    - auth_flows.json is defined
+    - auth_flows.json.results | length > 0
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Fail if no authorization flow found
+  fail:
+    msg: "No authorization flow found in Authentik. Ensure Authentik has completed initial setup."
+  when:
+    - auth_flows.json is defined
+    - auth_flows.json.results | length == 0
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Get default invalidation flow
+  uri:
+    url: "{{ authentik_url }}/api/v3/flows/instances/?designation=invalidation"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: invalidation_flows
+  check_mode: no
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Set invalidation flow
+  set_fact:
+    invalidation_flow_slug: "{{ invalidation_flows.json.results[0].slug }}"
+    invalidation_flow_pk: "{{ invalidation_flows.json.results[0].pk }}"
+  when:
+    - invalidation_flows.json is defined
+    - invalidation_flows.json.results | length > 0
+  tags: ['authentication', 'cloudflare-integration']
+
+# ============================================================
+# Step 3: Get signing certificate keypair
+# ============================================================
+
+- name: Get certificate keypairs
+  uri:
+    url: "{{ authentik_url }}/api/v3/crypto/certificatekeypairs/?has_key=true"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: cert_keypairs
+  check_mode: no
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Set signing key (use first available keypair)
+  set_fact:
+    signing_key_pk: "{{ cert_keypairs.json.results[0].pk }}"
+  when:
+    - cert_keypairs.json is defined
+    - cert_keypairs.json.results | length > 0
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Create self-signed keypair if none exists
+  uri:
+    url: "{{ authentik_url }}/api/v3/crypto/certificatekeypairs/generate/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      common_name: "authentik Self-signed Certificate"
+      subject_alt_name: "DNS:{{ auth_domain }}"
+      validity_days: 365
+    status_code: [200, 201]
+  register: generated_keypair
+  when:
+    - cert_keypairs.json is defined
+    - cert_keypairs.json.results | length == 0
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Set signing key from generated keypair
+  set_fact:
+    signing_key_pk: "{{ generated_keypair.json.pk }}"
+  when:
+    - generated_keypair is defined
+    - generated_keypair is not skipped
+    - generated_keypair.json is defined
+  tags: ['authentication', 'cloudflare-integration']
+
+# ============================================================
+# Step 4: Check if OAuth2 Provider already exists
+# ============================================================
+
+- name: Check if OAuth2 provider already exists
+  uri:
+    url: "{{ authentik_url }}/api/v3/providers/oauth2/?name={{ cf_integration.provider_name | urlencode }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: existing_provider
+  check_mode: no
+  tags: ['authentication', 'cloudflare-integration']
+
+# ============================================================
+# Step 4b: Ensure groups scope mapping exists + build scope list
+# ============================================================
+
+- name: Check if groups scope mapping exists
+  uri:
+    url: "{{ authentik_url }}/api/v3/propertymappings/provider/scope/?scope_name=groups"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: cf_groups_scope_check
+  check_mode: no
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Create groups scope mapping (if missing)
+  uri:
+    url: "{{ authentik_url }}/api/v3/propertymappings/provider/scope/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "CF Groups Scope"
+      scope_name: "groups"
+      description: "Returns user group memberships"
+      expression: "return {\"groups\": [g.name for g in request.user.ak_groups.all()]}"
+    status_code: [200, 201]
+  register: cf_groups_scope_created
+  when: cf_groups_scope_check.json.results | length == 0
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Set groups scope PK
+  set_fact:
+    cf_groups_scope_pk: >-
+      {{ (cf_groups_scope_check.json.results | length > 0)
+         | ternary(cf_groups_scope_check.json.results[0].pk,
+                   cf_groups_scope_created.json.pk | default('')) }}
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Get default scope mappings for provider
+  uri:
+    url: "{{ authentik_url }}/api/v3/propertymappings/provider/scope/?ordering=scope_name"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: cf_scope_mappings
+  check_mode: no
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Extract openid/email/profile mapping PKs
+  set_fact:
+    cf_default_scopes: >-
+      {{ cf_scope_mappings.json.results
+         | selectattr('scope_name', 'in', ['openid', 'email', 'profile'])
+         | map(attribute='pk') | list }}
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Build complete scope list including groups
+  set_fact:
+    cf_provider_scopes: "{{ cf_default_scopes + [cf_groups_scope_pk] }}"
+  tags: ['authentication', 'cloudflare-integration']
+
+# ============================================================
+# Step 5: Create OAuth2/OIDC Provider
+# ============================================================
+
+- name: Create OAuth2/OIDC Provider for Cloudflare Access
+  uri:
+    url: "{{ authentik_url }}/api/v3/providers/oauth2/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "{{ cf_integration.provider_name }}"
+      authorization_flow: "{{ authorization_flow_pk }}"
+      invalidation_flow: "{{ invalidation_flow_pk }}"
+      client_type: "confidential"
+      redirect_uris:
+        - url: "https://{{ cloudflare_team_name }}.cloudflareaccess.com/cdn-cgi/access/callback"
+          matching_mode: "strict"
+      signing_key: "{{ signing_key_pk }}"
+      property_mappings: "{{ cf_provider_scopes }}"
+      sub_mode: "hashed_user_id"
+      include_claims_in_id_token: true
+      issuer_mode: "per_provider"
+    status_code: [200, 201]
+  register: created_provider
+  when:
+    - existing_provider.json is defined
+    - existing_provider.json.results | length == 0
+    - authorization_flow_pk is defined
+    - invalidation_flow_pk is defined
+    - signing_key_pk is defined
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Set provider details (newly created)
+  set_fact:
+    oauth2_provider_pk: "{{ created_provider.json.pk }}"
+    oauth2_client_id: "{{ created_provider.json.client_id }}"
+    oauth2_client_secret: "{{ created_provider.json.client_secret }}"
+  when:
+    - created_provider is defined
+    - created_provider is not skipped
+    - created_provider.json is defined
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Set provider details (already exists)
+  set_fact:
+    oauth2_provider_pk: "{{ existing_provider.json.results[0].pk }}"
+    oauth2_client_id: "{{ existing_provider.json.results[0].client_id }}"
+    oauth2_client_secret: "{{ existing_provider.json.results[0].client_secret }}"
+  when:
+    - existing_provider.json is defined
+    - existing_provider.json.results | length > 0
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Update existing provider property_mappings (add groups scope)
+  uri:
+    url: "{{ authentik_url }}/api/v3/providers/oauth2/{{ oauth2_provider_pk }}/"
+    method: PATCH
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      property_mappings: "{{ cf_provider_scopes }}"
+    status_code: 200
+  when:
+    - existing_provider.json is defined
+    - existing_provider.json.results | length > 0
+    - oauth2_provider_pk is defined
+    - cf_provider_scopes is defined
+  tags: ['authentication', 'cloudflare-integration']
+
+# ============================================================
+# Step 6: Create Application linked to provider
+# ============================================================
+
+- name: Check if application already exists
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/applications/?slug={{ cf_integration.application_slug | urlencode }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: 200
+  register: existing_app
+  check_mode: no
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Create Application for Cloudflare Access
+  uri:
+    url: "{{ authentik_url }}/api/v3/core/applications/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "{{ cf_integration.application_name }}"
+      slug: "{{ cf_integration.application_slug }}"
+      provider: "{{ oauth2_provider_pk }}"
+      meta_launch_url: "https://{{ cloudflare_team_name }}.cloudflareaccess.com"
+      policy_engine_mode: "any"
+    status_code: [200, 201]
+  register: created_app
+  when:
+    - existing_app.json is defined
+    - existing_app.json.results | length == 0
+    - oauth2_provider_pk is defined
+  tags: ['authentication', 'cloudflare-integration']
+
+# ============================================================
+# Step 7: Add Generic OIDC IdP to Cloudflare Zero Trust
+# ============================================================
+
+- name: Check existing Cloudflare Access identity providers
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/identity_providers"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+    status_code: 200
+  register: cf_identity_providers
+  check_mode: no
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Check if Authentik IdP already exists in Cloudflare
+  set_fact:
+    existing_cf_idp: "{{ cf_identity_providers.json.result | selectattr('name', 'equalto', 'Authentik') | list }}"
+  when: cf_identity_providers.json is defined
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Initialize existing_cf_idp if API was skipped
+  set_fact:
+    existing_cf_idp: []
+  when: cf_identity_providers.json is not defined
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Add Authentik as Generic OIDC IdP in Cloudflare Zero Trust
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/identity_providers"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "Authentik"
+      type: "oidc"
+      config:
+        client_id: "{{ oauth2_client_id }}"
+        client_secret: "{{ oauth2_client_secret }}"
+        auth_url: "https://{{ auth_domain }}/application/o/authorize/"
+        token_url: "https://{{ auth_domain }}/application/o/token/"
+        certs_url: "https://{{ auth_domain }}/application/o/{{ cf_integration.application_slug }}/jwks/"
+        scopes:
+          - "openid"
+          - "email"
+          - "profile"
+          - "groups"
+        claims:
+          - "groups"
+    status_code: [200, 201]
+  register: cf_idp_result
+  when:
+    - existing_cf_idp | length == 0
+    - oauth2_client_id is defined
+    - oauth2_client_secret is defined
+  tags: ['authentication', 'cloudflare-integration']
+
+- name: Update existing Authentik IdP in Cloudflare Zero Trust
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/identity_providers/{{ existing_cf_idp[0].id }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "Authentik"
+      type: "oidc"
+      config:
+        client_id: "{{ oauth2_client_id }}"
+        client_secret: "{{ oauth2_client_secret }}"
+        auth_url: "https://{{ auth_domain }}/application/o/authorize/"
+        token_url: "https://{{ auth_domain }}/application/o/token/"
+        certs_url: "https://{{ auth_domain }}/application/o/{{ cf_integration.application_slug }}/jwks/"
+        scopes:
+          - "openid"
+          - "email"
+          - "profile"
+          - "groups"
+        claims:
+          - "groups"
+    status_code: [200, 201]
+  register: cf_idp_update_result
+  when:
+    - existing_cf_idp | length > 0
+    - oauth2_client_id is defined
+    - oauth2_client_secret is defined
+  tags: ['authentication', 'cloudflare-integration']
+
+# ============================================================
+# Step 8: Display integration summary
+# ============================================================
+
+- name: Display OIDC integration summary
+  debug:
+    msg:
+      - "============================================"
+      - "Authentik <-> Cloudflare OIDC Integration Complete!"
+      - "============================================"
+      - ""
+      - "Authentik (Identity Provider):"
+      - "  Provider: {{ cf_integration.provider_name }}"
+      - "  Application: {{ cf_integration.application_name }} ({{ cf_integration.application_slug }})"
+      - "  Client ID: {{ oauth2_client_id | default('(pending - run without --check)') }}"
+      - "  Auth URL: https://{{ auth_domain }}/application/o/authorize/"
+      - "  Token URL: https://{{ auth_domain }}/application/o/token/"
+      - "  JWKS URL: https://{{ auth_domain }}/application/o/{{ cf_integration.application_slug }}/jwks/"
+      - ""
+      - "Cloudflare (Service Provider):"
+      - "  Team: {{ cloudflare_team_name }}"
+      - "  Callback: https://{{ cloudflare_team_name }}.cloudflareaccess.com/cdn-cgi/access/callback"
+      - "  IdP Status: {{ 'Created' if (existing_cf_idp | length == 0) else 'Updated' }}"
+      - ""
+      - "Test the integration:"
+      - "  1. Visit https://{{ cloudflare_team_name }}.cloudflareaccess.com"
+      - "  2. Select 'Authentik' as identity provider"
+      - "  3. Login with akadmin / <bootstrap_password>"
+      - ""
+      - "Next steps:"
+      - "  - Create Cloudflare Access policies for protected apps"
+      - "  - Services use native OIDC with Authentik (no outpost needed)"
+      - "============================================"
+  tags: ['authentication', 'cloudflare-integration']

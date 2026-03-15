@@ -1,0 +1,241 @@
+---
+# Telegram Gateway MCP Server Deployment
+# Bidirectional Telegram <-> Claude gateway with Anthropic SDK
+
+- name: Set telegram-gateway variables
+  set_fact:
+    _mcp: "{{ mcp_servers.servers.telegram_gateway }}"
+  tags: ['mcp', 'mcp-telegram']
+
+- name: Check if telegram-gateway source exists
+  stat:
+    path: "{{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}"
+  register: telegram_gw_source
+  tags: ['mcp', 'mcp-telegram']
+
+- name: Create telegram-gateway data directory
+  file:
+    path: "{{ mcp_servers.data_dir }}/telegram-gateway"
+    state: directory
+    mode: '0755'
+  tags: ['mcp', 'mcp-telegram']
+
+# --- Database Schema ---
+
+- name: Wait for PostgreSQL to be ready
+  command: podman exec postgres pg_isready -U postgres
+  register: pg_ready
+  retries: 10
+  delay: 3
+  until: pg_ready.rc == 0
+  changed_when: false
+  tags: ['mcp', 'mcp-telegram']
+
+- name: Create gateway schema and tables in PostgreSQL
+  shell: |
+    podman exec -i postgres psql -U postgres -d enterprise <<'EOSQL'
+    CREATE SCHEMA IF NOT EXISTS gateway;
+
+    CREATE TABLE IF NOT EXISTS gateway.commands (
+        id              SERIAL PRIMARY KEY,
+        telegram_user_id BIGINT NOT NULL,
+        telegram_chat_id BIGINT NOT NULL,
+        agent_type      TEXT NOT NULL DEFAULT 'ask',
+        message         TEXT NOT NULL,
+        status          TEXT NOT NULL DEFAULT 'pending',
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+        completed_at    TIMESTAMPTZ
+    );
+
+    CREATE TABLE IF NOT EXISTS gateway.responses (
+        id              SERIAL PRIMARY KEY,
+        command_id      INTEGER NOT NULL REFERENCES gateway.commands(id),
+        agent_type      TEXT NOT NULL DEFAULT 'ask',
+        response_type   TEXT NOT NULL DEFAULT 'text',
+        content         TEXT NOT NULL,
+        payload         JSONB,
+        telegram_chat_id BIGINT NOT NULL,
+        sent            BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS gateway.agent_config (
+        agent_type      TEXT PRIMARY KEY,
+        backend         TEXT NOT NULL DEFAULT 'claude-cli',
+        system_prompt   TEXT NOT NULL,
+        model           TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514',
+        max_tokens      INTEGER NOT NULL DEFAULT 4096,
+        enabled         BOOLEAN NOT NULL DEFAULT TRUE,
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS gateway.sessions (
+        telegram_chat_id BIGINT PRIMARY KEY,
+        session_id      TEXT NOT NULL,
+        agent_type      TEXT NOT NULL DEFAULT 'ask',
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+        last_used_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_commands_status ON gateway.commands(status);
+    CREATE INDEX IF NOT EXISTS idx_commands_created ON gateway.commands(created_at);
+    CREATE INDEX IF NOT EXISTS idx_commands_user ON gateway.commands(telegram_user_id);
+    CREATE INDEX IF NOT EXISTS idx_responses_unsent ON gateway.responses(sent) WHERE sent = FALSE;
+    CREATE INDEX IF NOT EXISTS idx_responses_command ON gateway.responses(command_id);
+
+    CREATE OR REPLACE FUNCTION gateway.notify_response_ready()
+    RETURNS TRIGGER AS $$
+    BEGIN
+        PERFORM pg_notify('response_ready', json_build_object(
+            'response_id', NEW.id,
+            'command_id', NEW.command_id,
+            'chat_id', NEW.telegram_chat_id
+        )::text);
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    DROP TRIGGER IF EXISTS trg_response_ready ON gateway.responses;
+    CREATE TRIGGER trg_response_ready
+        AFTER INSERT ON gateway.responses
+        FOR EACH ROW
+        EXECUTE FUNCTION gateway.notify_response_ready();
+
+    -- Approval workflow table
+    CREATE TABLE IF NOT EXISTS gateway.approvals (
+        id                  SERIAL PRIMARY KEY,
+        command_id          INTEGER REFERENCES gateway.commands(id),
+        telegram_chat_id    BIGINT NOT NULL,
+        telegram_message_id INTEGER,
+        prompt_text         TEXT NOT NULL,
+        status              TEXT NOT NULL DEFAULT 'pending',
+        decided_by          BIGINT,
+        decided_by_username TEXT,
+        hmac_token          TEXT NOT NULL,
+        metadata            JSONB,
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+        decided_at          TIMESTAMPTZ,
+        expires_at          TIMESTAMPTZ NOT NULL DEFAULT now() + interval '10 minutes'
+    );
+
+    -- Migration: add decided_by_username if missing (existing tables)
+    ALTER TABLE gateway.approvals ADD COLUMN IF NOT EXISTS decided_by_username TEXT;
+
+    CREATE INDEX IF NOT EXISTS idx_approvals_pending
+        ON gateway.approvals(status) WHERE status = 'pending';
+    CREATE INDEX IF NOT EXISTS idx_approvals_hmac
+        ON gateway.approvals(hmac_token);
+
+    INSERT INTO gateway.agent_config (agent_type, backend, system_prompt, model, max_tokens) VALUES
+        ('ask', 'claude-cli', 'You are a helpful assistant responding via Telegram. Keep responses concise and well-formatted.', 'claude-sonnet-4-20250514', 4096),
+        ('code', 'claude-cli', 'You are an expert software engineer. Provide clear, working code examples. Use code blocks for all code.', 'claude-sonnet-4-20250514', 4096),
+        ('infra', 'claude-cli', 'You are a DevOps/infrastructure expert. Help with server administration, containers, networking, and deployment.', 'claude-sonnet-4-20250514', 4096),
+        ('trade', 'claude-cli', 'You are a quantitative trading analyst. Help with market analysis, options strategies, and trading concepts.', 'claude-sonnet-4-20250514', 4096)
+    ON CONFLICT (agent_type) DO NOTHING;
+    EOSQL
+  register: schema_result
+  changed_when: "'CREATE' in schema_result.stdout"
+  tags: ['mcp', 'mcp-telegram']
+
+# --- Build & Deploy ---
+
+- name: Remove existing telegram-gateway container if rebuilding
+  containers.podman.podman_container:
+    name: "{{ _mcp.container_name }}"
+    state: absent
+  when: mcp_build.force_rebuild | default(false)
+  tags: ['mcp', 'mcp-telegram']
+
+- name: Check if telegram-gateway image exists
+  command: podman image exists {{ _mcp.image }}
+  register: telegram_gw_image_exists
+  failed_when: false
+  changed_when: false
+  when:
+    - _mcp.build | default(true)
+    - telegram_gw_source.stat.exists
+  tags: ['mcp', 'mcp-telegram', 'mcp-build']
+
+- name: Build telegram-gateway container image
+  command: >
+    podman build
+    -t {{ _mcp.image }}
+    -f Dockerfile
+    {{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}
+  when:
+    - _mcp.build | default(true)
+    - telegram_gw_source.stat.exists
+    - telegram_gw_image_exists.rc != 0 or mcp_build.force_rebuild | default(false)
+  register: telegram_gw_build
+  tags: ['mcp', 'mcp-telegram', 'mcp-build']
+
+- name: Deploy telegram-gateway container
+  containers.podman.podman_container:
+    name: "{{ _mcp.container_name }}"
+    image: "{{ _mcp.image }}"
+    pull: never
+    state: started
+    recreate: "{{ telegram_gw_build is changed | default(false) }}"
+    network: "{{ mcp_servers.network }}"
+    memory: "{{ mcp_runtime.memory_limit | default('512m') }}"
+    ports:
+      - "127.0.0.1:{{ _mcp.port }}:{{ _mcp.port }}"
+    env: "{{ _mcp.env | default({}) }}"
+    volumes:
+      # Claude CLI: symlink + full npm package (Node.js installed in container via apk)
+      - "/usr/local/bin/claude:/usr/local/bin/claude:ro"
+      - "/usr/local/lib/node_modules:/usr/local/lib/node_modules:ro"
+      # Claude config (API keys, settings, sessions)
+      - "/root/.claude:/root/.claude:Z"
+      - "/root/.claude.json:/root/.claude.json:Z"
+      # Workspace access for Claude CLI cwd
+      - "/workspace:/workspace:Z"
+    restart_policy: "{{ mcp_runtime.restart_policy | default('unless-stopped') }}"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:{{ _mcp.port }}/health"]
+      interval: "30s"
+      timeout: "10s"
+      retries: 3
+  when: telegram_gw_source.stat.exists
+  notify: verify mcp containers
+  tags: ['mcp', 'mcp-telegram']
+
+# Restart for aardvark-dns registration
+- name: Restart telegram-gateway for DNS registration
+  command: podman restart {{ _mcp.container_name }}
+  when: telegram_gw_build is changed
+  changed_when: false
+  tags: ['mcp', 'mcp-telegram']
+
+# --- Set Telegram Webhook ---
+
+- name: Wait for telegram-gateway to be healthy
+  uri:
+    url: "http://127.0.0.1:{{ _mcp.port }}/health"
+    method: GET
+    status_code: [200]
+  retries: 10
+  delay: 3
+  register: telegram_gw_health
+  tags: ['mcp', 'mcp-telegram']
+
+- name: Set Telegram webhook URL
+  uri:
+    url: "https://api.telegram.org/bot{{ telegram_bot_token }}/setWebhook"
+    method: POST
+    body_format: json
+    body:
+      url: "https://telegram-bot.{{ cf_domain }}/webhook"
+      secret_token: "{{ telegram_webhook_secret }}"
+      allowed_updates: ["message", "callback_query"]
+    status_code: [200]
+  register: webhook_result
+  failed_when: false
+  tags: ['mcp', 'mcp-telegram']
+
+- name: Display telegram-gateway status
+  debug:
+    msg:
+      - "telegram-gateway deployed at http://127.0.0.1:{{ _mcp.port }}"
+      - "Webhook: {{ webhook_result.json.description | default('failed — run cloudflare role first for DNS') }}"
+  tags: ['mcp', 'mcp-telegram']

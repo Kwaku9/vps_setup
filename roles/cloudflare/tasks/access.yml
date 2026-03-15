@@ -1,0 +1,401 @@
+---
+# Cloudflare Access Configuration
+# Creates Access Applications and Policies via Cloudflare API
+# - Public services (chat, auth) get bypass policies
+# - All other services are protected behind email OTP
+#
+# Included via include_tasks (not import_tasks) so the parent when
+# condition is evaluated once; all tasks here run unconditionally.
+
+- name: Validate Cloudflare Access prerequisites
+  assert:
+    that:
+      - cf_account_id | length > 0
+      - cloudflare_access.admin_email | length > 0
+    fail_msg: |
+      Cloudflare Access requires:
+        - cloudflare_account_id (set in vault.yml)
+        - cloudflare_email (set in vault.yml, used as admin_email)
+    success_msg: "Cloudflare Access prerequisites validated"
+
+# Step 1: Ensure One-Time PIN identity provider exists
+- name: Fetch existing Access identity providers
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/identity_providers"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: access_idps
+  check_mode: false
+
+- name: Check if OTP identity provider exists
+  set_fact:
+    otp_idp_exists: "{{ access_idps.json.result | selectattr('type', 'equalto', 'onetimepin') | list | length > 0 }}"
+
+- name: Get Authentik IdP ID
+  set_fact:
+    authentik_idp_id: "{{ (access_idps.json.result | selectattr('name', 'equalto', 'Authentik') | list | first).id }}"
+  when: access_idps.json.result | selectattr('name', 'equalto', 'Authentik') | list | length > 0
+
+- name: Create One-Time PIN identity provider
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/identity_providers"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "One-time PIN"
+      type: "onetimepin"
+      config: {}
+    status_code: [200, 201]
+  when: not otp_idp_exists
+
+# Step 2: Create bypass applications for public services
+- name: Fetch existing Access applications
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: access_apps
+  check_mode: false
+
+- name: Build map of existing Access app domains
+  set_fact:
+    existing_access_apps: >-
+      {{ access_apps.json.result | default([]) |
+         items2dict(key_name='domain', value_name='id') }}
+
+- name: Create bypass Access application for public services
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "{{ item }}.{{ cf_domain }} (public)"
+      domain: "{{ item }}.{{ cf_domain }}"
+      type: "self_hosted"
+      session_duration: "24h"
+    status_code: [200, 201]
+  loop: "{{ cloudflare_access.public_services }}"
+  loop_control:
+    label: "{{ item }}.{{ cf_domain }}"
+  when: (item + '.' + cf_domain) not in existing_access_apps
+  register: public_apps_created
+
+# Re-fetch apps to get IDs for newly created ones
+- name: Re-fetch Access applications after creating public apps
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: access_apps_updated
+  check_mode: false
+
+- name: Build updated map of Access apps by domain
+  set_fact:
+    access_apps_by_domain: >-
+      {{ access_apps_updated.json.result | default([]) |
+         items2dict(key_name='domain', value_name='id') }}
+
+- name: Fetch existing policies for public service apps
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps/{{ access_apps_by_domain[item + '.' + cf_domain] }}/policies"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  loop: "{{ cloudflare_access.public_services }}"
+  loop_control:
+    label: "{{ item }}.{{ cf_domain }}"
+  when: (item + '.' + cf_domain) in access_apps_by_domain
+  register: public_app_policies
+  check_mode: false
+
+- name: Add bypass policy to public service apps
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps/{{ access_apps_by_domain[item.item + '.' + cf_domain] }}/policies"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "Bypass - {{ item.item }}.{{ cf_domain }}"
+      decision: "bypass"
+      include:
+        - everyone: {}
+      precedence: 1
+    status_code: [200, 201]
+  loop: "{{ public_app_policies.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item | default('skipped') }}.{{ cf_domain }}"
+  when:
+    - item is not skipped
+    - item.json is defined
+    - item.json.result | selectattr('name', 'search', 'Bypass') | list | length == 0
+
+# Step 3: Create protected wildcard application for admin services
+- name: Create wildcard Access application for admin services
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "*.{{ cf_domain }} (admin)"
+      domain: "*.{{ cf_domain }}"
+      type: "self_hosted"
+      session_duration: "{{ cloudflare_access.session_duration }}"
+    status_code: [200, 201]
+  when: ('*.' + cf_domain) not in existing_access_apps
+  register: wildcard_app_created
+
+# Get the wildcard app ID (either just created or already existing)
+- name: Re-fetch Access applications for wildcard ID
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: access_apps_final
+  check_mode: false
+
+- name: Get wildcard app ID
+  set_fact:
+    wildcard_app_id: >-
+      {{ (access_apps_final.json.result | default([]) |
+          selectattr('domain', 'equalto', '*.' + cf_domain) | list | first).id }}
+  when: access_apps_final.json.result | selectattr('domain', 'equalto', '*.' + cf_domain) | list | length > 0
+
+- name: Fetch existing policies for wildcard app
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps/{{ wildcard_app_id }}/policies"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: wildcard_existing_policies
+  when: wildcard_app_id is defined
+  check_mode: false
+
+- name: Build list of existing wildcard policy names
+  set_fact:
+    wildcard_policy_names: "{{ wildcard_existing_policies.json.result | default([]) | map(attribute='name') | list }}"
+  when: wildcard_app_id is defined
+
+- name: Remove legacy email-only policy from wildcard app (replaced by dual-policy)
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps/{{ wildcard_app_id }}/policies/{{ item.id }}"
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    status_code: [200, 202, 204]
+  loop: "{{ wildcard_existing_policies.json.result | default([]) | selectattr('name', 'equalto', 'Admin access - email OTP') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - wildcard_app_id is defined
+    - wildcard_existing_policies.json.result is defined
+  failed_when: false
+
+- name: Add Authentik OIDC group policy to wildcard app
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps/{{ wildcard_app_id }}/policies"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "Admin access - Authentik ({{ cloudflare_access.authentik_idp.admin_group }} group)"
+      decision: "allow"
+      include:
+        - login_method:
+            id: "{{ authentik_idp_id }}"
+      precedence: 1
+    status_code: [200, 201]
+  when:
+    - wildcard_app_id is defined
+    - authentik_idp_id is defined
+    - cloudflare_access.authentik_idp.enabled | bool
+    - "'Admin access - Authentik' not in (wildcard_policy_names | default([]) | join(' '))"
+
+- name: Add email OTP break-glass policy to wildcard app
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps/{{ wildcard_app_id }}/policies"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "Admin access - email OTP (break-glass)"
+      decision: "allow"
+      include:
+        - email:
+            email: "{{ cloudflare_access.admin_email }}"
+      precedence: 2
+    status_code: [200, 201]
+  when:
+    - wildcard_app_id is defined
+    - "'Admin access - email OTP' not in (wildcard_policy_names | default([]) | join(' '))"
+
+# Step 3b: Create SSH browser-rendered application
+# A specific ssh.domain app with type "ssh" takes precedence over the wildcard
+# and enables Cloudflare's browser-rendered SSH terminal
+- name: Create SSH browser Access application
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "{{ cloudflare_access.ssh_browser.subdomain }}.{{ cf_domain }} (SSH browser)"
+      domain: "{{ cloudflare_access.ssh_browser.subdomain }}.{{ cf_domain }}"
+      type: "ssh"
+      session_duration: "{{ cloudflare_access.session_duration }}"
+    status_code: [200, 201]
+  when:
+    - cloudflare_access.ssh_browser.enabled | default(false)
+    - (cloudflare_access.ssh_browser.subdomain + '.' + cf_domain) not in existing_access_apps
+  register: ssh_app_created
+
+- name: Get SSH browser app ID (newly created)
+  set_fact:
+    ssh_browser_app_id: "{{ ssh_app_created.json.result.id }}"
+  when:
+    - ssh_app_created is not skipped
+    - ssh_app_created.json.result.id is defined
+
+- name: Get SSH browser app ID (already exists)
+  set_fact:
+    ssh_browser_app_id: >-
+      {{ (access_apps_final.json.result | default([]) |
+          selectattr('domain', 'equalto', cloudflare_access.ssh_browser.subdomain + '.' + cf_domain) | list | first).id }}
+  when:
+    - ssh_browser_app_id is not defined
+    - cloudflare_access.ssh_browser.enabled | default(false)
+    - access_apps_final.json.result | selectattr('domain', 'equalto', cloudflare_access.ssh_browser.subdomain + '.' + cf_domain) | list | length > 0
+
+- name: Fetch existing policies for SSH browser app
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps/{{ ssh_browser_app_id }}/policies"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: ssh_existing_policies
+  when: ssh_browser_app_id is defined
+  check_mode: false
+
+- name: Build list of existing SSH policy names
+  set_fact:
+    ssh_policy_names: "{{ ssh_existing_policies.json.result | default([]) | map(attribute='name') | list }}"
+  when: ssh_browser_app_id is defined
+
+- name: Remove legacy email-only policy from SSH app (replaced by dual-policy)
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps/{{ ssh_browser_app_id }}/policies/{{ item.id }}"
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    status_code: [200, 202, 204]
+  loop: "{{ ssh_existing_policies.json.result | default([]) | selectattr('name', 'equalto', 'SSH access - email OTP') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - ssh_browser_app_id is defined
+    - ssh_existing_policies.json.result is defined
+  failed_when: false
+
+- name: Add Authentik OIDC group policy to SSH browser app
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps/{{ ssh_browser_app_id }}/policies"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "SSH access - Authentik ({{ cloudflare_access.authentik_idp.admin_group }} group)"
+      decision: "allow"
+      include:
+        - login_method:
+            id: "{{ authentik_idp_id }}"
+      precedence: 1
+    status_code: [200, 201]
+  when:
+    - ssh_browser_app_id is defined
+    - authentik_idp_id is defined
+    - cloudflare_access.authentik_idp.enabled | bool
+    - "'SSH access - Authentik' not in (ssh_policy_names | default([]) | join(' '))"
+
+- name: Add email OTP break-glass policy to SSH browser app
+  uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/access/apps/{{ ssh_browser_app_id }}/policies"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "SSH access - email OTP (break-glass)"
+      decision: "allow"
+      include:
+        - email:
+            email: "{{ cloudflare_access.admin_email }}"
+      precedence: 2
+    status_code: [200, 201]
+  when:
+    - ssh_browser_app_id is defined
+    - "'SSH access - email OTP' not in (ssh_policy_names | default([]) | join(' '))"
+
+# Step 4: Summary
+- name: Display Cloudflare Access summary
+  debug:
+    msg:
+      - "============================================"
+      - "Cloudflare Access Configured!"
+      - "============================================"
+      - "Domain: {{ cf_domain }}"
+      - ""
+      - "Public services (bypass):"
+      - "{% for svc in cloudflare_access.public_services %}  - {{ svc }}.{{ cf_domain }}\n{% endfor %}"
+      - ""
+      - "Admin services (*.{{ cf_domain }}):"
+      - "  Policy 1: Authentik OIDC ({{ cloudflare_access.authentik_idp.admin_group }} group) {{ '- ACTIVE' if (authentik_idp_id is defined) else '- SKIPPED (no IdP)' }}"
+      - "  Policy 2: Email OTP break-glass ({{ cloudflare_access.admin_email }})"
+      - "  Session duration: {{ cloudflare_access.session_duration }}"
+      - ""
+      - "SSH browser-rendered terminal:"
+      - "  {{ cloudflare_access.ssh_browser.subdomain }}.{{ cf_domain }} (type: ssh, enabled: {{ cloudflare_access.ssh_browser.enabled }})"
+      - ""
+      - "Test commands:"
+      - "  curl -I https://chat.{{ cf_domain }}  # Should return 200 (bypass)"
+      - "  curl -I https://grafana.{{ cf_domain }}  # Should return 302 to CF Access"
+      - "  Open https://{{ cloudflare_access.ssh_browser.subdomain }}.{{ cf_domain }}  # Browser SSH terminal"
+      - "============================================"

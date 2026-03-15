@@ -1,0 +1,49 @@
+{# MCP Settings Template for Claude Code CLI #}
+{# Generates configuration based on enabled MCP servers #}
+{
+  "mcpServers": {
+{% set enabled_servers = [] %}
+{% for key, server in mcp_servers.servers.items() %}
+{% if server.enabled | default(false) %}
+{% set _ = enabled_servers.append(server) %}
+{% endif %}
+{% endfor %}
+{% for server in enabled_servers %}
+    "{{ server.name }}": {
+{% if server.transport | default('stdio') == 'http' %}
+      "type": "http",
+      "url": "http://127.0.0.1:{{ server.port }}{{ server.endpoint | default('/mcp') }}"{% if server.requires_auth | default(false) %},
+      "headers": {
+        "Authorization": "Bearer {{ server.env.AUTH_TOKEN | default('') }}"
+      }
+{% endif %}
+
+{% else %}
+{# stdio transport - use podman exec #}
+      "command": "podman",
+      "args": [
+        "exec",
+        "-i",
+        "{{ server.container_name }}",
+{% if server.command is defined %}
+{% set cmd_parts = server.command.split() %}
+{% for part in cmd_parts %}
+        "{{ part }}"{{ ',' if not loop.last else '' }}
+{% endfor %}
+{% else %}
+        "python",
+        "/app/server.py"
+{% endif %}
+      ]{% if server.env is defined and server.env | length > 0 %},
+      "env": {
+{% for env_key, env_val in server.env.items() %}
+        "{{ env_key }}": "{{ env_val }}"{{ ',' if not loop.last else '' }}
+{% endfor %}
+      }
+{% endif %}
+
+{% endif %}
+    }{{ ',' if not loop.last else '' }}
+{% endfor %}
+  }
+}

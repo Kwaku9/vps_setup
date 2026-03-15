@@ -1,0 +1,449 @@
+{
+  "uid": "session-replay",
+  "title": "AI Agent Session Replay",
+  "tags": ["ai-agents", "session", "replay"],
+  "timezone": "browser",
+  "editable": true,
+  "refresh": "",
+  "time": { "from": "now-7d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "agent_type",
+        "label": "Agent Type",
+        "type": "query",
+        "datasource": { "type": "postgres", "uid": "postgres-trading" },
+        "query": "SELECT DISTINCT agent_type FROM gateway.commands ORDER BY agent_type",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "multi": false,
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "command_id",
+        "label": "Command",
+        "type": "query",
+        "datasource": { "type": "postgres", "uid": "postgres-trading" },
+        "query": "SELECT c.id::text AS __value,\n       c.id::text || ' | ' || c.agent_type || ' | ' || LEFT(c.message, 50) || ' (' || to_char(c.created_at, 'MM-DD HH24:MI') || ')' AS __text\nFROM gateway.commands c\nORDER BY c.created_at DESC\nLIMIT 100",
+        "current": { "text": "", "value": "" },
+        "includeAll": false,
+        "multi": false,
+        "refresh": 1,
+        "sort": 0,
+        "regex": ""
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 300,
+      "title": "Session Metadata",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "id": 1,
+      "title": "Duration",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 300 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT ROUND(EXTRACT(EPOCH FROM (completed_at - created_at))::numeric, 1) AS duration FROM gateway.commands WHERE id = ${command_id}::int",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Responses",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS responses FROM gateway.responses WHERE command_id = ${command_id}::int",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Text Chunks",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "orange", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS text_responses FROM gateway.responses WHERE command_id = ${command_id}::int AND response_type = 'text'",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Code Blocks",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS code_blocks FROM gateway.responses WHERE command_id = ${command_id}::int AND response_type = 'code'",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Agent",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "purple", "value": null }
+            ]
+          },
+          "noValue": "-"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/^agent_type$/", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT agent_type FROM gateway.commands WHERE id = ${command_id}::int",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Status",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "noValue": "-",
+          "mappings": [
+            { "type": "value", "options": { "completed": { "color": "green", "text": "Completed" }, "failed": { "color": "red", "text": "Failed" }, "running": { "color": "yellow", "text": "Running" }, "pending": { "color": "blue", "text": "Pending" } } }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/^status$/", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT status FROM gateway.commands WHERE id = ${command_id}::int",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 301,
+      "title": "Conversation Replay",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "collapsed": false
+    },
+    {
+      "id": 7,
+      "title": "Session Replay",
+      "type": "volkovlabs-echarts-panel",
+      "gridPos": { "h": 20, "w": 24, "x": 0, "y": 6 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "options": {
+        "renderer": "canvas",
+        "editor": { "height": 600, "format": "javascript" },
+        "getOption": "const data = context.panel.data.series[0];\n\nif (!data || !data.fields || data.fields.length === 0) {\n  return {\n    graphic: [{\n      type: 'text',\n      left: 'center',\n      top: 'center',\n      style: { text: 'Select a command from the dropdown above', fontSize: 16, fill: '#999' }\n    }]\n  };\n}\n\nconst roleField = data.fields.find(f => f.name === 'role');\nconst contentField = data.fields.find(f => f.name === 'content');\nconst typeField = data.fields.find(f => f.name === 'response_type');\nconst tsField = data.fields.find(f => f.name === 'ts');\n\nif (!roleField || !contentField) {\n  return {\n    graphic: [{\n      type: 'text',\n      left: 'center',\n      top: 'center',\n      style: { text: 'No conversation data found', fontSize: 16, fill: '#999' }\n    }]\n  };\n}\n\nconst echartsInstance = context.panel.chart;\nif (!echartsInstance) {\n  return { graphic: [{ type: 'text', left: 'center', top: 'center', style: { text: 'Loading...', fill: '#999' } }] };\n}\nconst dom = echartsInstance.getDom();\n\nfunction escapeHtml(text) {\n  if (!text) return '';\n  return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');\n}\n\nfunction fmtTs(ts) {\n  if (!ts) return '';\n  try { return new Date(ts).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); } catch(e) { return ''; }\n}\n\nfunction badge(type) {\n  const m = { command:'#1e40af', text:'#374151', thinking:'#6b21a8', tool_use:'#1e3a5f', tool_result:'#14532d', code:'#4a1d96', stderr:'#7f1d1d', approval:'#78350f', end_turn:'#1f2937' };\n  return m[type] || '#374151';\n}\n\nlet html = '<div style=\"display:flex;flex-direction:column;gap:12px;padding:16px;overflow-y:auto;height:100%;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;line-height:1.5;background:#0b0b0f;\">';\n\nfor (let i = 0; i < roleField.values.length; i++) {\n  const role = roleField.values[i];\n  const content = contentField.values[i];\n  const type = typeField ? typeField.values[i] : '';\n  const ts = tsField ? tsField.values[i] : null;\n  const isUser = role === 'user';\n  const align = isUser ? 'flex-end' : 'flex-start';\n  const bg = isUser ? '#1e40af' : '#1f2937';\n  const label = (type || 'unknown').toUpperCase();\n\n  let body = '';\n  let txt = content ? String(content) : '';\n  const trunc = txt.length > 3000;\n  if (trunc) txt = txt.substring(0, 3000);\n  const esc = escapeHtml(txt);\n\n  if (type === 'code' || type === 'stderr' || type === 'tool_result') {\n    const cbg = type === 'stderr' ? '#2d1111' : type === 'tool_result' ? '#0d2818' : '#1a1a2e';\n    body = '<pre style=\"margin:4px 0;padding:8px 12px;background:'+cbg+';border-radius:6px;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;\">'+esc+'</pre>';\n  } else if (type === 'thinking') {\n    body = '<div style=\"border-left:3px solid #7c3aed;padding-left:12px;font-style:italic;color:#a78bfa;\">'+esc.replace(/\\n/g,'<br>')+'</div>';\n  } else if (type === 'tool_use') {\n    body = '<pre style=\"margin:4px 0;padding:8px 12px;background:#0c2d48;border-radius:6px;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all;\">'+esc+'</pre>';\n  } else {\n    body = '<div style=\"white-space:pre-wrap;word-break:break-word;\">'+esc+'</div>';\n  }\n  if (trunc) body += '<div style=\"color:#f59e0b;font-size:11px;margin-top:4px;\">[truncated]</div>';\n\n  html += '<div style=\"display:flex;flex-direction:column;align-items:'+align+';\">';\n  html += '<div style=\"max-width:85%;background:'+bg+';border-radius:12px;padding:10px 14px;color:#e5e7eb;\">';\n  html += '<div style=\"display:flex;align-items:center;gap:8px;margin-bottom:6px;\">';\n  html += '<span style=\"padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:0.5px;background:'+badge(type)+';color:#e5e7eb;\">'+label+'</span>';\n  const stamp = fmtTs(ts);\n  if (stamp) html += '<span style=\"font-size:11px;color:#9ca3af;\">'+stamp+'</span>';\n  html += '</div>';\n  html += body;\n  html += '</div></div>';\n}\n\nhtml += '</div>';\n\nlet chatDiv = dom.querySelector('#chat-replay');\nif (!chatDiv) {\n  chatDiv = document.createElement('div');\n  chatDiv.id = 'chat-replay';\n  chatDiv.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;z-index:10;overflow:hidden;';\n  dom.style.position = 'relative';\n  dom.appendChild(chatDiv);\n}\nchatDiv.innerHTML = html;\n\nreturn {};"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT 'user' AS role, c.message AS content, 'command' AS response_type, c.created_at AS ts, c.agent_type, NULL::text AS payload FROM gateway.commands c WHERE c.id = ${command_id}::int UNION ALL SELECT 'agent' AS role, r.content, r.response_type, r.created_at AS ts, r.agent_type, r.payload::text FROM gateway.responses r WHERE r.command_id = ${command_id}::int ORDER BY ts ASC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 302,
+      "title": "Thinking & Tools",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "collapsed": false
+    },
+    {
+      "id": 8,
+      "title": "Agent Thinking",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 27 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "content" },
+            "properties": [
+              { "id": "custom.width", "value": 600 },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              { "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "created_at" },
+            "properties": [
+              { "id": "custom.width", "value": 160 }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "md"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT created_at, LEFT(content, 500) AS content FROM gateway.responses WHERE command_id = ${command_id}::int AND response_type = 'thinking' ORDER BY created_at ASC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Tool Usage Timeline",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 27 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "response_type" },
+            "properties": [
+              { "id": "custom.width", "value": 110 },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              {
+                "id": "mappings",
+                "value": [
+                  { "type": "value", "options": { "tool_use": { "color": "blue", "text": "tool_use" }, "tool_result": { "color": "green", "text": "tool_result" } } }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "content" },
+            "properties": [
+              { "id": "custom.width", "value": 500 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "exit_code" },
+            "properties": [
+              { "id": "custom.width", "value": 80 },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "red", "value": 1 }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT created_at, response_type, LEFT(content, 300) AS content, (payload->>'exit_code')::int AS exit_code FROM gateway.responses WHERE command_id = ${command_id}::int AND response_type IN ('tool_use', 'tool_result') ORDER BY created_at ASC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 303,
+      "title": "Code & Errors",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
+      "collapsed": false
+    },
+    {
+      "id": 10,
+      "title": "Code Artifacts",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 16, "x": 0, "y": 38 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "content" },
+            "properties": [
+              { "id": "custom.width", "value": 700 },
+              { "id": "custom.inspect", "value": true }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "md"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT created_at, LEFT(content, 1000) AS content FROM gateway.responses WHERE command_id = ${command_id}::int AND response_type = 'code' ORDER BY created_at ASC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Errors / Stderr",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 8, "x": 16, "y": 38 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "content" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } },
+              { "id": "custom.inspect", "value": true }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "md"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT created_at, LEFT(content, 500) AS content FROM gateway.responses WHERE command_id = ${command_id}::int AND response_type = 'stderr' ORDER BY created_at ASC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

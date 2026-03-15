@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATLAS V2B-Long Trade Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0e17; color: #c8ccd4; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; font-size: 12px; }
+
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 20px; background: #111827; border-bottom: 1px solid #1e293b;
+  }
+  .header h1 { font-size: 14px; font-weight: 600; color: #e2e8f0; }
+  .header .sub { font-size: 11px; color: #64748b; margin-left: 12px; }
+
+  .controls {
+    display: flex; gap: 6px; align-items: center;
+  }
+  .btn {
+    padding: 4px 12px; border-radius: 4px; border: 1px solid #1e293b;
+    background: #0f172a; color: #94a3b8; cursor: pointer; font-size: 11px;
+    font-family: inherit; transition: all 0.15s;
+  }
+  .btn:hover { border-color: #334155; color: #e2e8f0; }
+  .btn.active { border-color: #3b82f6; background: #1e3a5f; color: #e2e8f0; }
+
+  #chart-container { width: 100%; height: calc(100vh - 140px); }
+
+  .stats-bar {
+    display: flex; gap: 20px; padding: 8px 20px;
+    background: #111827; border-top: 1px solid #1e293b; font-size: 11px;
+    flex-wrap: wrap;
+  }
+  .stat { display: flex; gap: 4px; }
+  .stat-label { color: #64748b; }
+  .stat-value { color: #e2e8f0; font-weight: 600; }
+  .stat-win { color: #22c55e; }
+  .stat-loss { color: #ef4444; }
+
+  .trade-info {
+    position: fixed; top: 80px; right: 20px; width: 260px;
+    background: #111827ee; border: 1px solid #1e293b; border-radius: 8px;
+    padding: 12px; display: none; z-index: 10; font-size: 11px;
+  }
+  .trade-info h3 { font-size: 12px; margin-bottom: 8px; color: #e2e8f0; }
+  .trade-info .row { display: flex; justify-content: space-between; padding: 2px 0; }
+  .trade-info .row .label { color: #64748b; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="display:flex;align-items:baseline;">
+    <h1>ATLAS V2B-LONG</h1>
+    <span class="sub">SPY 4H &mdash; Long-Only Exhaustion Trades</span>
+  </div>
+  <div class="controls">
+    <span style="color:#64748b;margin-right:4px;">Show exits:</span>
+    <button class="btn active" data-show="all">All</button>
+    <button class="btn" data-show="winners">Winners</button>
+    <button class="btn" data-show="losers">Losers</button>
+    <button class="btn" data-show="time">Time Exits</button>
+    <button class="btn" data-show="target">Targets</button>
+    <button class="btn" data-show="stop">Stops</button>
+  </div>
+</div>
+
+<div id="chart-container"></div>
+
+<div class="stats-bar">
+  <div class="stat"><span class="stat-label">Trades:</span> <span class="stat-value" id="st-trades">0</span></div>
+  <div class="stat"><span class="stat-label">Win Rate:</span> <span class="stat-value" id="st-wr">0</span></div>
+  <div class="stat"><span class="stat-label">PnL:</span> <span class="stat-value" id="st-pnl">0</span></div>
+  <div class="stat"><span class="stat-label">Avg Win:</span> <span class="stat-value stat-win" id="st-avgw">0</span></div>
+  <div class="stat"><span class="stat-label">Avg Loss:</span> <span class="stat-value stat-loss" id="st-avgl">0</span></div>
+  <div class="stat"><span class="stat-label">R:R:</span> <span class="stat-value" id="st-rr">0</span></div>
+  <div class="stat"><span class="stat-label">PF:</span> <span class="stat-value" id="st-pf">0</span></div>
+  <div class="stat"><span class="stat-label">Targets:</span> <span class="stat-value" id="st-tgt">0</span></div>
+  <div class="stat"><span class="stat-label">Stops:</span> <span class="stat-value" id="st-stp">0</span></div>
+  <div class="stat"><span class="stat-label">Time:</span> <span class="stat-value" id="st-tmx">0</span></div>
+</div>
+
+<div class="trade-info" id="trade-info">
+  <h3 id="ti-title">Trade</h3>
+  <div class="row"><span class="label">Entry:</span> <span id="ti-entry"></span></div>
+  <div class="row"><span class="label">Exit:</span> <span id="ti-exit"></span></div>
+  <div class="row"><span class="label">PnL:</span> <span id="ti-pnl"></span></div>
+  <div class="row"><span class="label">Bars:</span> <span id="ti-bars"></span></div>
+  <div class="row"><span class="label">Exit Type:</span> <span id="ti-type"></span></div>
+</div>
+
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+let OHLC_DATA = /*OHLC_PLACEHOLDER*/[];
+let TRADE_DATA = /*TRADE_PLACEHOLDER*/[];
+
+const MAX_HOLD = 20;
+
+// Parse trade dates to unix timestamps
+function parseDate(s) {
+  return Math.floor(new Date(s).getTime() / 1000);
+}
+
+// Classify trade exit type
+function exitType(t) {
+  if (t.bars_held >= MAX_HOLD) return 'time';
+  return t.pnl > 0 ? 'target' : 'stop';
+}
+
+// Chart
+const container = document.getElementById('chart-container');
+const chart = LightweightCharts.createChart(container, {
+  layout: { background: { type: 'solid', color: '#0a0e17' }, textColor: '#64748b', fontSize: 11 },
+  grid: { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
+  crosshair: {
+    mode: LightweightCharts.CrosshairMode.Normal,
+    vertLine: { color: '#334155', labelBackgroundColor: '#1e293b' },
+    horzLine: { color: '#334155', labelBackgroundColor: '#1e293b' },
+  },
+  timeScale: { borderColor: '#1e293b', timeVisible: true, secondsVisible: false },
+  rightPriceScale: { borderColor: '#1e293b' },
+});
+
+const candleSeries = chart.addCandlestickSeries({
+  upColor: '#22c55e', downColor: '#ef4444',
+  borderUpColor: '#22c55e', borderDownColor: '#ef4444',
+  wickUpColor: '#22c55e80', wickDownColor: '#ef444480',
+});
+
+const volumeSeries = chart.addHistogramSeries({
+  priceFormat: { type: 'volume' }, priceScaleId: 'volume',
+});
+chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
+
+candleSeries.setData(OHLC_DATA);
+volumeSeries.setData(OHLC_DATA.map(b => ({
+  time: b.time, value: b.volume,
+  color: b.close >= b.open ? '#22c55e30' : '#ef444430',
+})));
+
+// Filter and display
+let currentFilter = 'all';
+
+function updateMarkers() {
+  let filtered = TRADE_DATA;
+  if (currentFilter === 'winners') filtered = TRADE_DATA.filter(t => t.pnl > 0);
+  else if (currentFilter === 'losers') filtered = TRADE_DATA.filter(t => t.pnl <= 0);
+  else if (currentFilter === 'time') filtered = TRADE_DATA.filter(t => exitType(t) === 'time');
+  else if (currentFilter === 'target') filtered = TRADE_DATA.filter(t => exitType(t) === 'target');
+  else if (currentFilter === 'stop') filtered = TRADE_DATA.filter(t => exitType(t) === 'stop');
+
+  const markers = [];
+  for (const t of filtered) {
+    const entryTime = parseDate(t.entry_date);
+    const exitTime = parseDate(t.exit_date);
+    const isWin = t.pnl > 0;
+    const et = exitType(t);
+
+    // Entry marker (green arrow up)
+    markers.push({
+      time: entryTime,
+      position: 'belowBar',
+      color: '#3b82f6',
+      shape: 'arrowUp',
+      text: '',
+    });
+
+    // Exit marker
+    let exitColor = '#94a3b8';
+    let exitShape = 'circle';
+    if (et === 'target') { exitColor = '#22c55e'; exitShape = 'arrowDown'; }
+    else if (et === 'stop') { exitColor = '#ef4444'; exitShape = 'arrowDown'; }
+    else { exitColor = isWin ? '#a3e635' : '#f59e0b'; exitShape = 'arrowDown'; }
+
+    markers.push({
+      time: exitTime,
+      position: 'aboveBar',
+      color: exitColor,
+      shape: exitShape,
+      text: et === 'time' ? 'T' : '',
+    });
+  }
+
+  markers.sort((a, b) => a.time - b.time);
+  candleSeries.setMarkers(markers);
+
+  // Update stats
+  const wins = filtered.filter(t => t.pnl > 0);
+  const losses = filtered.filter(t => t.pnl <= 0);
+  const totalPnl = filtered.reduce((s, t) => s + t.pnl, 0);
+  const avgWin = wins.length ? wins.reduce((s, t) => s + t.pnl, 0) / wins.length : 0;
+  const avgLoss = losses.length ? Math.abs(losses.reduce((s, t) => s + t.pnl, 0) / losses.length) : 0;
+  const targets = filtered.filter(t => exitType(t) === 'target');
+  const stops = filtered.filter(t => exitType(t) === 'stop');
+  const timeExits = filtered.filter(t => exitType(t) === 'time');
+
+  document.getElementById('st-trades').textContent = filtered.length;
+  document.getElementById('st-wr').textContent = filtered.length ? (wins.length / filtered.length * 100).toFixed(1) + '%' : '—';
+  document.getElementById('st-pnl').textContent = '$' + totalPnl.toFixed(0);
+  document.getElementById('st-pnl').className = 'stat-value ' + (totalPnl >= 0 ? 'stat-win' : 'stat-loss');
+  document.getElementById('st-avgw').textContent = '$' + avgWin.toFixed(0);
+  document.getElementById('st-avgl').textContent = '$' + avgLoss.toFixed(0);
+  document.getElementById('st-rr').textContent = avgLoss > 0 ? (avgWin / avgLoss).toFixed(2) + ':1' : '—';
+  const gw = wins.reduce((s, t) => s + t.pnl, 0);
+  const gl = Math.abs(losses.reduce((s, t) => s + t.pnl, 0));
+  document.getElementById('st-pf').textContent = gl > 0 ? (gw / gl).toFixed(2) : '—';
+  document.getElementById('st-tgt').textContent = targets.length;
+  document.getElementById('st-stp').textContent = stops.length;
+  document.getElementById('st-tmx').textContent = timeExits.length;
+}
+
+// Button handlers
+document.querySelectorAll('.btn[data-show]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.btn[data-show]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.show;
+    updateMarkers();
+  });
+});
+
+updateMarkers();
+chart.timeScale().fitContent();
+
+new ResizeObserver(() => {
+  chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+}).observe(container);
+</script>
+</body>
+</html>

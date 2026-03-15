@@ -1,0 +1,27 @@
+# {{ ansible_managed }}
+# VPS shell aliases — sourced by /etc/profile.d/ on login
+
+alias vps='cd /workspace/vscode-projects/vps_setup'
+
+# Launch or attach to the ansible-deployment container (works from any directory)
+ansible() {
+    bash /workspace/vscode-projects/vps_setup/scripts/build-run.sh run
+}
+
+# Quick deploy: run a tagged playbook without entering the container
+# Usage: deploy monitoring   or   deploy mcp-telegram
+deploy() {
+    if [ -z "$1" ]; then
+        echo "Usage: deploy <tag> [extra-args...]"
+        echo "Example: deploy monitoring"
+        echo "         deploy mcp-telegram --ask-vault-pass"
+        return 1
+    fi
+    bash /workspace/vscode-projects/vps_setup/scripts/build-run.sh deploy-tags "$@"
+}
+
+# Common shortcuts
+alias pods='podman pod ps'
+alias containers='podman ps --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}\t{{ '{{' }}.Ports{{ '}}' }}"'
+alias logs='podman logs --tail 50'
+alias rebuild-ansible='bash /workspace/vscode-projects/vps_setup/scripts/build-run.sh build'

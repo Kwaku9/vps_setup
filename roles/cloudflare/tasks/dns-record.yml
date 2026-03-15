@@ -1,0 +1,92 @@
+---
+# DNS Record Handler - Creates or updates a single DNS record
+# Called from dns.yml with dns_record variable
+
+- name: Determine record full name
+  set_fact:
+    record_full_name: >-
+      {%- if dns_record.name == '@' or dns_record.name == cf_domain -%}
+        {{ cf_domain }}
+      {%- elif dns_record.name is search('\.') -%}
+        {{ dns_record.name }}
+      {%- else -%}
+        {{ dns_record.name }}.{{ cf_domain }}
+      {%- endif -%}
+    record_content: >-
+      {%- if dns_record.type == 'CNAME' and dns_record.content == cf_domain -%}
+        {{ cf_domain }}
+      {%- elif dns_record.type == 'CNAME' and not dns_record.content is search('\.') -%}
+        {{ dns_record.content }}.{{ cf_domain }}
+      {%- else -%}
+        {{ dns_record.content }}
+      {%- endif -%}
+
+- name: Check if record exists (any type)
+  set_fact:
+    existing_record: >-
+      {{ existing_records_list | selectattr('name', 'equalto', record_full_name) | list | first | default({}) }}
+
+- name: Display record operation
+  debug:
+    msg: |
+      DNS Record: {{ record_full_name }}
+        Type: {{ dns_record.type }}
+        Content: {{ record_content }}
+        Proxied: {{ dns_record.proxied | default(cloudflare_dns.proxied) }}
+        Existing ID: {{ existing_record.id | default('none') }}
+        Action: {{ 'UPDATE' if existing_record.id is defined else 'CREATE' }}
+    verbosity: 1
+
+# Create new record
+- name: Create DNS record ({{ record_full_name }})
+  uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ cf_zone_id }}/dns_records"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      type: "{{ dns_record.type }}"
+      name: "{{ record_full_name }}"
+      content: "{{ record_content }}"
+      ttl: "{{ dns_record.ttl | default(cloudflare_dns.ttl) | int }}"
+      proxied: "{{ dns_record.proxied | default(cloudflare_dns.proxied) | bool }}"
+    status_code: [200, 201]
+  register: create_result
+  when: existing_record.id is not defined
+  changed_when: create_result.status in [200, 201]
+
+# Update existing record if content/type/proxied differs
+- name: Update DNS record ({{ record_full_name }})
+  uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ cf_zone_id }}/dns_records/{{ existing_record.id }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      type: "{{ dns_record.type }}"
+      name: "{{ record_full_name }}"
+      content: "{{ record_content }}"
+      ttl: "{{ dns_record.ttl | default(cloudflare_dns.ttl) | int }}"
+      proxied: "{{ dns_record.proxied | default(cloudflare_dns.proxied) | bool }}"
+    status_code: 200
+  register: update_result
+  when:
+    - existing_record.id is defined
+    - (existing_record.content != record_content) or
+      (existing_record.type != dns_record.type) or
+      (existing_record.proxied != (dns_record.proxied | default(cloudflare_dns.proxied) | bool))
+  changed_when: update_result.status == 200
+
+- name: Skip unchanged record ({{ record_full_name }})
+  debug:
+    msg: "Record {{ record_full_name }} already exists with correct values - skipping"
+    verbosity: 1
+  when:
+    - existing_record.id is defined
+    - existing_record.content == record_content
+    - existing_record.type == dns_record.type
+    - existing_record.proxied == (dns_record.proxied | default(cloudflare_dns.proxied) | bool)

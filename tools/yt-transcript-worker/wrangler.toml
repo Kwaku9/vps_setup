@@ -1,0 +1,7 @@
+name = "yt-transcript"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+account_id = "d6d91bb928618f43d2655eb7b404acbb"
+
+[vars]
+# Set a secret AUTH_TOKEN via: wrangler secret put AUTH_TOKEN

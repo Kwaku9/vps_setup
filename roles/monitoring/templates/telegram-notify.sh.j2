@@ -1,0 +1,33 @@
+#!/bin/sh
+# {{ ansible_managed }}
+# Send a message to Telegram via the Gateway MCP server.
+# Usage: telegram-notify "message text" [parse_mode]
+#   parse_mode defaults to HTML
+
+set -e
+
+CONF="/etc/telegram-notify.conf"
+if [ ! -f "$CONF" ]; then
+    echo "ERROR: $CONF not found" >&2
+    exit 1
+fi
+. "$CONF"
+
+MESSAGE="$1"
+PARSE_MODE="${2:-HTML}"
+
+if [ -z "$MESSAGE" ]; then
+    echo "Usage: telegram-notify \"message\" [parse_mode]" >&2
+    exit 1
+fi
+
+# Escape double quotes in the message for JSON
+ESCAPED=$(printf '%s' "$MESSAGE" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+curl -s -X POST "${TELEGRAM_GATEWAY_URL}/send_message" \
+    -H "Authorization: Bearer ${TELEGRAM_GATEWAY_AUTH_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "{\"chat_id\": ${TELEGRAM_CHAT_ID}, \"text\": \"${ESCAPED}\", \"parse_mode\": \"${PARSE_MODE}\"}" \
+    > /dev/null 2>&1
+
+exit 0

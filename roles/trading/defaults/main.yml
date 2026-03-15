@@ -1,0 +1,38 @@
+---
+# ATLAS Trading Role Defaults
+
+trading:
+  enabled: true
+
+  # Backtrader container
+  backtrader:
+    enabled: true
+    image: "backtrader-atlas:latest"
+    strategies_dir: "/opt/compose/backtrader-strategies"
+    results_dir: "/opt/compose/backtrader-results"
+
+  # Lightweight Charts frontend
+  charts:
+    enabled: true
+    image: "atlas-charts:latest"
+    container_name: "atlas-charts"
+    port: 3080
+
+  # Data ingestion
+  ingestion:
+    # IBKR OHLC cron (requires active IBeam session)
+    ibkr:
+      enabled: true
+      symbols: "SPY,QQQ,IWM"
+      timeframes: "1d,1h,4h"
+      # Mon-Fri after market close
+      schedule: "0 17 * * 1-5"
+      timezone: "America/New_York"
+
+    # MT5 import directory
+    mt5:
+      import_dir: "/opt/compose/mt5-imports"
+
+  # PostgreSQL backtest schema
+  schema:
+    enabled: true

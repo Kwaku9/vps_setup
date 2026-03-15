@@ -1,0 +1,111 @@
+---
+# Traefik ACME Configuration with Cloudflare DNS Challenge
+# Configures Let's Encrypt wildcard certificates
+
+- name: Create acme.json file with correct permissions
+  file:
+    path: "{{ traefik_config_dir }}/acme.json"
+    state: touch
+    mode: '0600'
+  tags: ['cloudflare', 'acme', 'permissions']
+
+- name: Generate Traefik static configuration with ACME
+  template:
+    src: traefik-acme.yml.j2
+    dest: "{{ traefik_config_dir }}/traefik.yml"
+    mode: '0644'
+  register: traefik_static_config
+  notify: restart traefik
+  tags: ['cloudflare', 'acme', 'traefik-config']
+
+- name: Generate Traefik dynamic configuration
+  template:
+    src: traefik-dynamic.yml.j2
+    dest: "{{ traefik_dynamic_dir }}/services.yml"
+    mode: '0644'
+  register: traefik_dynamic_config
+  notify: restart traefik
+  tags: ['cloudflare', 'acme', 'traefik-dynamic']
+
+- name: Stop existing Traefik container
+  containers.podman.podman_container:
+    name: traefik
+    state: stopped
+  failed_when: false
+  when: traefik_static_config.changed or traefik_dynamic_config.changed
+  tags: ['cloudflare', 'acme', 'traefik']
+
+- name: Remove existing Traefik container
+  containers.podman.podman_container:
+    name: traefik
+    state: absent
+  failed_when: false
+  when: traefik_static_config.changed or traefik_dynamic_config.changed
+  tags: ['cloudflare', 'acme', 'traefik']
+
+- name: Deploy Traefik with ACME configuration
+  containers.podman.podman_container:
+    name: traefik
+    image: "{{ shared_services | selectattr('name', 'equalto', 'traefik') | map(attribute='image') | first | default('traefik:v3.6') }}"
+    state: started
+    network: "{{ cloudflare_network }}"
+    ports:
+      - "127.0.0.1:80:80"    # Localhost only — Cloudflare Tunnel uses Podman DNS, not host ports
+      - "127.0.0.1:443:443"  # Localhost only — prevents direct IP bypass
+      - "127.0.0.1:8082:8080"  # Dashboard/API (internal only)
+    env:
+      CF_API_EMAIL: "{{ cf_email }}"
+      CF_DNS_API_TOKEN: "{{ cf_api_token }}"
+    volumes:
+      - /run/podman/podman.sock:/var/run/docker.sock:ro
+      - "{{ traefik_config_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro,Z"
+      - "{{ traefik_config_dir }}/acme.json:/etc/traefik/acme.json:Z"
+      - "{{ traefik_dynamic_dir }}:/etc/traefik/dynamic:ro,Z"
+      - "traefik-plugins:/plugins-local:Z"
+    restart_policy: unless-stopped
+  register: traefik_container
+  tags: ['cloudflare', 'acme', 'traefik']
+
+- name: Wait for Traefik to start
+  wait_for:
+    port: 80
+    host: 127.0.0.1
+    delay: 5
+    timeout: 60
+  tags: ['cloudflare', 'acme', 'healthcheck']
+
+# Podman aardvark-dns stale registration check
+# When Podman recreates a container, DNS can fail to register the new hostname.
+# A simple `podman restart` re-registers with DNS and fixes it.
+- name: Check Traefik DNS resolution (aardvark-dns canary)
+  shell: podman exec traefik wget -q -O /dev/null --timeout=3 http://postgres:5432 2>&1 && echo "DNS_OK" || echo "DNS_FAIL"
+  register: traefik_dns_check
+  changed_when: false
+  failed_when: false
+  tags: ['cloudflare', 'acme', 'healthcheck']
+
+- name: Auto-restart Traefik to fix stale DNS registration
+  shell: podman restart traefik && sleep 3 && echo "RESTARTED"
+  when:
+    - traefik_dns_check is defined
+    - "'DNS_FAIL' in traefik_dns_check.stdout"
+  changed_when: true
+  tags: ['cloudflare', 'acme', 'healthcheck']
+
+- name: Display ACME configuration summary
+  debug:
+    msg: |
+      Traefik ACME Configuration:
+        CA Server: {{ cloudflare_traefik.acme.ca_server }}
+        Certificate Storage: {{ cloudflare_traefik.acme.storage }}
+        DNS Challenge Provider: Cloudflare
+        Domains:
+      {% for domain in cloudflare_traefik.domains %}
+          - Main: {{ domain.main }}
+            SANs: {{ domain.sans | default([]) | join(', ') }}
+      {% endfor %}
+
+        Note: Initial certificate generation may take 1-2 minutes.
+        Check certificate status:
+          podman exec traefik cat /etc/traefik/acme.json | jq '.cloudflare.Certificates'
+  tags: ['cloudflare', 'acme', 'summary']
