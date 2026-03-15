@@ -10,8 +10,32 @@
     ports:
       - "127.0.0.1:9000:9000"    # Authentik HTTP (internal - SSH tunnel)
       - "127.0.0.1:9443:9443"    # Authentik HTTPS (internal - SSH tunnel)
+      - "127.0.0.1:6379:6379"    # Redis (Authentik's sole consumer)
   when: authentication.enabled | default(true)
   tags: ['authentication', 'pod']
+
+# Redis (in authentication-pod — Authentik is the sole consumer)
+- name: Create Redis data directory
+  file:
+    path: /opt/podman-data/redis
+    state: directory
+    mode: '0755'
+  when: authentication.enabled | default(true)
+  tags: ['authentication', 'redis']
+
+- name: Deploy Redis container (in authentication-pod)
+  containers.podman.podman_container:
+    name: redis
+    image: "docker.io/library/redis:8-alpine"
+    state: started
+    pod: authentication-pod
+    memory: "64m"
+    command: "redis-server --appendonly yes"
+    volumes:
+      - /opt/podman-data/redis:/data:Z
+    restart_policy: unless-stopped
+  when: authentication.enabled | default(true)
+  tags: ['authentication', 'redis']
 
 - name: Create Authentik PostgreSQL database
   containers.podman.podman_container:
@@ -48,7 +72,7 @@
     state: started
     pod: authentication-pod
     env:
-      AUTHENTIK_REDIS__HOST: "redis"
+      AUTHENTIK_REDIS__HOST: "localhost"
       AUTHENTIK_POSTGRESQL__HOST: "localhost"
       AUTHENTIK_POSTGRESQL__NAME: "{{ authentication.authentik.postgres_db | default('authentik') }}"
       AUTHENTIK_POSTGRESQL__USER: "{{ authentication.authentik.postgres_user | default('authentik') }}"
@@ -61,7 +85,7 @@
       AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS: "REDACTED_CIDR,127.0.0.0/8"
       AUTHENTIK_LISTEN__METRICS: "0.0.0.0:9300"
     command: server
-    memory: "512m"
+    memory: "1g"
     volumes:
       - authentik-media:/media
       - authentik-templates:/templates
@@ -77,7 +101,7 @@
     state: started
     pod: authentication-pod
     env:
-      AUTHENTIK_REDIS__HOST: "redis"
+      AUTHENTIK_REDIS__HOST: "localhost"
       AUTHENTIK_POSTGRESQL__HOST: "localhost"
       AUTHENTIK_POSTGRESQL__NAME: "{{ authentication.authentik.postgres_db | default('authentik') }}"
       AUTHENTIK_POSTGRESQL__USER: "{{ authentication.authentik.postgres_user | default('authentik') }}"

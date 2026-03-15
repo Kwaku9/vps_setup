@@ -61,6 +61,10 @@ start_firewall() {
     # Allow ICMP (ping)
     iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT
 
+    # Allow container traffic to host node-exporter (monitoring)
+    iptables -A INPUT -s REDACTED_CIDR -p tcp --dport 9100 -j ACCEPT
+    iptables -A INPUT -s REDACTED_CIDR -p tcp --dport 9100 -j ACCEPT
+
 {% if security.squid.enabled | default(false) %}
     # Allow container traffic to Squid transparent proxy
     iptables -A INPUT -s REDACTED_CIDR -p tcp --dport 3128 -j ACCEPT

@@ -397,25 +397,19 @@ prometheus.scrape "vm_metrics" {
   scrape_interval = "60s"
 }
 
-// Node Exporter (cross-network via monitoring-net)
-prometheus.scrape "node_metrics" {
-  targets = [{
-    __address__ = "node-exporter-pod:9100",
-    job         = "node-exporter",
-  }]
-  forward_to      = [prometheus.remote_write.metrics_service.receiver]
-  scrape_interval = "30s"
-}
+// Node Exporter (host service, accessed via host gateway)
+// Commented out — VM scrapes node-exporter directly via vmscrape.yml
+// to avoid duplicate series from both Alloy and VM scraping the same target
+// prometheus.scrape "node_metrics" {
+//   targets = [{
+//     __address__ = "host.containers.internal:9100",
+//     job         = "node-exporter",
+//   }]
+//   forward_to      = [prometheus.remote_write.metrics_service.receiver]
+//   scrape_interval = "30s"
+// }
 
-// Podman Exporter (cross-network via monitoring-net)
-prometheus.scrape "podman_metrics" {
-  targets = [{
-    __address__ = "podman-exporter-pod:9882",
-    job         = "podman-exporter",
-  }]
-  forward_to      = [prometheus.remote_write.metrics_service.receiver]
-  scrape_interval = "60s"
-}
+// Podman metrics collected via cron script → VictoriaMetrics (no scrape needed)
 
 // AI Stack metrics
 prometheus.scrape "litellm_metrics" {

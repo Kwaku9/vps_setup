@@ -88,10 +88,14 @@
     state: started
     pod: security-infra-pod
     memory: "128m"
+    env:
+      CF_DNS_API_TOKEN: "{{ cloudflare_api_token }}"
+      CF_API_EMAIL: "{{ cloudflare_email }}"
     volumes:
       - /run/podman/podman.sock:/var/run/docker.sock:ro
       - /opt/compose/traefik.yml:/etc/traefik/traefik.yml:ro
       - /opt/compose/traefik/dynamic:/etc/traefik/dynamic
+      - traefik-plugins:/plugins-local
 {% if security.crowdsec.enabled | default(false) %}
       - /opt/podman-data/crowdsec/traefik-logs:/var/log/traefik
 {% endif %}
@@ -169,6 +173,19 @@
     - security.crowdsec.enabled | default(false)
   tags: ['shared-services', 'security-infra-pod', 'crowdsec']
 
+- name: Deploy CrowdSec LAPI port override (8180 to avoid Traefik 8080 conflict)
+  copy:
+    content: |
+      api:
+        server:
+          listen_uri: 0.0.0.0:8180
+    dest: /opt/podman-data/crowdsec/config/config.yaml.local
+    mode: '0644'
+  when:
+    - deploy_shared_services | default(true)
+    - security.crowdsec.enabled | default(false)
+  tags: ['shared-services', 'security-infra-pod', 'crowdsec']
+
 - name: Deploy CrowdSec container (in security-infra-pod, LAPI on 8180 to avoid Traefik 8080 conflict)
   containers.podman.podman_container:
     name: crowdsec
@@ -179,10 +196,10 @@
     env:
       COLLECTIONS: "{{ security.crowdsec.collections | join(' ') }}"
       GID: "0"
-      LOCAL_API_URL: "http://localhost:8180"
     volumes:
       - /opt/podman-data/crowdsec/data:/var/lib/crowdsec/data
       - /opt/podman-data/crowdsec/config/acquis.yaml:/etc/crowdsec/acquis.yaml:ro
+      - /opt/podman-data/crowdsec/config/config.yaml.local:/etc/crowdsec/config.yaml.local:ro
       - /opt/podman-data/crowdsec/traefik-logs:/var/log/traefik:ro
       - /var/log:/var/log/host:ro
     restart_policy: unless-stopped
@@ -246,44 +263,7 @@
     - shared_services | selectattr('name', 'equalto', 'postgres') | selectattr('enabled', 'equalto', true) | list | length > 0
   tags: ['shared-services', 'shared-db-pod', 'postgres']
 
-# ============================================================================
-# SHARED-CACHE-POD: Redis
-# ============================================================================
-
-- name: Create shared-cache pod
-  containers.podman.podman_pod:
-    name: shared-cache-pod
-    network:
-      - "{{ podman_network_name | default('enterprise_network') }}"
-    state: started
-    ports:
-      - "127.0.0.1:6379:6379"    # Redis
-  when: deploy_shared_services | default(true)
-  tags: ['shared-services', 'shared-cache-pod', 'pod']
-
-- name: Create Redis data directory
-  file:
-    path: /opt/podman-data/redis
-    state: directory
-    mode: '0755'
-  when: deploy_shared_services | default(true)
-  tags: ['shared-services', 'shared-cache-pod', 'redis']
-
-- name: Deploy Redis container (in shared-cache-pod)
-  containers.podman.podman_container:
-    name: redis
-    image: "{{ (shared_services | selectattr('name', 'equalto', 'redis') | first).image }}"
-    state: started
-    pod: shared-cache-pod
-    memory: "64m"
-    command: "redis-server --appendonly yes"
-    volumes:
-      - /opt/podman-data/redis:/data:Z
-    restart_policy: unless-stopped
-  when:
-    - deploy_shared_services | default(true)
-    - shared_services | selectattr('name', 'equalto', 'redis') | selectattr('enabled', 'equalto', true) | list | length > 0
-  tags: ['shared-services', 'shared-cache-pod', 'redis']
+# Redis moved to authentication-pod (Authentik is the sole consumer)
 
 # ============================================================================
 # STATUS

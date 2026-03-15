@@ -285,19 +285,18 @@
   tags: ['monitoring', 'tempo-pod', 'tempo']
 
 # ============================================================================
-# NODE-EXPORTER-POD: Host metrics (isolated failure domain)
+# NODE-EXPORTER: Host service (apk install, not containerized)
+# Better performance and accuracy running directly on the host
 # ============================================================================
 
-- name: Create node-exporter pod
-  containers.podman.podman_pod:
-    name: node-exporter-pod
-    network:
-      - "{{ monitoring_network_name | default('monitoring-net') }}"
-    state: started
-    ports:
-      - "127.0.0.1:9100:9100"    # Node Exporter metrics
-  when: monitoring.enabled | default(true)
-  tags: ['monitoring', 'node-exporter-pod', 'pod']
+- name: Install node-exporter on host
+  apk:
+    name:
+      - prometheus-node-exporter
+      - prometheus-node-exporter-openrc
+    state: present
+  when: monitoring.node_exporter.enabled | default(true)
+  tags: ['monitoring', 'node-exporter']
 
 - name: Create textfile collector directory
   file:
@@ -305,58 +304,46 @@
     state: directory
     mode: '0755'
   when: monitoring.node_exporter.enabled | default(true)
-  tags: ['monitoring', 'node-exporter-pod', 'node-exporter']
+  tags: ['monitoring', 'node-exporter']
 
-- name: Deploy Node Exporter container
-  containers.podman.podman_container:
+- name: Configure node-exporter to listen on all interfaces
+  copy:
+    content: |
+      ARGS="--web.listen-address=0.0.0.0:9100 --collector.textfile.directory=/opt/compose/textfile-collector"
+    dest: /etc/conf.d/node-exporter
+    mode: '0644'
+  notify: restart node-exporter
+  when: monitoring.node_exporter.enabled | default(true)
+  tags: ['monitoring', 'node-exporter']
+
+- name: Enable and start node-exporter service
+  service:
     name: node-exporter
-    image: "docker.io/prom/node-exporter:{{ monitoring.node_exporter.version | default('latest') }}"
+    enabled: yes
     state: started
-    pod: node-exporter-pod
-    memory: "{{ monitoring.node_exporter.memory | default('128m') }}"
-    command: >
-      --path.procfs=/host/proc
-      --path.sysfs=/host/sys
-      --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
-      --collector.textfile.directory=/textfile-collector
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-      - /opt/compose/textfile-collector:/textfile-collector:ro
-  when:
-    - monitoring.enabled | default(true)
-    - monitoring.node_exporter.enabled | default(true)
-  tags: ['monitoring', 'node-exporter-pod', 'node-exporter']
+  when: monitoring.node_exporter.enabled | default(true)
+  tags: ['monitoring', 'node-exporter']
 
 # ============================================================================
-# PODMAN-EXPORTER-POD: Container metrics (isolated failure domain)
+# PODMAN METRICS: Cron-based collection (replaces podman-exporter container)
+# Podman-exporter has a hardcoded 10s timeout incompatible with 35+ containers
 # ============================================================================
 
-- name: Create podman-exporter pod
-  containers.podman.podman_pod:
-    name: podman-exporter-pod
-    network:
-      - "{{ monitoring_network_name | default('monitoring-net') }}"
-    state: started
-    ports:
-      - "127.0.0.1:9882:9882"    # Podman Exporter metrics
+- name: Deploy podman-metrics collection script
+  copy:
+    src: podman-metrics.sh
+    dest: /opt/compose/monitoring/podman-metrics.sh
+    mode: '0755'
   when: monitoring.enabled | default(true)
-  tags: ['monitoring', 'podman-exporter-pod', 'pod']
+  tags: ['monitoring', 'podman-metrics']
 
-- name: Deploy Podman Exporter container
-  containers.podman.podman_container:
-    name: podman-exporter
-    image: "quay.io/navidys/prometheus-podman-exporter:{{ monitoring.podman_exporter.version | default('v1.14.0') }}"
-    state: started
-    pod: podman-exporter-pod
-    memory: "{{ monitoring.podman_exporter.memory | default('96m') }}"
-    volumes:
-      - /run/podman/podman.sock:/run/podman/podman.sock:ro
-  when:
-    - monitoring.enabled | default(true)
-    - monitoring.podman_exporter.enabled | default(true)
-  tags: ['monitoring', 'podman-exporter-pod', 'podman-exporter']
+- name: Configure podman-metrics cron job (every minute)
+  cron:
+    name: "podman container metrics"
+    minute: "*"
+    job: "/opt/compose/monitoring/podman-metrics.sh > /dev/null 2>&1"
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'podman-metrics']
 
 # ============================================================================
 # DEPENDENCY HEALTH MONITOR
@@ -393,12 +380,12 @@
 - name: Display monitoring stack status
   debug:
     msg:
-      - "Monitoring stack deployed successfully (5 isolated pods)"
+      - "Monitoring stack deployed successfully (3 pods + host services)"
       - "  metrics-pod: VictoriaMetrics, Grafana, Image Renderer"
       - "  logs-pod: Alloy, Loki"
       - "  tempo-pod: Tempo"
-      - "  node-exporter-pod: Node Exporter"
-      - "  podman-exporter-pod: Podman Exporter"
+      - "  node-exporter: Host service (apk, port 9100)"
+      - "  podman-metrics: Cron script (every 60s → VictoriaMetrics)"
       - ""
       - "Access URLs:"
       - "  Grafana: http://{{ ansible_host }}:3000"

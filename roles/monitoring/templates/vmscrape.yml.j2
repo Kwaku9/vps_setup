@@ -19,7 +19,7 @@ scrape_configs:
   - job_name: 'node-exporter'
     scrape_interval: 30s
     static_configs:
-      - targets: ['node-exporter-pod:9100']
+      - targets: ['host.containers.internal:9100']
         labels:
           instance: '{{ ansible_facts["hostname"] }}'
           component: 'node-exporter'
@@ -38,13 +38,7 @@ scrape_configs:
         labels:
           component: 'grafana'
 
-  - job_name: 'podman-exporter'
-    scrape_interval: 60s
-    static_configs:
-      - targets: ['podman-exporter-pod:9882']
-        labels:
-          instance: '{{ ansible_facts["hostname"] }}'
-          component: 'podman-exporter'
+  # podman-exporter replaced by cron script pushing directly to VM
 
   - job_name: 'traefik'
     scrape_interval: 30s
