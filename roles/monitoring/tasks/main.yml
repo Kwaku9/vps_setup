@@ -61,6 +61,7 @@
     state: started
     pod: metrics-pod
     memory: "{{ monitoring.victoriametrics.memory | default('1536m') }}"
+    cpu_shares: 1024
     volumes:
       - /opt/podman-data/victoriametrics:/victoria-metrics-data
       - /opt/compose/vmscrape.yml:/etc/victoriametrics/scrape.yml:ro
@@ -118,6 +119,7 @@
     state: started
     pod: metrics-pod
     memory: "{{ monitoring.grafana.memory | default('300m') }}"
+    cpu_shares: 1024
     env:
       GF_SECURITY_ADMIN_USER: "{{ monitoring.grafana.admin_user | default('admin') }}"
       GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_password }}"
@@ -161,6 +163,7 @@
     state: started
     pod: metrics-pod
     memory: "{{ monitoring.image_renderer.memory | default('32m') }}"
+    cpu_shares: 512
   when:
     - monitoring.enabled | default(true)
     - monitoring.image_renderer.enabled | default(true)
@@ -201,6 +204,7 @@
     state: started
     pod: logs-pod
     memory: "{{ monitoring.alloy.memory | default('640m') }}"
+    cpu_shares: 512
     command: >
       run
       --server.http.listen-addr=0.0.0.0:12345
@@ -234,6 +238,7 @@
     state: started
     pod: logs-pod
     memory: "{{ monitoring.loki.memory | default('768m') }}"
+    cpu_shares: 1024
     volumes:
       - /opt/compose/loki-config.yml:/etc/loki/local-config.yaml:ro
       - loki-data:/loki
@@ -275,6 +280,7 @@
     state: started
     pod: tempo-pod
     memory: "{{ monitoring.tempo.memory | default('384m') }}"
+    cpu_shares: 512
     command: "-config.file=/etc/tempo/tempo.yml"
     volumes:
       - /opt/compose/tempo-config.yml:/etc/tempo/tempo.yml:ro

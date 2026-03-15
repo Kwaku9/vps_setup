@@ -20,6 +20,7 @@
     state: started
     pod: management-pod
     memory: "200m"
+    cpu_shares: 1024
     volumes:
       - "{{ management.portainer.data_volume | default('portainer-data') }}:/data"
       - /run/podman/podman.sock:/var/run/docker.sock:ro
@@ -38,6 +39,7 @@
     image: "{{ management.ansible_deployment.image | default('localhost/ansible-vps:latest') }}"
     state: started
     network: host
+    cpu_shares: 512
     env:
       ANSIBLE_HOST_KEY_CHECKING: "False"
       ANSIBLE_CALLBACK_RESULT_FORMAT: "yaml"
@@ -77,6 +79,7 @@
     image: "{{ management.dockge.image | default('louislam/dockge:1') }}"
     state: started
     pod: management-pod
+    cpu_shares: 512
     env:
       DOCKGE_STACKS_DIR: "{{ management.dockge.stacks_dir | default('/opt/compose') }}"
     volumes:

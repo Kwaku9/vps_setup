@@ -29,6 +29,7 @@
     state: started
     pod: backend-pod
     memory: "384m"
+    cpu_shares: 512
     env: "{{ backend.ibeam.env | default({}) }}"
     volumes: "{{ backend.ibeam.volumes | default([]) }}"
     restart_policy: unless-stopped
@@ -46,6 +47,7 @@
     state: started
     pod: backend-pod
     memory: "128m"
+    cpu_shares: 512
     env: "{{ backend.ib_mcp.env | default({}) }}"
     volumes: "{{ backend.ib_mcp.volumes | default([]) }}"
     restart_policy: unless-stopped
@@ -64,6 +66,7 @@
     image: "{{ item.image }}"
     state: started
     pod: backend-pod
+    cpu_shares: 512
     env: "{{ item.env | default({}) }}"
     volumes: "{{ item.volumes | default([]) }}"
   loop: "{{ backend.api_services | default([]) }}"

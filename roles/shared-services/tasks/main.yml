@@ -88,6 +88,7 @@
     state: started
     pod: security-infra-pod
     memory: "128m"
+    cpu_shares: 2048
     env:
       CF_DNS_API_TOKEN: "{{ cloudflare_api_token }}"
       CF_API_EMAIL: "{{ cloudflare_email }}"
@@ -134,6 +135,7 @@
     state: started
     pod: security-infra-pod
     memory: "128m"
+    cpu_shares: 1024
     command: "tunnel --no-autoupdate run"
     env:
       TUNNEL_TOKEN: "{{ cloudflared_tunnel_token }}"
@@ -193,6 +195,7 @@
     state: started
     pod: security-infra-pod
     memory: "128m"
+    cpu_shares: 512
     env:
       COLLECTIONS: "{{ security.crowdsec.collections | join(' ') }}"
       GID: "0"
@@ -250,6 +253,7 @@
     state: started
     pod: shared-db-pod
     memory: "256m"
+    cpu_shares: 1024
     env:
       POSTGRES_PASSWORD: "{{ postgres_password }}"
       POSTGRES_USER: "postgres"
@@ -292,6 +296,7 @@
     state: started
     pod: mcp-pod
     memory: "256m"
+    cpu_shares: 512
     env:
       TELEGRAM_BOT_TOKEN: "{{ telegram_bot_token }}"
       TELEGRAM_WEBHOOK_SECRET: "{{ telegram_webhook_secret }}"
@@ -336,6 +341,7 @@
     state: started
     pod: mcp-pod
     memory: "128m"
+    cpu_shares: 512
     env:
       PORT: "3001"
     volumes:
@@ -353,6 +359,7 @@
     state: started
     pod: mcp-pod
     memory: "128m"
+    cpu_shares: 512
     env:
       MCP_TRANSPORT: "httpStream"
       PORT: "9091"
@@ -372,6 +379,7 @@
     state: started
     pod: mcp-pod
     memory: "256m"
+    cpu_shares: 512
     env:
       PORT: "8888"
       SCRAPY_PROJECT_PATH: "/workspace"

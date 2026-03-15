@@ -43,6 +43,7 @@
     state: started
     pod: "{{ ai_stack.pod_name }}"
     memory: 256m
+    cpu_shares: 1024
     env:
       POSTGRES_DB: "litellm"
       POSTGRES_USER: "{{ ai_stack.postgres.user }}"
@@ -87,6 +88,7 @@
     state: started
     pod: "{{ ai_stack.pod_name }}"
     memory: 512m
+    cpu_shares: 1024
     env:
       DATABASE_URL: "postgresql://{{ ai_stack.postgres.user }}:{{ ai_stack_postgres_password | urlencode | replace('/', '%2F') }}@127.0.0.1:5432/litellm"
       STORE_MODEL_IN_DB: "True"
@@ -144,6 +146,7 @@
     state: started
     pod: "{{ ai_stack.pod_name }}"
     memory: 1024m
+    cpu_shares: 2048
     recreate: true
     env:
       WEBUI_NAME: "AICORTEX"
@@ -258,6 +261,7 @@
     state: started
     pod: "{{ ai_stack.pod_name }}"
     memory: 256m
+    cpu_shares: 512
     env:
       DB_TYPE: "{{ ai_stack.n8n_claude.env.DB_TYPE }}"
       DB_POSTGRESDB_HOST: "127.0.0.1"
@@ -297,6 +301,7 @@
     state: started
     pod: "{{ ai_stack.pod_name }}"
     memory: 1024m
+    cpu_shares: 512
     env:
       # OpenTelemetry (env vars ignored if SDK not in image)
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://logs-pod:4318"
@@ -336,6 +341,7 @@
     state: started
     pod: "{{ ai_stack.pod_name }}"
     memory: 128m
+    cpu_shares: 512
     env:
       SEARXNG_PORT: "{{ ai_stack.searxng.internal_port | default('8888') }}"
       SEARXNG_BIND_ADDRESS: "0.0.0.0"
@@ -379,6 +385,7 @@
     image: "{{ ai_stack.fabric_api.image }}"
     state: started
     pod: "{{ ai_stack.pod_name }}"
+    cpu_shares: 512
     volumes:
       - "{{ ai_stack.data_dir }}/fabric:/root/.config/fabric:Z"
     restart_policy: "unless-stopped"
@@ -420,6 +427,7 @@
     image: "{{ ai_stack.claude_monitor_backend.image }}"
     state: started
     pod: "{{ ai_stack.pod_name }}"
+    cpu_shares: 512
     env:
       HOST: "{{ ai_stack.claude_monitor_backend.env.HOST }}"
       PORT: "{{ ai_stack.claude_monitor_backend.env.PORT }}"
@@ -467,6 +475,7 @@
     image: "{{ ai_stack.claude_monitor_frontend.image }}"
     state: started
     pod: "{{ ai_stack.pod_name }}"
+    cpu_shares: 512
     env:
       REACT_APP_API_URL: "http://localhost:{{ ai_stack.claude_monitor_backend.port }}/api/v1"
       REACT_APP_WS_URL: "ws://localhost:{{ ai_stack.claude_monitor_backend.port }}/ws"

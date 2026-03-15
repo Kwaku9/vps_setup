@@ -30,6 +30,7 @@
     state: started
     pod: authentication-pod
     memory: "64m"
+    cpu_shares: 1024
     command: "redis-server --appendonly yes"
     volumes:
       - /opt/podman-data/redis:/data:Z
@@ -43,6 +44,7 @@
     image: "docker.io/library/postgres:{{ shared_services[0].version | default('18-alpine') }}"
     state: started
     pod: authentication-pod
+    cpu_shares: 1024
     env:
       POSTGRES_DB: "{{ authentication.authentik.postgres_db | default('authentik') }}"
       POSTGRES_USER: "{{ authentication.authentik.postgres_user | default('authentik') }}"
@@ -86,6 +88,7 @@
       AUTHENTIK_LISTEN__METRICS: "0.0.0.0:9300"
     command: server
     memory: "1g"
+    cpu_shares: 2048
     volumes:
       - authentik-media:/media
       - authentik-templates:/templates
@@ -111,6 +114,7 @@
       AUTHENTIK_LOG_LEVEL: "info"
     command: worker
     memory: "384m"
+    cpu_shares: 2048
     volumes:
       - authentik-media:/media
       - authentik-templates:/templates
