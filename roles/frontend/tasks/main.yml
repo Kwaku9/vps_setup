@@ -41,8 +41,8 @@
     image: "docker.io/library/nginx:{{ frontend.nginx.version | default('alpine') }}"
     state: started
     pod: frontend-pod
-    memory: "32m"
-    cpu_shares: 1024
+    memory: "128m"
+    cpu_shares: 512
     volumes:
       - /opt/compose/nginx.conf:/etc/nginx/nginx.conf:ro
       - /opt/compose/index.html:/usr/share/nginx/html/index.html:ro
@@ -93,3 +93,62 @@
       - "  Atlas Charts: http://{{ ansible_host }}:3080"
   when: deploy_frontend | default(true)
   tags: ['frontend']
+
+# WorldView Geospatial Dashboard (Vite dev with HMR)
+- name: Build WorldView container image
+  containers.podman.podman_image:
+    name: "{{ frontend.worldview.image }}"
+    path: "{{ frontend.worldview.source_path }}"
+    build:
+      target: dev
+    force: "{{ mcp_build.force_rebuild | default(false) }}"
+  when:
+    - deploy_frontend | default(true)
+    - frontend.worldview.enabled | default(false)
+    - frontend.worldview.build | default(true)
+  tags: ['frontend', 'worldview']
+
+- name: Deploy WorldView container
+  containers.podman.podman_container:
+    name: "{{ frontend.worldview.name }}"
+    image: "{{ frontend.worldview.image }}"
+    state: started
+    network: "{{ podman_network_name | default('enterprise_network') }}"
+    restart_policy: unless-stopped
+    volumes:
+      - "{{ frontend.worldview.source_path }}:/app:Z"
+      - "{{ frontend.worldview.source_path }}/.env:/app/.env:ro,Z"
+    env:
+      NODE_ENV: "development"
+    memory: "512m"
+  when:
+    - deploy_frontend | default(true)
+    - frontend.worldview.enabled | default(false)
+  tags: ['frontend', 'worldview']
+
+- name: Check if WorldView vite config changed
+  stat:
+    path: "{{ frontend.worldview.source_path }}/vite.config.ts"
+  register: worldview_vite_config
+  when:
+    - deploy_frontend | default(true)
+    - frontend.worldview.enabled | default(false)
+  tags: ['frontend', 'worldview']
+
+- name: Restart WorldView to pick up proxy and env changes
+  command: podman restart {{ frontend.worldview.name }}
+  register: worldview_restart
+  changed_when: worldview_restart.rc == 0
+  failed_when: false
+  when:
+    - deploy_frontend | default(true)
+    - frontend.worldview.enabled | default(false)
+  tags: ['frontend', 'worldview']
+
+- name: Display WorldView status
+  debug:
+    msg: "WorldView dashboard deployed at http://{{ frontend.worldview.name }}:{{ frontend.worldview.port }} (routed via Traefik at geo.{{ domain_name | default('example.com') }})"
+  when:
+    - deploy_frontend | default(true)
+    - frontend.worldview.enabled | default(false)
+  tags: ['frontend', 'worldview']

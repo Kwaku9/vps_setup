@@ -102,13 +102,16 @@
   when: monitoring.grafana.enabled | default(true)
   tags: ['monitoring', 'metrics-pod', 'grafana']
 
-- name: Copy Grafana dashboard JSON files
+- name: Copy Grafana dashboard files
   copy:
-    src: "{{ item }}"
+    src: "dashboards/"
     dest: /opt/compose/dashboards/
     mode: '0644'
-  with_fileglob:
-    - "{{ playbook_dir }}/dashboards/*.json"
+  when: monitoring.grafana.enabled | default(true)
+  tags: ['monitoring', 'metrics-pod', 'grafana']
+
+- name: Resolve Grafana OIDC credentials from Authentik
+  include_tasks: grafana-oidc.yml
   when: monitoring.grafana.enabled | default(true)
   tags: ['monitoring', 'metrics-pod', 'grafana']
 
@@ -120,30 +123,29 @@
     pod: metrics-pod
     memory: "{{ monitoring.grafana.memory | default('300m') }}"
     cpu_shares: 1024
+    recreate: true
     env:
       GF_SECURITY_ADMIN_USER: "{{ monitoring.grafana.admin_user | default('admin') }}"
       GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_password }}"
       GF_INSTALL_PLUGINS: "checkmk-cloud-datasource,volkovlabs-echarts-panel"
-      GF_SERVER_ROOT_URL: "https://grafana.REDACTED_DOMAIN"
-      # Image renderer (in-pod on localhost)
       GF_RENDERING_SERVER_URL: "http://localhost:8081/render"
       GF_RENDERING_CALLBACK_URL: "http://localhost:3000/"
       GF_RENDERING_RENDERER_TOKEN: ""
-      # Anonymous auth (needed for image renderer callbacks)
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
-      # OIDC via Authentik
-      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      # OIDC SSO via Authentik (set_fact from authentication role)
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "{{ (grafana_oidc_client_id is defined) | ternary('true', 'false') }}"
       GF_AUTH_GENERIC_OAUTH_NAME: "Authentik"
-      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: "{{ grafana_oidc_client_id }}"
-      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: "{{ grafana_oidc_client_secret }}"
-      GF_AUTH_GENERIC_OAUTH_AUTH_URL: "https://auth.REDACTED_DOMAIN/application/o/authorize/"
-      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: "https://auth.REDACTED_DOMAIN/application/o/token/"
-      GF_AUTH_GENERIC_OAUTH_API_URL: "https://auth.REDACTED_DOMAIN/application/o/userinfo/"
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: "{{ grafana_oidc_client_id | default('') }}"
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: "{{ grafana_oidc_client_secret | default('') }}"
       GF_AUTH_GENERIC_OAUTH_SCOPES: "openid email profile groups"
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: "https://auth.{{ domain_name }}/application/o/authorize/"
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: "https://auth.{{ domain_name }}/application/o/token/"
+      GF_AUTH_GENERIC_OAUTH_API_URL: "https://auth.{{ domain_name }}/application/o/userinfo/"
       GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(groups[*], 'admins') && 'Admin' || 'Viewer'"
       GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
-      GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN: "true"
+      GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN: "{{ (grafana_oidc_client_id is defined) | ternary('true', 'false') }}"
+      GF_SERVER_ROOT_URL: "https://grafana.{{ domain_name }}"
     volumes:
       - grafana-data:/var/lib/grafana
       - /opt/compose/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
@@ -154,20 +156,74 @@
     - monitoring.grafana.enabled | default(true)
   tags: ['monitoring', 'metrics-pod', 'grafana']
 
-# ── Image Renderer (in metrics-pod) ──
+# ============================================================================
+# NODE-EXPORTER: Host service (apk install, not containerized)
+# Better performance and accuracy running directly on the host
+# ============================================================================
 
-- name: Deploy Grafana Image Renderer container
-  containers.podman.podman_container:
-    name: renderer
-    image: "docker.io/grafana/grafana-image-renderer:{{ monitoring.image_renderer.version | default('latest') }}"
+- name: Install node-exporter on host
+  apk:
+    name:
+      - prometheus-node-exporter
+      - prometheus-node-exporter-openrc
+    state: present
+  when: monitoring.node_exporter.enabled | default(true)
+  tags: ['monitoring', 'node-exporter']
+
+- name: Create textfile collector directory
+  file:
+    path: /opt/compose/textfile-collector
+    state: directory
+    mode: '0755'
+  when: monitoring.node_exporter.enabled | default(true)
+  tags: ['monitoring', 'node-exporter']
+
+- name: Configure node-exporter to listen on all interfaces
+  copy:
+    content: |
+      ARGS="--web.listen-address=0.0.0.0:9100 --collector.textfile.directory=/opt/compose/textfile-collector"
+    dest: /etc/conf.d/node-exporter
+    mode: '0644'
+  notify: restart node-exporter
+  when: monitoring.node_exporter.enabled | default(true)
+  tags: ['monitoring', 'node-exporter']
+
+- name: Enable and start node-exporter service
+  service:
+    name: node-exporter
+    enabled: yes
     state: started
-    pod: metrics-pod
-    memory: "{{ monitoring.image_renderer.memory | default('32m') }}"
-    cpu_shares: 512
-  when:
-    - monitoring.enabled | default(true)
-    - monitoring.image_renderer.enabled | default(true)
-  tags: ['monitoring', 'metrics-pod', 'image-renderer']
+  when: monitoring.node_exporter.enabled | default(true)
+  tags: ['monitoring', 'node-exporter']
+
+# ============================================================================
+# PODMAN METRICS: Cron-based collection (replaces podman-exporter container)
+# Podman-exporter has a hardcoded 10s timeout incompatible with 35+ containers
+# ============================================================================
+
+- name: Create monitoring scripts directory
+  file:
+    path: /opt/compose/monitoring
+    state: directory
+    mode: '0755'
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'podman-metrics']
+
+- name: Deploy podman-metrics collection script
+  copy:
+    src: podman-metrics.sh
+    dest: /opt/compose/monitoring/podman-metrics.sh
+    mode: '0755'
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'podman-metrics']
+
+- name: Configure podman-metrics cron job (every minute)
+  cron:
+    name: "podman container metrics"
+    minute: "*"
+    job: "/opt/compose/monitoring/podman-metrics.sh > /dev/null 2>&1"
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'podman-metrics']
 
 # ============================================================================
 # LOGS-POD: Alloy + Loki
@@ -214,6 +270,7 @@
       - /opt/compose/alloy-config.alloy:/etc/alloy/config.alloy:ro
       - /var/log:/var/log:ro
       - /var/run/podman/podman.sock:/var/run/docker.sock:ro
+      - /opt/podman-data/wazuh-alerts:/var/log/wazuh-alerts:ro
       - alloy-data:/var/lib/alloy
     privileged: yes
   when:
@@ -279,7 +336,7 @@
     image: "docker.io/grafana/tempo:{{ monitoring.tempo.version | default('latest') }}"
     state: started
     pod: tempo-pod
-    memory: "{{ monitoring.tempo.memory | default('384m') }}"
+    memory: "{{ monitoring.tempo.memory | default('512m') }}"
     cpu_shares: 512
     command: "-config.file=/etc/tempo/tempo.yml"
     volumes:
@@ -290,98 +347,326 @@
     - monitoring.tempo.enabled | default(true)
   tags: ['monitoring', 'tempo-pod', 'tempo']
 
-# ============================================================================
-# NODE-EXPORTER: Host service (apk install, not containerized)
-# Better performance and accuracy running directly on the host
-# ============================================================================
-
-- name: Install node-exporter on host
-  apk:
-    name:
-      - prometheus-node-exporter
-      - prometheus-node-exporter-openrc
-    state: present
-  when: monitoring.node_exporter.enabled | default(true)
-  tags: ['monitoring', 'node-exporter']
-
-- name: Create textfile collector directory
-  file:
-    path: /opt/compose/textfile-collector
-    state: directory
-    mode: '0755'
-  when: monitoring.node_exporter.enabled | default(true)
-  tags: ['monitoring', 'node-exporter']
-
-- name: Configure node-exporter to listen on all interfaces
-  copy:
-    content: |
-      ARGS="--web.listen-address=0.0.0.0:9100 --collector.textfile.directory=/opt/compose/textfile-collector"
-    dest: /etc/conf.d/node-exporter
-    mode: '0644'
-  notify: restart node-exporter
-  when: monitoring.node_exporter.enabled | default(true)
-  tags: ['monitoring', 'node-exporter']
-
-- name: Enable and start node-exporter service
-  service:
-    name: node-exporter
-    enabled: yes
+- name: Deploy CheckMK container
+  containers.podman.podman_container:
+    name: checkmk
+    image: "{{ monitoring.checkmk.image | default('checkmk/check-mk-raw:2.4.0p21') }}"
     state: started
-  when: monitoring.node_exporter.enabled | default(true)
-  tags: ['monitoring', 'node-exporter']
+    pod: metrics-pod
+    memory: 512m
+    env:
+      CMK_SITE_ID: "{{ monitoring.checkmk.site_name | default('cmk') }}"
+      CMK_PASSWORD: "{{ checkmk_password }}"
+    volumes:
+      - checkmk-data:/omd/sites
+    tmpfs:
+      "/opt/omd/sites/{{ monitoring.checkmk.site_name | default('cmk') }}/tmp": "rw,noexec,nosuid,size=256m"
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.checkmk.enabled | default(true)
+  tags: ['monitoring', 'checkmk']
 
-# ============================================================================
-# PODMAN METRICS: Cron-based collection (replaces podman-exporter container)
-# Podman-exporter has a hardcoded 10s timeout incompatible with 35+ containers
-# ============================================================================
+- name: Sync CheckMK admin password from vault
+  command: >
+    podman exec checkmk
+    su - {{ monitoring.checkmk.site_name | default('cmk') }} -c
+    "htpasswd -b etc/htpasswd cmkadmin '{{ checkmk_password }}'"
+  register: checkmk_passwd_sync
+  failed_when: false
+  changed_when: checkmk_passwd_sync.rc == 0
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.checkmk.enabled | default(true)
+  tags: ['monitoring', 'checkmk', 'checkmk-setup']
 
-- name: Deploy podman-metrics collection script
-  copy:
-    src: podman-metrics.sh
-    dest: /opt/compose/monitoring/podman-metrics.sh
+- name: Configure CheckMK host and services
+  include_tasks: checkmk-setup.yml
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.checkmk.enabled | default(true)
+  tags: ['monitoring', 'checkmk-setup']
+
+- name: Deploy Grafana Image Renderer
+  include_tasks: image-renderer.yml
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.image_renderer.enabled | default(false)
+  tags: ['monitoring', 'metrics-pod', 'image-renderer']
+
+- name: Configure Grafana alert rules
+  include_tasks: grafana-alerting.yml
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.grafana.enabled | default(true)
+    - monitoring.grafana.alerting_enabled | default(false)
+  tags: ['monitoring', 'grafana-alerting']
+
+- name: Deploy Cloudflare zone analytics script
+  template:
+    src: cloudflare-zone-metrics.py.j2
+    dest: /usr/local/bin/cloudflare-zone-metrics
+    mode: '0755'
+  when:
+    - monitoring.enabled | default(true)
+    - cloudflare_zone_id is defined
+    - cloudflare_exporter_token is defined
+  tags: ['monitoring', 'cloudflare']
+
+- name: Run Cloudflare zone analytics initial scrape
+  command: /usr/local/bin/cloudflare-zone-metrics
+  changed_when: false
+  ignore_errors: true
+  when:
+    - monitoring.enabled | default(true)
+    - cloudflare_zone_id is defined
+    - cloudflare_exporter_token is defined
+  tags: ['monitoring', 'cloudflare']
+
+- name: Schedule Cloudflare zone analytics cron (every 5 min)
+  cron:
+    name: cloudflare-zone-metrics
+    minute: "*/5"
+    job: "/usr/local/bin/cloudflare-zone-metrics > /dev/null 2>&1"
+  when:
+    - monitoring.enabled | default(true)
+    - cloudflare_zone_id is defined
+    - cloudflare_exporter_token is defined
+  tags: ['monitoring', 'cloudflare']
+
+- name: Deploy Cloudflare Access audit log metrics script
+  template:
+    src: cloudflare-access-metrics.py.j2
+    dest: /usr/local/bin/cloudflare-access-metrics
+    mode: '0755'
+  when:
+    - monitoring.enabled | default(true)
+    - cloudflare_account_id | default('') | length > 0
+    - cloudflare_api_token | default('') | length > 0
+  tags: ['monitoring', 'cloudflare-access']
+
+- name: Run Cloudflare Access audit log initial scrape
+  command: /usr/local/bin/cloudflare-access-metrics
+  changed_when: false
+  ignore_errors: true
+  when:
+    - monitoring.enabled | default(true)
+    - cloudflare_account_id | default('') | length > 0
+    - cloudflare_api_token | default('') | length > 0
+  tags: ['monitoring', 'cloudflare-access']
+
+- name: Schedule Cloudflare Access audit log cron (every 5 min)
+  cron:
+    name: cloudflare-access-metrics
+    minute: "*/5"
+    job: "/usr/local/bin/cloudflare-access-metrics > /dev/null 2>&1"
+  when:
+    - monitoring.enabled | default(true)
+    - cloudflare_account_id | default('') | length > 0
+    - cloudflare_api_token | default('') | length > 0
+  tags: ['monitoring', 'cloudflare-access']
+
+- name: Deploy Authentik events metrics script
+  template:
+    src: authentik-events-metrics.py.j2
+    dest: /usr/local/bin/authentik-events-metrics
+    mode: '0755'
+  when:
+    - monitoring.enabled | default(true)
+    - authentik_bootstrap_token is defined
+  tags: ['monitoring', 'authentik-events']
+
+- name: Run Authentik events initial scrape
+  command: /usr/local/bin/authentik-events-metrics
+  changed_when: false
+  ignore_errors: true
+  when:
+    - monitoring.enabled | default(true)
+    - authentik_bootstrap_token is defined
+  tags: ['monitoring', 'authentik-events']
+
+- name: Schedule Authentik events metrics cron (every 5 min)
+  cron:
+    name: authentik-events-metrics
+    minute: "*/5"
+    job: "/usr/local/bin/authentik-events-metrics > /dev/null 2>&1"
+  when:
+    - monitoring.enabled | default(true)
+    - authentik_bootstrap_token is defined
+  tags: ['monitoring', 'authentik-events']
+
+- name: Deploy Trivy scan metrics script
+  template:
+    src: trivy-scan-metrics.py.j2
+    dest: /usr/local/bin/trivy-scan-metrics
     mode: '0755'
   when: monitoring.enabled | default(true)
-  tags: ['monitoring', 'podman-metrics']
+  tags: ['monitoring', 'trivy-scan']
 
-- name: Configure podman-metrics cron job (every minute)
+- name: Schedule daily Trivy vulnerability scan (02:00 UTC)
   cron:
-    name: "podman container metrics"
-    minute: "*"
-    job: "/opt/compose/monitoring/podman-metrics.sh > /dev/null 2>&1"
+    name: trivy-scan-metrics
+    minute: "0"
+    hour: "2"
+    job: "/usr/bin/python3 /usr/local/bin/trivy-scan-metrics >> /var/log/trivy-scan.log 2>&1"
   when: monitoring.enabled | default(true)
-  tags: ['monitoring', 'podman-metrics']
+  tags: ['monitoring', 'trivy-scan']
 
-# ============================================================================
-# DEPENDENCY HEALTH MONITOR
-# ============================================================================
+- name: Deploy IV scan script
+  copy:
+    src: ivscan-daily.py
+    dest: /usr/local/bin/ivscan-daily.py
+    mode: '0755'
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'ivscan-cron']
 
-- name: Create monitoring scripts directory
+- name: Create IV scan data directory (conid cache)
   file:
-    path: /opt/compose/monitoring
+    path: /var/lib/ivscan
     state: directory
     mode: '0755'
-  when: monitoring.dep_health_check.enabled | default(true)
-  tags: ['monitoring', 'dep-health']
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'ivscan-cron']
 
-- name: Deploy dependency health check script
-  template:
-    src: dep-health-check.sh.j2
-    dest: /opt/compose/monitoring/dep-health-check.sh
-    mode: '0755'
-  when: monitoring.dep_health_check.enabled | default(true)
-  tags: ['monitoring', 'dep-health']
+- name: Remove stale manual ivscan cron entry (no Ansible prefix)
+  lineinfile:
+    path: /etc/crontabs/root
+    regexp: '^\d+\s+\d+\s+.*ivscan-daily\.py'
+    state: absent
+  ignore_errors: true
+  tags: ['monitoring', 'ivscan-cron']
 
-- name: Configure dep-health-check cron job
+- name: Set CRON_TZ to America/New_York (DST-safe, no manual UTC conversion)
   cron:
-    name: "dependency health check"
-    minute: "*/2"
-    job: "/opt/compose/monitoring/dep-health-check.sh > /dev/null 2>&1"
-  when: monitoring.dep_health_check.enabled | default(true)
-  tags: ['monitoring', 'dep-health']
+    name: CRON_TZ
+    env: yes
+    value: "America/New_York"
+  tags: ['monitoring', 'ivscan-cron', 'position-sync', 'cron-jobs']
 
-# ============================================================================
-# STATUS
-# ============================================================================
+- name: Configure daily IV scan cron (Mon-Fri 16:30 ET / after market close)
+  cron:
+    name: "ivscan-daily"
+    minute: "30"
+    hour: "16"
+    weekday: "1-5"
+    job: "/usr/bin/python3 /usr/local/bin/ivscan-daily.py >> /var/log/ivscan.log 2>&1"
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'ivscan-cron']
+
+- name: Deploy position sync script
+  copy:
+    src: position-sync.py
+    dest: /usr/local/bin/position-sync.py
+    mode: '0755'
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'position-sync', 'cron-jobs']
+
+- name: Configure position sync cron (Mon-Fri 9:45 AM ET / after market open)
+  cron:
+    name: "position-sync-open"
+    minute: "45"
+    hour: "9"
+    weekday: "1-5"
+    job: "/usr/bin/python3 /usr/local/bin/position-sync.py >> /var/log/position-sync.log 2>&1"
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'position-sync', 'cron-jobs']
+
+- name: Configure position sync cron (Mon-Fri 4:15 PM ET / before market close)
+  cron:
+    name: "position-sync-close"
+    minute: "15"
+    hour: "16"
+    weekday: "1-5"
+    job: "/usr/bin/python3 /usr/local/bin/position-sync.py >> /var/log/position-sync.log 2>&1"
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'position-sync', 'cron-jobs']
+
+# --- Telegram Notification & Scheduled Health Checks ---
+
+- name: Deploy Telegram notification config
+  template:
+    src: telegram-notify.conf.j2
+    dest: /etc/telegram-notify.conf
+    mode: '0600'
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'cron-jobs']
+
+- name: Deploy telegram-notify helper script
+  template:
+    src: telegram-notify.sh.j2
+    dest: /usr/local/bin/telegram-notify
+    mode: '0755'
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'cron-jobs']
+
+- name: Deploy daily services check script
+  template:
+    src: daily-services-check.sh.j2
+    dest: /usr/local/bin/daily-services-check
+    mode: '0755'
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'cron-jobs']
+
+- name: Deploy daily security check script
+  template:
+    src: daily-security-check.sh.j2
+    dest: /usr/local/bin/daily-security-check
+    mode: '0755'
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'cron-jobs']
+
+- name: Deploy daily market notification script
+  template:
+    src: daily-market-notify.sh.j2
+    dest: /usr/local/bin/daily-market-notify
+    mode: '0755'
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'cron-jobs']
+
+- name: Configure daily services check cron (7:00 AM ET)
+  cron:
+    name: "daily-services-check"
+    minute: "0"
+    hour: "7"
+    job: "/usr/local/bin/daily-services-check >> /var/log/daily-services-check.log 2>&1"
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'cron-jobs']
+
+- name: Configure daily security check cron (7:30 AM ET)
+  cron:
+    name: "daily-security-check"
+    minute: "30"
+    hour: "7"
+    job: "/usr/local/bin/daily-security-check >> /var/log/daily-security-check.log 2>&1"
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'cron-jobs']
+
+- name: Configure daily market notify cron (Mon-Fri 17:00 ET / 30 min after IV scan)
+  cron:
+    name: "daily-market-notify"
+    minute: "0"
+    hour: "17"
+    weekday: "1-5"
+    job: "/usr/local/bin/daily-market-notify >> /var/log/daily-market-notify.log 2>&1"
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'cron-jobs']
+
+# --- CrowdSec Geo Feed (CAPI → GeoIP → VictoriaMetrics → WorldView Globe) ---
+
+- name: Deploy CrowdSec geo feed script
+  template:
+    src: crowdsec-geo-feed.py.j2
+    dest: /usr/local/bin/crowdsec-geo-feed
+    mode: '0755'
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'crowdsec-geo', 'cron-jobs']
+
+- name: Configure CrowdSec geo feed cron (every 5 minutes)
+  cron:
+    name: "crowdsec-geo-feed"
+    minute: "*/5"
+    job: "/usr/bin/python3 /usr/local/bin/crowdsec-geo-feed >> /var/log/crowdsec-geo-feed.log 2>&1"
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'crowdsec-geo', 'cron-jobs']
 
 - name: Display monitoring stack status
   debug:
@@ -391,7 +676,7 @@
       - "  logs-pod: Alloy, Loki"
       - "  tempo-pod: Tempo"
       - "  node-exporter: Host service (apk, port 9100)"
-      - "  podman-metrics: Cron script (every 60s → VictoriaMetrics)"
+      - "  podman-metrics: Cron script (every 60s)"
       - ""
       - "Access URLs:"
       - "  Grafana: http://{{ ansible_host }}:3000"
@@ -399,5 +684,17 @@
       - "  Loki: http://{{ ansible_host }}:3200"
       - "  Tempo API: http://{{ ansible_host }}:3201"
       - "  OTLP HTTP: http://{{ ansible_host }}:4318"
+      - ""
+      - "Scheduled jobs (CRON_TZ=America/New_York):"
+      - "  Services check: daily 7:00 AM ET"
+      - "  Security check: daily 7:30 AM ET"
+      - "  Position sync: Mon-Fri 9:45 AM + 4:15 PM ET"
+      - "  IV scan: Mon-Fri 4:30 PM ET (after market close)"
+      - "  Market notify: Mon-Fri 5:00 PM ET (30 min after IV scan)"
+      - "  CF zone analytics: every 5 min"
+      - "  CF Access audit logs: every 5 min"
+      - "  Authentik events: every 5 min"
+      - "  CrowdSec geo feed: every 5 min"
+      - "  Podman metrics: every 1 min"
   when: monitoring.enabled | default(true)
   tags: ['monitoring']

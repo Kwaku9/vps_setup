@@ -62,6 +62,8 @@ monitoring:
     port: 3000
     admin_user: "admin"
     admin_password: "{{ grafana_password }}"  # Loaded from vault.yml (separate from Portainer)
+    alerting_enabled: true
+    alerting_telegram_chat_id: "8520366373"
   node_exporter:
     enabled: true
     version: "v1.10.2"
@@ -84,14 +86,22 @@ monitoring:
     port: 4318  # OTLP HTTP
     retention: "168h"  # 7 days
     cluster_name: "alpine-podman"
-  checkmk:
+  image_renderer:
     enabled: true
+    version: "latest"
+  checkmk:
+    enabled: false
     version: "2.4.0p21"
     image: "checkmk/check-mk-raw:2.4.0p21"
     port: 5000
     site_name: "cmk"
     admin_user: "cmkadmin"
     admin_password: "{{ checkmk_password }}"  # Loaded from vault.yml
+  victoriametrics:
+    enabled: true
+    version: "v1.115.0"
+    port: 8428
+    retention: "20y"  # 20 years — required for ATLAS historical OHLC data (2008+)
 
 # Security Stack
 security:
@@ -115,12 +125,6 @@ security:
     enabled: true
     version: "v1.6.0"
 
-  trivy:
-    enabled: true
-    version: "0.68.2"
-    image: "aquasec/trivy:0.68.2"
-    scan_on_startup: true
-
   crowdsec:
     enabled: true
     version: "1.6.4"
@@ -131,6 +135,12 @@ security:
       - crowdsecurity/base-http-scenarios
       - crowdsecurity/sshd
       - crowdsecurity/linux
+
+  trivy:
+    enabled: true
+    version: "0.68.2"
+    image: "aquasec/trivy:0.68.2"
+    scan_on_startup: true
 
   firewall:
     enabled: true
@@ -164,22 +174,17 @@ frontend:
   journey_tracker:
     enabled: false  # Enable when data is uploaded to /opt/podman-data/journey-tracker/
     image: "nginx:alpine"
+  worldview:
+    enabled: true
+    name: "worldview-dev"
+    source_path: "/workspace/vscode-projects/geospatial-dashboard"
+    port: 5173
+    build: true
+    image: "worldview-dev:latest"
 
-# Backend Services
+# Backend Services  
 deploy_backend: true
 backend:
-  ibeam:
-    enabled: false  # Enable when IB credentials are configured
-    image: "voyz/ibeam:latest"
-    port: 5055
-    env: {}
-    volumes: []
-  ib_mcp:
-    enabled: false  # Enable when ib-mcp-server is built
-    image: "ib-mcp-server:latest"
-    port: 5002
-    env: {}
-    volumes: []
   api_services: []
 
 # Backup Configuration
@@ -279,6 +284,63 @@ mcp_servers:
         PORT: "8888"
         SCRAPY_PROJECT_PATH: "/workspace"
 
+    # IB MCP - Interactive Brokers Trading (Web API via IBeam)
+    ib_mcp:
+      enabled: true
+      name: "ib-mcp"
+      container_name: "ib-mcp-server"
+      source_path: "pycharm-projects/IB_MCP"
+      transport: "http"
+      port: 5002
+      internal_port: 5002
+      endpoint: "/mcp"
+      image: "ib-mcp-server:latest"
+      build: true
+      requires_auth: true
+      env:
+        MCP_SERVER_PORT: "5002"
+        MCP_TRANSPORT_PROTOCOL: "streamable-http"
+        AUTH_TOKEN: "{{ ib_mcp_auth_token }}"  # From vault.yml
+
+    # Telegram Gateway MCP - Bidirectional Telegram <-> Claude gateway
+    telegram_gateway:
+      enabled: true
+      name: "telegram-gateway"
+      container_name: "telegram-gateway"
+      source_path: "pycharm-projects/TelegramGateway"
+      transport: "http"
+      port: 7555
+      endpoint: "/mcp"
+      image: "telegram-gateway:latest"
+      build: true
+      health_endpoint: "/health"
+      requires_auth: true
+      env:
+        SHELL: "/bin/bash"
+        MCP_SERVER_PORT: "7555"
+        MCP_TRANSPORT_PROTOCOL: "streamable-http"
+        AUTH_TOKEN: "{{ telegram_gateway_auth_token }}"
+        TELEGRAM_BOT_TOKEN: "{{ telegram_bot_token }}"
+        TELEGRAM_WEBHOOK_SECRET: "{{ telegram_webhook_secret }}"
+        TELEGRAM_ALLOWED_USER_IDS: "{{ telegram_allowed_user_ids }}"
+        DB_HOST: "postgres"
+        DB_PORT: "5432"
+        DB_NAME: "enterprise"
+        DB_USER: "postgres"
+        DB_PASSWORD: "{{ postgres_password }}"
+        LITELLM_BASE_URL: "http://ai-stack-pod:4000"
+        LITELLM_API_KEY: "{{ litellm_master_key }}"
+        LITELLM_DEFAULT_MODEL: "claude-sonnet-4-20250514"
+        CLAUDE_CLI_TIMEOUT: "900"
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://logs-pod:4318"
+        OTEL_SERVICE_NAME: "telegram-gateway"
+        RATE_LIMIT_PER_MINUTE: "20"
+        APPROVER_ALLOW_LIST: "{{ telegram_allowed_user_ids }}"
+        APPROVAL_TIMEOUT_MINUTES: "10"
+        GRAFANA_URL: "http://metrics-pod:3000"
+        GRAFANA_USER: "admin"
+        GRAFANA_PASSWORD: "{{ grafana_password }}"
+
 # MCP Build/Runtime settings
 mcp_build:
   force_rebuild: false
@@ -289,6 +351,9 @@ mcp_runtime:
   restart_policy: "unless-stopped"
   memory_limit: "512m"
   cpu_limit: "1.0"
+
+# Authentik internal API URL (ansible-deployment is on host network, so host loopback works)
+authentik_url: "http://127.0.0.1:9000"
 
 # Authentication & SSO
 authentication:
@@ -370,6 +435,10 @@ authentication:
           slug: portal
           launch_url: "https://portal.{{ domain_name }}"
           access_group: admin
+        - name: ib-mcp
+          slug: ib-mcp
+          launch_url: "http://127.0.0.1:5002/mcp"
+          access_group: admin
 
 # AI Stack Configuration (n8n-claude + OpenWebUI + LiteLLM + Fabric)
 ai_stack:
@@ -406,7 +475,7 @@ ai_stack:
   openwebui:
     enabled: true
     name: "open-webui"
-    image: "ghcr.io/open-webui/open-webui:latest"
+    image: "ghcr.io/open-webui/open-webui:v0.8.1"
     port: 3100
     internal_port: 8080
     env:
@@ -559,15 +628,25 @@ cloudflare:
         type: "CNAME"
         content: "{{ domain_name }}"
         proxied: true
-      - name: "hooks"
-        type: "CNAME"
-        content: "{{ domain_name }}"
-        proxied: true
+      # hooks DNS CNAME removed — orphaned (no Traefik route, no service)
+      # otlp DNS CNAME kept — still routed via Traefik, now behind CF Access (admin protection)
       - name: "otlp"
         type: "CNAME"
         content: "{{ domain_name }}"
         proxied: true
+      - name: "telegram-bot"
+        type: "CNAME"
+        content: "{{ domain_name }}"
+        proxied: true
+      - name: "geo"
+        type: "CNAME"
+        content: "{{ domain_name }}"
+        proxied: true
       - name: "timeline"
+        type: "CNAME"
+        content: "{{ domain_name }}"
+        proxied: true
+      - name: "charts"
         type: "CNAME"
         content: "{{ domain_name }}"
         proxied: true

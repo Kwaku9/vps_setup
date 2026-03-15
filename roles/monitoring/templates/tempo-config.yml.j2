@@ -14,11 +14,15 @@ distributor:
     otlp:
       protocols:
         http:
-          endpoint: "0.0.0.0:4320"
+          endpoint: "0.0.0.0:4320"  # Internal only — Alloy forwards here (4318 used by Alloy OTLP gateway)
 
 ingester:
   max_block_duration: 5m
-  max_block_bytes: 5242880
+  max_block_bytes: 5242880  # 5MB — flush blocks before they grow too large
+
+compactor:
+  compaction:
+    block_retention: {{ monitoring.tempo.retention | default('168h') }}  # 7 days default
 
 metrics_generator:
   registry:
@@ -41,8 +45,8 @@ storage:
 
 overrides:
   metrics_generator_processors: [service-graphs, span-metrics]
-  ingestion_rate_limit_bytes: 5000000
-  ingestion_burst_size_bytes: 10000000
+  ingestion_rate_limit_bytes: 5000000   # 5MB/s
+  ingestion_burst_size_bytes: 10000000  # 10MB burst
   max_traces_per_user: 10000
 
 usage_report:

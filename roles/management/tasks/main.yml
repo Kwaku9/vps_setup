@@ -1,6 +1,6 @@
-﻿---
+---
 # Management Role - Container Management GUIs
-# Deploys Portainer and Dockge for infrastructure administration
+# Deploys Portainer for infrastructure administration
 
 - name: Create management pod
   containers.podman.podman_pod:
@@ -19,8 +19,8 @@
     image: "{{ management.portainer.image | default('portainer/portainer-ce:latest') }}"
     state: started
     pod: management-pod
-    memory: "200m"
-    cpu_shares: 1024
+    memory: "256m"
+    cpu_shares: 512
     volumes:
       - "{{ management.portainer.data_volume | default('portainer-data') }}:/data"
       - /run/podman/podman.sock:/var/run/docker.sock:ro
@@ -127,6 +127,127 @@
     - management.portainer.enabled | default(true)
     - portainer_init is defined
     - portainer_init.status is defined
+  tags: ['management', 'portainer']
+
+# --- Portainer OAuth/OIDC via Authentik ---
+
+- name: Authenticate to Portainer API
+  uri:
+    url: "https://{{ ansible_host }}:{{ management.portainer.port | default(9444) }}/api/auth"
+    method: POST
+    body_format: json
+    body:
+      username: "admin"
+      password: "{{ portainer_password }}"
+    validate_certs: no
+    status_code: [200]
+  register: portainer_auth
+  when:
+    - management.enabled | default(true)
+    - management.portainer.enabled | default(true)
+  failed_when: false
+  tags: ['management', 'portainer', 'sso']
+
+- name: Configure Portainer OAuth with Authentik
+  uri:
+    url: "https://{{ ansible_host }}:{{ management.portainer.port | default(9444) }}/api/settings"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ portainer_auth.json.jwt }}"
+    body_format: json
+    body:
+      AuthenticationMethod: 3
+      OAuthSettings:
+        ClientID: "{{ portainer_oidc_client_id }}"
+        ClientSecret: "{{ portainer_oidc_client_secret }}"
+        AccessTokenURI: "https://auth.{{ domain_name }}/application/o/token/"
+        AuthorizationURI: "https://auth.{{ domain_name }}/application/o/authorize/"
+        ResourceURI: "https://auth.{{ domain_name }}/application/o/userinfo/"
+        RedirectURI: "https://portainer.{{ domain_name }}"
+        UserIdentifier: "email"
+        Scopes: "openid email profile groups"
+        OAuthAutoCreateUsers: true
+        DefaultTeamID: 0
+        SSO: true
+        LogoutURI: "https://auth.{{ domain_name }}/application/o/portainer/end-session/"
+    validate_certs: no
+    status_code: [200]
+  when:
+    - management.enabled | default(true)
+    - management.portainer.enabled | default(true)
+    - portainer_oidc_client_id is defined
+    - portainer_auth is defined
+    - portainer_auth.json is defined
+    - portainer_auth.json.jwt is defined
+  failed_when: false
+  register: portainer_oauth_result
+  tags: ['management', 'portainer', 'sso']
+
+# NOTE: Portainer CE does not support OIDC group-to-role mapping.
+# Access control relies on:
+#   Layer 1: Cloudflare Access (wildcard policy - admins group or email OTP)
+#   Layer 2: Authentik policy binding (admin group required for portainer app)
+#   Layer 3: Local admin account (break-glass via SSH tunnel to 127.0.0.1:9444)
+
+- name: Display Portainer OAuth configuration result
+  debug:
+    msg: "Portainer OAuth {{ 'configured successfully' if (portainer_oauth_result.status | default(0)) == 200 else 'configuration skipped or failed' }}"
+  when:
+    - portainer_oidc_client_id is defined
+    - portainer_oauth_result is defined
+  tags: ['management', 'portainer', 'sso']
+
+# --- Register Local Podman Socket as Endpoint ---
+
+- name: Check existing Portainer endpoints
+  uri:
+    url: "https://{{ ansible_host }}:{{ management.portainer.port | default(9444) }}/api/endpoints"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ portainer_auth.json.jwt }}"
+    validate_certs: no
+    status_code: [200]
+  register: portainer_endpoints
+  when:
+    - management.enabled | default(true)
+    - management.portainer.enabled | default(true)
+    - portainer_auth is defined
+    - portainer_auth.json is defined
+    - portainer_auth.json.jwt is defined
+  failed_when: false
+  tags: ['management', 'portainer']
+
+- name: Register local Podman socket endpoint
+  command: >
+    curl -sk
+    -X POST
+    -H "Authorization: Bearer {{ portainer_auth.json.jwt }}"
+    -F "Name=alpine-vps-podman"
+    -F "EndpointCreationType=1"
+    -F "URL=unix:///var/run/docker.sock"
+    https://{{ ansible_host }}:{{ management.portainer.port | default(9444) }}/api/endpoints
+  register: portainer_endpoint_result
+  changed_when: portainer_endpoint_result.rc == 0
+  when:
+    - management.enabled | default(true)
+    - management.portainer.enabled | default(true)
+    - portainer_auth is defined
+    - portainer_auth.json is defined
+    - portainer_auth.json.jwt is defined
+    - portainer_endpoints is defined
+    - portainer_endpoints.json | default([]) | selectattr('Name', 'equalto', 'alpine-vps-podman') | list | length == 0
+  failed_when: false
+  tags: ['management', 'portainer']
+
+- name: Display Portainer endpoint registration result
+  debug:
+    msg: >-
+      Podman endpoint {{ 'registered successfully' if (portainer_endpoint_result.status | default(0)) in [200, 201]
+      else 'already exists' if (portainer_endpoints.json | default([]) | selectattr('Name', 'equalto', 'alpine-vps-podman') | list | length > 0)
+      else 'registration skipped or failed' }}
+  when:
+    - management.enabled | default(true)
+    - management.portainer.enabled | default(true)
   tags: ['management', 'portainer']
 
 - name: Display management tools status

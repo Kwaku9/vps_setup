@@ -392,6 +392,17 @@
   tags: ['shared-services', 'mcp-pod', 'scrapy-mcp']
 
 # ============================================================================
+# VPS-SPECIFIC: Trading Schema
+# ============================================================================
+
+- name: Create trading schema in PostgreSQL
+  include_tasks: trading-schema.yml
+  when:
+    - deploy_shared_services | default(true)
+    - shared_services | selectattr('name', 'equalto', 'postgres') | selectattr('enabled', 'equalto', true) | list | length > 0
+  tags: ['shared-services', 'trading-schema']
+
+# ============================================================================
 # STATUS
 # ============================================================================
 

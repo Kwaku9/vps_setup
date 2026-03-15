@@ -89,6 +89,7 @@
     pod: "{{ ai_stack.pod_name }}"
     memory: 512m
     cpu_shares: 1024
+    init: true
     env:
       DATABASE_URL: "postgresql://{{ ai_stack.postgres.user }}:{{ ai_stack_postgres_password | urlencode | replace('/', '%2F') }}@127.0.0.1:5432/litellm"
       STORE_MODEL_IN_DB: "True"

@@ -1,4 +1,4 @@
-﻿---
+---
 # Defaults for app_deployment role
 # Empty dictionary to satisfy Ansible requirements
 {}

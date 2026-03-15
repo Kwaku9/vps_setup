@@ -1,4 +1,4 @@
-﻿---
+---
 # Security Role Defaults
 
 security:
@@ -13,6 +13,10 @@ security:
   wazuh:
     enabled: false  # Resource intensive - enable manually
     version: "4.7.2"
+
+  tetragon:
+    enabled: false  # eBPF requires kernel support - enable in all.yml
+    version: "v1.6.0"
 
   trivy:
     enabled: true

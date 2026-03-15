@@ -1,4 +1,4 @@
-﻿---
+---
 # Tasks for app_deployment
 
 - name: Find docker-compose files in vscode projects
@@ -82,9 +82,9 @@
 - name: Display compose file readiness summary
   debug:
     msg:
-      - "Γ£ô Found {{ all_compose_files | length }} docker-compose file(s)"
-      - "Γ£ô Windows paths replaced with Linux paths"
-      - "Γ£ô Files ready for manual container deployment"
+      - "✓ Found {{ all_compose_files | length }} docker-compose file(s)"
+      - "✓ Windows paths replaced with Linux paths"
+      - "✓ Files ready for manual container deployment"
       - ""
       - "Compose files prepared:"
       - "{{ all_compose_files | map(attribute='path') | list }}"

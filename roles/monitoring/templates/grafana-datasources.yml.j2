@@ -104,6 +104,7 @@ datasources:
     secureJsonData:
       password: "{{ ai_stack_postgres_password }}"
 
+{% if security is defined and security.wazuh.enabled | default(true) %}
   - name: Wazuh Indexer
     uid: wazuh
     type: elasticsearch
@@ -116,3 +117,18 @@ datasources:
       esVersion: "7.10.2"
       logMessageField: "rule.description"
       logLevelField: "rule.level"
+{% endif %}
+
+{% if monitoring.checkmk.enabled | default(false) %}
+  - name: CheckMK
+    uid: checkmk
+    type: checkmk-cloud-datasource
+    access: proxy
+    url: http://localhost:5000/cmk
+    editable: true
+    jsonData:
+      edition: "raw"
+      username: "{{ monitoring.checkmk.admin_user | default('cmkadmin') }}"
+    secureJsonData:
+      secret: "{{ checkmk_password }}"
+{% endif %}

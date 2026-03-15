@@ -1,4 +1,4 @@
-﻿---
+---
 # Security Role - Firewall, Fail2ban, Wazuh, Trivy
 # Implements security hardening and threat detection
 
@@ -116,8 +116,7 @@
       - "127.0.0.1:55000:55000"  # Wazuh API (internal)
       - "127.0.0.1:5601:5601"    # Wazuh Dashboard (internal - SSH tunnel)
       - "127.0.0.1:9200:9200"    # Wazuh Indexer (internal)
-      - "127.0.0.1:8080:8080"    # Trivy Scanner (internal)
-  when: security.wazuh.enabled | default(true) or security.trivy.enabled | default(true)
+  when: security.wazuh.enabled | default(true)
   tags: ['security', 'pod']
 
 # ============================================
@@ -271,6 +270,86 @@
   failed_when: false
   when: security.wazuh.enabled | default(true)
   tags: ['security', 'wazuh', 'wazuh-agent']
+
+# ============================================
+# TETRAGON (eBPF Security Observability)
+# ============================================
+# Kernel-level eBPF hooks for process, file, and
+# network monitoring. Events written to JSON log files
+# picked up by Alloy -> Loki. Complements Wazuh agent.
+
+- name: Verify eBPF/BTF kernel support for Tetragon
+  shell: |
+    test -f /sys/kernel/btf/vmlinux && echo "BTF_SUPPORTED" || echo "BTF_MISSING"
+  register: btf_check
+  changed_when: false
+  when: security.tetragon.enabled | default(false)
+  tags: ['security', 'tetragon']
+
+- name: Warn if BTF not available for Tetragon
+  debug:
+    msg: "WARNING: Kernel BTF not available at /sys/kernel/btf/vmlinux. Tetragon requires BTF. Install linux-lts with CONFIG_DEBUG_INFO_BTF=y"
+  when:
+    - security.tetragon.enabled | default(false)
+    - btf_check.stdout is defined
+    - "'BTF_MISSING' in btf_check.stdout"
+  tags: ['security', 'tetragon']
+
+- name: Set kptr_restrict for Tetragon kprobe support
+  sysctl:
+    name: kernel.kptr_restrict
+    value: '1'
+    state: present
+    sysctl_set: yes
+    reload: yes
+  when: security.tetragon.enabled | default(false)
+  tags: ['security', 'tetragon']
+
+- name: Create Tetragon directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /opt/compose/tetragon
+    - /var/log/tetragon
+  when: security.tetragon.enabled | default(false)
+  tags: ['security', 'tetragon']
+
+- name: Deploy Tetragon tracing policy
+  template:
+    src: tetragon-policy.yaml.j2
+    dest: /opt/compose/tetragon/tracing-policy.yaml
+    mode: '0644'
+  when: security.tetragon.enabled | default(false)
+  notify: restart tetragon
+  tags: ['security', 'tetragon']
+
+- name: Deploy Tetragon container
+  containers.podman.podman_container:
+    name: tetragon
+    image: "quay.io/cilium/tetragon:{{ security.tetragon.version | default('v1.6.0') }}"
+    state: started
+    network: "{{ podman_network_name | default('enterprise_network') }}"
+    memory: 128m
+    privileged: true
+    pid_mode: host
+    cgroupns: host
+    env:
+      TETRAGON_EXPORT_FILENAME: "/var/log/tetragon/events.json"
+      TETRAGON_TRACING_POLICY_DIR: "/etc/tetragon/tetragon.tp.d"
+      TETRAGON_SERVER_ADDRESS: "127.0.0.1:54321"
+      TETRAGON_LOG_LEVEL: "info"
+      TETRAGON_METRICS_SERVER: ":2112"
+    volumes:
+      - /sys/kernel/btf/vmlinux:/var/lib/tetragon/btf:ro
+      - /sys/fs/bpf:/sys/fs/bpf:rw
+      - /sys/kernel/debug:/sys/kernel/debug:rw
+      - /proc:/proc:ro
+      - /var/log/tetragon:/var/log/tetragon:rw
+      - /opt/compose/tetragon/tracing-policy.yaml:/etc/tetragon/tetragon.tp.d/policy.yaml:ro
+  when: security.tetragon.enabled | default(false)
+  tags: ['security', 'tetragon']
 
 # ============================================
 # TRIVY (One-shot cron scan — no persistent server)
@@ -443,19 +522,22 @@
       - "================================================"
       - ""
       - "HOST-LEVEL SERVICES:"
-      - "  Γ£ô Fail2ban: {{ 'Enabled (protecting SSH)' if security.fail2ban.enabled | default(true) else 'Disabled' }}"
-      - "  Γ£ô Firewall: {{ 'Enabled (iptables rules applied)' if security.firewall.enabled | default(true) else 'Disabled' }}"
-      - "  Γ£ô Wazuh Agent: {{ 'Installed and running' if security.wazuh.enabled | default(true) else 'Disabled' }}"
-      - "  Γ£ô Squid Proxy: {{ 'Enabled (' + security.squid.mode | default('discovery') + ' mode)' if security.squid.enabled | default(false) else 'Disabled' }}"
+      - "  Fail2ban: {{ 'Enabled (protecting SSH)' if security.fail2ban.enabled | default(true) else 'Disabled' }}"
+      - "  Firewall: {{ 'Enabled (iptables rules applied)' if security.firewall.enabled | default(true) else 'Disabled' }}"
+      - "  Wazuh Agent: {{ 'Installed and running' if security.wazuh.enabled | default(true) else 'Disabled' }}"
+      - "  Squid Proxy: {{ 'Enabled (' + security.squid.mode | default('discovery') + ' mode)' if security.squid.enabled | default(false) else 'Disabled' }}"
       - ""
       - "CONTAINERIZED SERVICES (security-pod):"
-      - "  Γ£ô Wazuh Indexer: {{ 'Running on port 9200' if security.wazuh.enabled | default(true) else 'Disabled' }}"
-      - "  Γ£ô Wazuh Manager: {{ 'Running (API port 55000)' if security.wazuh.enabled | default(true) else 'Disabled' }}"
-      - "  Γ£ô Wazuh Dashboard: {{ 'Running on port 5601' if security.wazuh.enabled | default(true) else 'Disabled' }}"
-      - "  Γ£ô Trivy Scanner: {{ 'One-shot cron scan (daily 2AM, no persistent server)' if security.trivy.enabled | default(true) else 'Disabled' }}"
+      - "  Wazuh Indexer: {{ 'Running on port 9200' if security.wazuh.enabled | default(true) else 'Disabled' }}"
+      - "  Wazuh Manager: {{ 'Running (API port 55000)' if security.wazuh.enabled | default(true) else 'Disabled' }}"
+      - "  Wazuh Dashboard: {{ 'Running on port 5601' if security.wazuh.enabled | default(true) else 'Disabled' }}"
+      - "  Trivy Scanner: {{ 'One-shot cron scan (daily 2AM, no persistent server)' if security.trivy.enabled | default(true) else 'Disabled' }}"
       - ""
       - "SECURITY-INFRA-POD (via shared-services):"
-      - "  Γ£ô CrowdSec: {{ 'Running in security-infra-pod (LAPI on 8180, metrics on 6060)' if security.crowdsec.enabled | default(false) else 'Disabled' }}"
+      - "  CrowdSec: {{ 'Running in security-infra-pod (LAPI on 8180, metrics on 6060)' if security.crowdsec.enabled | default(false) else 'Disabled' }}"
+      - ""
+      - "eBPF SECURITY (standalone container):"
+      - "  Tetragon: {{ 'Running (eBPF process/file/network monitoring)' if security.tetragon.enabled | default(false) else 'Disabled' }}"
       - ""
       - "ACCESS URLs:"
       - "  Wazuh Dashboard: http://{{ ansible_host }}:5601"
@@ -469,6 +551,12 @@
       - "  Status: systemctl status wazuh-agent (or rc-service wazuh-agent status)"
       - "  Config: /var/ossec/etc/ossec.conf"
       - "  Logs: /var/ossec/logs/ossec.log"
+      - ""
+      - "TETRAGON:"
+      - "  Events: /var/log/tetragon/events.json"
+      - "  Query: podman exec tetragon tetra getevents -o compact"
+      - "  Policy: /opt/compose/tetragon/tracing-policy.yaml"
+      - "  Loki: {job=\"tetragon\"}"
       - ""
       - "================================================"
   tags: ['security']

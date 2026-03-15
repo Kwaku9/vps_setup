@@ -1,4 +1,4 @@
-﻿---
+---
 # Authentication Role - Authentik SSO & Authentication
 # Deploys centralized authentication and SSO infrastructure
 
@@ -29,8 +29,8 @@
     image: "docker.io/library/redis:8-alpine"
     state: started
     pod: authentication-pod
-    memory: "64m"
-    cpu_shares: 1024
+    memory: "128m"
+    cpu_shares: 512
     command: "redis-server --appendonly yes"
     volumes:
       - /opt/podman-data/redis:/data:Z
@@ -44,6 +44,7 @@
     image: "docker.io/library/postgres:{{ shared_services[0].version | default('18-alpine') }}"
     state: started
     pod: authentication-pod
+    memory: "256m"
     cpu_shares: 1024
     env:
       POSTGRES_DB: "{{ authentication.authentik.postgres_db | default('authentik') }}"
@@ -73,8 +74,17 @@
     image: "{{ authentication.authentik.image | default('ghcr.io/goauthentik/server:2025.10') }}"
     state: started
     pod: authentication-pod
+    memory: "768m"
+    cpu_shares: 2048
     env:
+      AUTHENTIK_BOOTSTRAP_PASSWORD: "{{ authentik_bootstrap_password }}"
+      AUTHENTIK_BOOTSTRAP_TOKEN: "{{ authentik_bootstrap_token }}"
+      AUTHENTIK_BOOTSTRAP_EMAIL: "{{ authentik_bootstrap_email | default('admin@' + domain_name) }}"
       AUTHENTIK_REDIS__HOST: "localhost"
+      AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS: "REDACTED_CIDR,127.0.0.0/8"
+      AUTHENTIK_LISTEN__METRICS: "0.0.0.0:9300"
+      AUTHENTIK_OUTPOSTS__DISCOVER: "false"
+      AUTHENTIK_OUTPOSTS__DISABLE_EMBEDDED_OUTPOST: "true"
       AUTHENTIK_POSTGRESQL__HOST: "localhost"
       AUTHENTIK_POSTGRESQL__NAME: "{{ authentication.authentik.postgres_db | default('authentik') }}"
       AUTHENTIK_POSTGRESQL__USER: "{{ authentication.authentik.postgres_user | default('authentik') }}"
@@ -82,13 +92,13 @@
       AUTHENTIK_SECRET_KEY: "{{ authentik_secret_key }}"
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
       AUTHENTIK_LOG_LEVEL: "info"
-      AUTHENTIK_OUTPOSTS__DISCOVER: "false"
-      AUTHENTIK_OUTPOSTS__DISABLE_EMBEDDED_OUTPOST: "true"
-      AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS: "REDACTED_CIDR,127.0.0.0/8"
-      AUTHENTIK_LISTEN__METRICS: "0.0.0.0:9300"
+      AUTHENTIK_EMAIL__HOST: "{{ authentik_smtp_host }}"
+      AUTHENTIK_EMAIL__PORT: "{{ authentik_smtp_port | default('587') }}"
+      AUTHENTIK_EMAIL__USERNAME: "{{ authentik_smtp_username }}"
+      AUTHENTIK_EMAIL__PASSWORD: "{{ authentik_smtp_password }}"
+      AUTHENTIK_EMAIL__USE_TLS: "true"
+      AUTHENTIK_EMAIL__FROM: "{{ authentik_smtp_from }}"
     command: server
-    memory: "1g"
-    cpu_shares: 2048
     volumes:
       - authentik-media:/media
       - authentik-templates:/templates
@@ -103,8 +113,14 @@
     image: "{{ authentication.authentik.worker_image | default('ghcr.io/goauthentik/server:2025.10') }}"
     state: started
     pod: authentication-pod
+    memory: "512m"
+    cpu_shares: 1024
     env:
+      AUTHENTIK_BOOTSTRAP_PASSWORD: "{{ authentik_bootstrap_password }}"
+      AUTHENTIK_BOOTSTRAP_TOKEN: "{{ authentik_bootstrap_token }}"
+      AUTHENTIK_BOOTSTRAP_EMAIL: "{{ authentik_bootstrap_email | default('admin@' + domain_name) }}"
       AUTHENTIK_REDIS__HOST: "localhost"
+      AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS: "REDACTED_CIDR,127.0.0.0/8"
       AUTHENTIK_POSTGRESQL__HOST: "localhost"
       AUTHENTIK_POSTGRESQL__NAME: "{{ authentication.authentik.postgres_db | default('authentik') }}"
       AUTHENTIK_POSTGRESQL__USER: "{{ authentication.authentik.postgres_user | default('authentik') }}"
@@ -112,9 +128,13 @@
       AUTHENTIK_SECRET_KEY: "{{ authentik_secret_key }}"
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
       AUTHENTIK_LOG_LEVEL: "info"
+      AUTHENTIK_EMAIL__HOST: "{{ authentik_smtp_host }}"
+      AUTHENTIK_EMAIL__PORT: "{{ authentik_smtp_port | default('587') }}"
+      AUTHENTIK_EMAIL__USERNAME: "{{ authentik_smtp_username }}"
+      AUTHENTIK_EMAIL__PASSWORD: "{{ authentik_smtp_password }}"
+      AUTHENTIK_EMAIL__USE_TLS: "true"
+      AUTHENTIK_EMAIL__FROM: "{{ authentik_smtp_from }}"
     command: worker
-    memory: "384m"
-    cpu_shares: 2048
     volumes:
       - authentik-media:/media
       - authentik-templates:/templates
@@ -129,7 +149,25 @@
     msg:
       - "Authentik SSO deployed successfully"
       - "Authentik UI: http://{{ ansible_host }}:9000"
-      - "Default login: akadmin / Use the password shown in container logs on first start"
-      - "Run 'podman logs authentik-server' to see the initial admin password"
+      - "Default login: akadmin / <bootstrap_password from vault>"
   when: authentication.enabled | default(true)
   tags: ['authentication']
+
+# Configure Authentik <-> Cloudflare Zero Trust OIDC integration
+- name: Configure Authentik-Cloudflare OIDC integration
+  include_tasks: cloudflare-integration.yml
+  when:
+    - authentication.enabled | default(true)
+    - authentication.authentik.enabled | default(true)
+    - authentication.authentik.cloudflare_integration.enabled | default(false)
+    - cloudflare.enabled | default(false)
+  tags: ['authentication', 'cloudflare-integration', 'sso']
+
+# Configure SSO: enrollment, native OIDC providers for each service
+- name: Configure SSO (native OIDC providers + enrollment)
+  include_tasks: sso-setup.yml
+  when:
+    - authentication.enabled | default(true)
+    - authentication.authentik.enabled | default(true)
+    - authentication.authentik.sso.enabled | default(false)
+  tags: ['authentication', 'sso', 'sso-setup']
