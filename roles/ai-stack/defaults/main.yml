@@ -68,14 +68,14 @@ ai_stack:
 
   # Kokoro TTS
   kokoro_tts:
-    enabled: false
+    enabled: true
     name: "kokoro-tts"
     image: "ghcr.io/remsky/kokoro-fastapi-cpu:latest"
     port: 8880
 
   # Claude Monitor Backend
   claude_monitor_backend:
-    enabled: false
+    enabled: true
     name: "claude-monitor-backend"
     source_path: "n8n/n8n-claude/claude-monitor/backend"
     image: "claude-monitor-backend:latest"
@@ -89,7 +89,7 @@ ai_stack:
 
   # Claude Monitor Frontend
   claude_monitor_frontend:
-    enabled: false
+    enabled: true
     name: "claude-monitor-frontend"
     source_path: "n8n/n8n-claude/claude-monitor/frontend"
     image: "claude-monitor-frontend:latest"

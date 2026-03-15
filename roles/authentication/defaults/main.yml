@@ -1,4 +1,4 @@
-﻿---
+---
 # Authentication Role Defaults - Authentik SSO
 
 authentication:
@@ -10,7 +10,22 @@ authentication:
     port: 9000
     postgres_db: "authentik"
     postgres_user: "authentik"
+    sso:
+      enabled: false
+      enrollment:
+        enabled: true
+        email_verification: true
+      groups:
+        admin: "admins"
+        free: "free_users"
+        paid: "paid_users"
+      oidc_services: []
 
 # Will be overridden by vault
 authentik_password: "VAULT_OVERRIDE"
 authentik_secret_key: "VAULT_OVERRIDE"
+authentik_smtp_host: ""
+authentik_smtp_port: "587"
+authentik_smtp_username: ""
+authentik_smtp_password: ""
+authentik_smtp_from: ""

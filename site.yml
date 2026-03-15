@@ -1,4 +1,4 @@
-﻿---
+---
 # Alpine Linux Podman Enterprise Stack Deployment
 # Main playbook for deploying containerized infrastructure
 #
@@ -27,6 +27,10 @@
       tags: ['claude-prep', 'claude']
       when: claude.enabled | default(true)
 
+    - role: mcp-servers
+      tags: ['mcp-servers', 'mcp']
+      when: claude.enabled | default(true)
+
     - role: gemini-prep
       tags: ['gemini-prep', 'gemini']
       when: gemini.enabled | default(true)
@@ -34,6 +38,10 @@
     - role: cloudflared
       tags: ['cloudflared', 'tunnel']
       when: cloudflared.enabled | default(true)
+
+    - role: cloudflare
+      tags: ['cloudflare', 'tunnel', 'dns', 'acme']
+      when: cloudflare.enabled | default(true)
 
     - role: shared-services
       tags: ['shared-services', 'services']
@@ -44,7 +52,7 @@
 
     - role: monitoring
       tags: ['monitoring', 'observability']
-      
+
     - role: security
       tags: ['security', 'hardening']
 
@@ -55,6 +63,10 @@
     - role: ai-stack
       tags: ['ai-stack', 'openwebui', 'searxng']
       when: ai_stack.enabled | default(true)
+
+    - role: trading
+      tags: ['trading', 'atlas', 'backtrader']
+      when: trading.enabled | default(true)
 
     - role: journey-tracker
       tags: ['journey-tracker', 'timeline']
@@ -89,7 +101,7 @@
           - "  tempo-pod: Tempo"
           - "  ai-stack-pod: OpenWebUI, LiteLLM, PostgreSQL, SearxNG"
           - "  authentication-pod: Authentik Server, Worker, PostgreSQL, Redis"
-          - "  management-pod: Portainer"
+          - "  management-pod: Portainer, Dockge"
           - "  frontend-pod: Nginx, Atlas Charts, Journey Tracker"
           - "  shared-db-pod: PostgreSQL"
           - "  security-pod: Trivy, Wazuh"
@@ -103,10 +115,10 @@
           - "  monitoring-net (REDACTED_CIDR) - OTEL/scrape isolation"
           - ""
           - "ACCESS (via Cloudflare Tunnel):"
-          - "  Grafana: https://grafana.REDACTED_DOMAIN"
-          - "  OpenWebUI: https://chat.REDACTED_DOMAIN"
-          - "  Portainer: https://portainer.REDACTED_DOMAIN"
-          - "  Authentik: https://auth.REDACTED_DOMAIN"
+          - "  Grafana: https://grafana.{{ domain_name | default('REDACTED_DOMAIN') }}"
+          - "  OpenWebUI: https://chat.{{ domain_name | default('REDACTED_DOMAIN') }}"
+          - "  Portainer: https://portainer.{{ domain_name | default('REDACTED_DOMAIN') }}"
+          - "  Authentik: https://auth.{{ domain_name | default('REDACTED_DOMAIN') }}"
           - ""
           - "SECURITY: Only SSH (22) exposed to internet"
           - "All services behind Cloudflare Tunnel -> Traefik -> Authentik OIDC"
