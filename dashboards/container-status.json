@@ -1,28 +1,11 @@
 {
-  "id": null,
-  "uid": "container-status",
-  "title": "Container Status",
-  "description": "Portainer-style container health: live status, resource usage, and state history for all containers",
-  "tags": [
-    "containers",
-    "status",
-    "podman",
-    "health"
-  ],
-  "timezone": "browser",
-  "editable": true,
-  "graphTooltip": 1,
-  "refresh": "30s",
-  "time": {
-    "from": "now-3h",
-    "to": "now"
-  },
-  "templating": {
-    "list": []
-  },
   "annotations": {
     "list": []
   },
+  "description": "Portainer-style container health: live status, resource usage, and state history for all containers",
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
   "panels": [
     {
       "collapsed": false,
@@ -37,21 +20,15 @@
       "type": "row"
     },
     {
-      "id": 1,
-      "title": "Running",
-      "type": "stat",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 1
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -64,48 +41,48 @@
                 "value": 1
               }
             ]
-          },
-          "color": {
-            "mode": "thresholds"
           }
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "id": 1,
       "options": {
+        "colorMode": "background",
+        "graphMode": "none",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
         },
-        "colorMode": "background",
-        "graphMode": "none",
         "textMode": "value_and_name"
       },
       "targets": [
         {
-          "expr": "count(podman_container_state == 2) - count(podman_container_info{name=~\".*-infra\"} * on(id) group_left() podman_container_state) or vector(0)",
+          "expr": "count(podman_container_state == 2)",
+          "instant": true,
           "legendFormat": "Running",
-          "refId": "A",
-          "instant": true
+          "refId": "A"
         }
-      ]
+      ],
+      "title": "Running",
+      "type": "stat"
     },
     {
-      "id": 2,
-      "title": "Stopped / Problem",
-      "type": "stat",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 1
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -122,48 +99,48 @@
                 "value": 3
               }
             ]
-          },
-          "color": {
-            "mode": "thresholds"
           }
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "id": 2,
       "options": {
+        "colorMode": "background",
+        "graphMode": "none",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
         },
-        "colorMode": "background",
-        "graphMode": "none",
         "textMode": "value_and_name"
       },
       "targets": [
         {
           "expr": "count((podman_container_state * on(id) group_left(name) podman_container_info{name!~\".*-infra\"}) > 2) or vector(0)",
+          "instant": true,
           "legendFormat": "Stopped",
-          "refId": "A",
-          "instant": true
+          "refId": "A"
         }
-      ]
+      ],
+      "title": "Stopped / Problem",
+      "type": "stat"
     },
     {
-      "id": 3,
-      "title": "Total Containers",
-      "type": "stat",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 1
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -172,49 +149,48 @@
                 "value": null
               }
             ]
-          },
-          "color": {
-            "mode": "thresholds"
           }
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "id": 3,
       "options": {
+        "colorMode": "background",
+        "graphMode": "none",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
         },
-        "colorMode": "background",
-        "graphMode": "none",
         "textMode": "value_and_name"
       },
       "targets": [
         {
           "expr": "count(podman_container_state * on(id) group_left(name) podman_container_info{name!~\".*-infra\"}) or vector(0)",
+          "instant": true,
           "legendFormat": "Total",
-          "refId": "A",
-          "instant": true
+          "refId": "A"
         }
-      ]
+      ],
+      "title": "Total Containers",
+      "type": "stat"
     },
     {
-      "id": 4,
-      "title": "Total CPU",
-      "type": "stat",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 1
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -232,20 +208,25 @@
               }
             ]
           },
-          "color": {
-            "mode": "thresholds"
-          }
+          "unit": "percentunit"
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "id": 4,
       "options": {
+        "colorMode": "background",
+        "graphMode": "area",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
         },
-        "colorMode": "background",
-        "graphMode": "area",
         "textMode": "value_and_name"
       },
       "targets": [
@@ -254,25 +235,20 @@
           "legendFormat": "CPU",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Total CPU",
+      "type": "stat"
     },
     {
-      "id": 5,
-      "title": "Total Memory",
-      "type": "stat",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 1
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -290,20 +266,25 @@
               }
             ]
           },
-          "color": {
-            "mode": "thresholds"
-          }
+          "unit": "bytes"
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "id": 5,
       "options": {
+        "colorMode": "background",
+        "graphMode": "area",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
         },
-        "colorMode": "background",
-        "graphMode": "area",
         "textMode": "value_and_name"
       },
       "targets": [
@@ -312,7 +293,9 @@
           "legendFormat": "Memory",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Total Memory",
+      "type": "stat"
     },
     {
       "collapsed": false,
@@ -327,15 +310,6 @@
       "type": "row"
     },
     {
-      "id": 10,
-      "title": "Container Status",
-      "type": "table",
-      "gridPos": {
-        "h": 14,
-        "w": 24,
-        "x": 0,
-        "y": 6
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -376,68 +350,68 @@
                 "id": "mappings",
                 "value": [
                   {
-                    "type": "value",
                     "options": {
                       "running": {
-                        "text": "\u25cf running",
-                        "color": "green"
+                        "color": "green",
+                        "text": "\u25cf running"
                       }
-                    }
+                    },
+                    "type": "value"
                   },
                   {
-                    "type": "value",
                     "options": {
                       "exited": {
-                        "text": "\u25cf exited",
-                        "color": "red"
+                        "color": "red",
+                        "text": "\u25cf exited"
                       }
-                    }
+                    },
+                    "type": "value"
                   },
                   {
-                    "type": "value",
                     "options": {
                       "stopped": {
-                        "text": "\u25cf stopped",
-                        "color": "red"
+                        "color": "red",
+                        "text": "\u25cf stopped"
                       }
-                    }
+                    },
+                    "type": "value"
                   },
                   {
-                    "type": "value",
                     "options": {
                       "dead": {
-                        "text": "\u25cf dead",
-                        "color": "dark-red"
+                        "color": "dark-red",
+                        "text": "\u25cf dead"
                       }
-                    }
+                    },
+                    "type": "value"
                   },
                   {
-                    "type": "value",
                     "options": {
                       "paused": {
-                        "text": "\u25cf paused",
-                        "color": "orange"
+                        "color": "orange",
+                        "text": "\u25cf paused"
                       }
-                    }
+                    },
+                    "type": "value"
                   },
                   {
-                    "type": "value",
                     "options": {
                       "created": {
-                        "text": "\u25cf created",
-                        "color": "blue"
+                        "color": "blue",
+                        "text": "\u25cf created"
                       }
-                    }
+                    },
+                    "type": "value"
                   },
                   {
-                    "type": "special",
                     "options": {
                       "match": "null",
                       "result": {
-                        "text": "unknown",
-                        "color": "gray"
+                        "color": "gray",
+                        "text": "unknown"
                       }
-                    }
+                    },
+                    "type": "special"
                   }
                 ]
               }
@@ -456,8 +430,8 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
+                  "mode": "gradient",
+                  "type": "color-background"
                 }
               },
               {
@@ -511,8 +485,8 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
+                  "mode": "gradient",
+                  "type": "color-background"
                 }
               },
               {
@@ -620,20 +594,65 @@
           }
         ]
       },
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "id": 10,
       "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
         "frameIndex": 0,
         "showHeader": true,
         "sortBy": [
           {
-            "displayName": "Status",
-            "desc": false
+            "desc": false,
+            "displayName": "Status"
           }
-        ],
-        "cellHeight": "sm",
-        "footer": {
-          "show": false
-        }
+        ]
       },
+      "targets": [
+        {
+          "expr": "podman_container_info{name!~\".*-infra\"} * on(id) group_left() (podman_container_state > 0)",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{name}}",
+          "refId": "Info"
+        },
+        {
+          "expr": "sum by (name, pod_name) ((rate(podman_container_cpu_seconds_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "CPU %",
+          "refId": "CPU"
+        },
+        {
+          "expr": "sum by (name, pod_name) ((podman_container_mem_usage_bytes * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "Memory",
+          "refId": "Mem"
+        },
+        {
+          "expr": "sum by (name, pod_name) (((podman_container_mem_usage_bytes * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}) / clamp_min((podman_container_mem_limit_bytes * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}), 1)))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "Mem %",
+          "refId": "MemPct"
+        },
+        {
+          "expr": "sum by (name, pod_name) ((podman_container_pids * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "PIDs",
+          "refId": "PIDs"
+        }
+      ],
+      "title": "Container Status",
       "transformations": [
         {
           "id": "merge",
@@ -659,62 +678,26 @@
         {
           "id": "organize",
           "options": {
+            "indexByName": {
+              "CPU %": 3,
+              "Container": 0,
+              "Image": 7,
+              "Mem %": 5,
+              "Memory": 4,
+              "PIDs": 6,
+              "Pod": 1,
+              "Status": 2
+            },
             "renameByName": {
+              "image": "Image",
               "name": "Container",
               "pod_name": "Pod",
-              "image": "Image",
               "status": "Status"
-            },
-            "indexByName": {
-              "Container": 0,
-              "Pod": 1,
-              "Status": 2,
-              "CPU %": 3,
-              "Memory": 4,
-              "Mem %": 5,
-              "PIDs": 6,
-              "Image": 7
             }
           }
         }
       ],
-      "targets": [
-        {
-          "expr": "podman_container_info{name!~\".*-infra\"} * on(id) group_left() (podman_container_state > 0)",
-          "legendFormat": "{{name}}",
-          "refId": "Info",
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "expr": "sum by (name, pod_name) ((rate(podman_container_cpu_seconds_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
-          "legendFormat": "CPU %",
-          "refId": "CPU",
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "expr": "sum by (name, pod_name) ((podman_container_mem_usage_bytes * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
-          "legendFormat": "Memory",
-          "refId": "Mem",
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "expr": "sum by (name, pod_name) (((podman_container_mem_usage_bytes * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}) / clamp_min((podman_container_mem_limit_bytes * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}), 1)))",
-          "legendFormat": "Mem %",
-          "refId": "MemPct",
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "expr": "sum by (name, pod_name) ((podman_container_pids * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
-          "legendFormat": "PIDs",
-          "refId": "PIDs",
-          "instant": true,
-          "format": "table"
-        }
-      ]
+      "type": "table"
     },
     {
       "collapsed": false,
@@ -729,101 +712,92 @@
       "type": "row"
     },
     {
-      "id": 20,
-      "title": "Container State Timeline",
-      "description": "State values: 2=running 3=stopped 4=paused 7=exited 8=dead",
-      "type": "state-timeline",
-      "gridPos": {
-        "h": 12,
-        "w": 24,
-        "x": 0,
-        "y": 21
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "State values: 2=running 3=stopped 4=paused 7=exited 8=dead",
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 70
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "2": {
-                  "text": "running",
-                  "color": "green",
-                  "index": 0
-                }
-              }
-            },
-            {
-              "type": "value",
-              "options": {
-                "1": {
-                  "text": "configured",
-                  "color": "blue",
-                  "index": 1
-                }
-              }
-            },
-            {
-              "type": "value",
-              "options": {
-                "3": {
-                  "text": "stopped",
-                  "color": "red",
-                  "index": 2
-                }
-              }
-            },
-            {
-              "type": "value",
-              "options": {
-                "4": {
-                  "text": "paused",
-                  "color": "orange",
-                  "index": 3
-                }
-              }
-            },
-            {
-              "type": "value",
-              "options": {
-                "5": {
-                  "text": "exiting",
-                  "color": "orange",
-                  "index": 4
-                }
-              }
-            },
-            {
-              "type": "value",
-              "options": {
-                "7": {
-                  "text": "exited",
-                  "color": "red",
-                  "index": 5
-                }
-              }
-            },
-            {
-              "type": "value",
-              "options": {
-                "8": {
-                  "text": "dead",
-                  "color": "dark-red",
-                  "index": 6
-                }
-              }
-            }
-          ],
           "color": {
             "mode": "thresholds"
           },
+          "custom": {
+            "fillOpacity": 70,
+            "lineWidth": 1
+          },
+          "mappings": [
+            {
+              "options": {
+                "2": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "running"
+                }
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "1": {
+                  "color": "blue",
+                  "index": 1,
+                  "text": "configured"
+                }
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "3": {
+                  "color": "red",
+                  "index": 2,
+                  "text": "stopped"
+                }
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "4": {
+                  "color": "orange",
+                  "index": 3,
+                  "text": "paused"
+                }
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "5": {
+                  "color": "orange",
+                  "index": 4,
+                  "text": "exiting"
+                }
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "7": {
+                  "color": "red",
+                  "index": 5,
+                  "text": "exited"
+                }
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "8": {
+                  "color": "dark-red",
+                  "index": 6,
+                  "text": "dead"
+                }
+              },
+              "type": "value"
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -844,16 +818,23 @@
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "id": 20,
       "options": {
-        "mergeValues": true,
-        "showValue": "auto",
         "alignValue": "left",
-        "rowHeight": 0.9,
         "legend": {
-          "showLegend": true,
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
+        "mergeValues": true,
+        "rowHeight": 0.9,
+        "showValue": "auto",
         "tooltip": {
           "mode": "single",
           "sort": "none"
@@ -865,8 +846,27 @@
           "legendFormat": "{{name}}",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Container State Timeline",
+      "type": "state-timeline"
     }
   ],
-  "schemaVersion": 38
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": [
+    "containers",
+    "status",
+    "podman",
+    "health"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Container Status",
+  "uid": "container-status"
 }

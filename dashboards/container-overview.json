@@ -1,24 +1,4 @@
 {
-  "id": null,
-  "uid": "containers-overview",
-  "title": "Containers - Overview",
-  "description": "Single pane of glass: all containers, all resources, color-coded health",
-  "tags": [
-    "containers",
-    "overview",
-    "podman"
-  ],
-  "timezone": "browser",
-  "editable": true,
-  "graphTooltip": 1,
-  "refresh": "30s",
-  "time": {
-    "from": "now-5m",
-    "to": "now"
-  },
-  "templating": {
-    "list": []
-  },
   "annotations": {
     "list": [
       {
@@ -35,6 +15,10 @@
       }
     ]
   },
+  "description": "Single pane of glass: all containers, all resources, color-coded health",
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
   "panels": [
     {
       "collapsed": false,
@@ -49,15 +33,6 @@
       "type": "row"
     },
     {
-      "id": 1,
-      "title": "Running",
-      "type": "stat",
-      "gridPos": {
-        "h": 3,
-        "w": 4,
-        "x": 0,
-        "y": 1
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -80,34 +55,34 @@
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "id": 1,
       "options": {
+        "colorMode": "background",
+        "graphMode": "none",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
         },
-        "colorMode": "background",
-        "graphMode": "none",
         "textMode": "value_and_name"
       },
       "targets": [
         {
-          "expr": "count(podman_container_state == 2) - count(podman_container_info{name=~\".*-infra\"} == 1)",
+          "expr": "count(podman_container_state == 2)",
           "legendFormat": "containers",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Running",
+      "type": "stat"
     },
     {
-      "id": 2,
-      "title": "Stopped",
-      "type": "stat",
-      "gridPos": {
-        "h": 3,
-        "w": 4,
-        "x": 4,
-        "y": 1
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -134,41 +109,40 @@
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "id": 2,
       "options": {
+        "colorMode": "background",
+        "graphMode": "none",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
         },
-        "colorMode": "background",
-        "graphMode": "none",
         "textMode": "value_and_name"
       },
       "targets": [
         {
-          "expr": "count(podman_container_state{id=~\".+\"} != 2) - count(podman_container_info{name=~\".*-infra\"} == 1) or vector(0)",
+          "expr": "count(podman_container_state != 2) or vector(0)",
           "legendFormat": "stopped",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Stopped",
+      "type": "stat"
     },
     {
-      "id": 3,
-      "title": "CPU",
-      "type": "stat",
-      "gridPos": {
-        "h": 3,
-        "w": 4,
-        "x": 8,
-        "y": 1
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -185,45 +159,45 @@
                 "value": 0.9
               }
             ]
-          }
+          },
+          "unit": "percentunit"
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "id": 3,
       "options": {
+        "colorMode": "background",
+        "graphMode": "area",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
         },
-        "colorMode": "background",
-        "graphMode": "area",
         "textMode": "value_and_name"
       },
       "targets": [
         {
-          "expr": "sum((rate(podman_container_cpu_seconds_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
+          "expr": "sum(podman_container_cpu_percent) / 100",
           "legendFormat": "total",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "CPU",
+      "type": "stat"
     },
     {
-      "id": 4,
-      "title": "Memory",
-      "type": "stat",
-      "gridPos": {
-        "h": 3,
-        "w": 4,
-        "x": 12,
-        "y": 1
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -240,18 +214,26 @@
                 "value": 6442450944
               }
             ]
-          }
+          },
+          "unit": "bytes"
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "id": 4,
       "options": {
+        "colorMode": "background",
+        "graphMode": "area",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
         },
-        "colorMode": "background",
-        "graphMode": "area",
         "textMode": "value_and_name"
       },
       "targets": [
@@ -260,25 +242,17 @@
           "legendFormat": "total",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Memory",
+      "type": "stat"
     },
     {
-      "id": 5,
-      "title": "Net In",
-      "type": "stat",
-      "gridPos": {
-        "h": 3,
-        "w": 4,
-        "x": 16,
-        "y": 1
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "Bps",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -291,18 +265,26 @@
                 "value": 52428800
               }
             ]
-          }
+          },
+          "unit": "Bps"
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "id": 5,
       "options": {
+        "colorMode": "background",
+        "graphMode": "area",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
         },
-        "colorMode": "background",
-        "graphMode": "area",
         "textMode": "value_and_name"
       },
       "targets": [
@@ -311,25 +293,17 @@
           "legendFormat": "rx",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Net In",
+      "type": "stat"
     },
     {
-      "id": 6,
-      "title": "Net Out",
-      "type": "stat",
-      "gridPos": {
-        "h": 3,
-        "w": 4,
-        "x": 20,
-        "y": 1
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "Bps",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -342,18 +316,26 @@
                 "value": 52428800
               }
             ]
-          }
+          },
+          "unit": "Bps"
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "id": 6,
       "options": {
+        "colorMode": "background",
+        "graphMode": "area",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
         },
-        "colorMode": "background",
-        "graphMode": "area",
         "textMode": "value_and_name"
       },
       "targets": [
@@ -362,7 +344,9 @@
           "legendFormat": "tx",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Net Out",
+      "type": "stat"
     },
     {
       "collapsed": false,
@@ -377,15 +361,6 @@
       "type": "row"
     },
     {
-      "id": 10,
-      "title": "Container Resource Matrix",
-      "type": "table",
-      "gridPos": {
-        "h": 16,
-        "w": 24,
-        "x": 0,
-        "y": 5
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -469,8 +444,8 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
+                  "mode": "gradient",
+                  "type": "color-background"
                 }
               },
               {
@@ -520,8 +495,8 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
+                  "mode": "gradient",
+                  "type": "color-background"
                 }
               },
               {
@@ -571,8 +546,8 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "gauge",
-                  "mode": "gradient"
+                  "mode": "gradient",
+                  "type": "gauge"
                 }
               },
               {
@@ -626,8 +601,8 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
+                  "mode": "gradient",
+                  "type": "color-background"
                 }
               },
               {
@@ -677,8 +652,8 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
+                  "mode": "gradient",
+                  "type": "color-background"
                 }
               },
               {
@@ -728,8 +703,8 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
+                  "mode": "gradient",
+                  "type": "color-background"
                 }
               },
               {
@@ -775,8 +750,8 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
+                  "mode": "gradient",
+                  "type": "color-background"
                 }
               },
               {
@@ -826,8 +801,8 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
+                  "mode": "gradient",
+                  "type": "color-background"
                 }
               },
               {
@@ -858,19 +833,15 @@
           }
         ]
       },
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 10,
       "options": {
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "Memory",
-            "desc": true
-          }
-        ],
         "footer": {
-          "show": true,
-          "reducer": [
-            "sum"
-          ],
           "fields": [
             "CPU %",
             "Memory",
@@ -879,9 +850,79 @@
             "Disk R",
             "Disk W",
             "PIDs"
-          ]
-        }
+          ],
+          "reducer": [
+            "sum"
+          ],
+          "show": true
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Memory"
+          }
+        ]
       },
+      "targets": [
+        {
+          "expr": "(podman_container_cpu_percent / 100 * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{name}}",
+          "refId": "cpu"
+        },
+        {
+          "expr": "(podman_container_mem_usage_bytes * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{name}}",
+          "refId": "mem"
+        },
+        {
+          "expr": "((podman_container_mem_usage_bytes * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}) / clamp_min((podman_container_mem_limit_bytes * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}), 1))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{name}}",
+          "refId": "mempct"
+        },
+        {
+          "expr": "(rate(podman_container_net_input_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{name}}",
+          "refId": "netin"
+        },
+        {
+          "expr": "(rate(podman_container_net_output_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{name}}",
+          "refId": "netout"
+        },
+        {
+          "expr": "(rate(podman_container_block_input_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{name}}",
+          "refId": "diskr"
+        },
+        {
+          "expr": "(rate(podman_container_block_output_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{name}}",
+          "refId": "diskw"
+        },
+        {
+          "expr": "(podman_container_pids * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{name}}",
+          "refId": "pids"
+        }
+      ],
+      "title": "Container Resource Matrix",
       "transformations": [
         {
           "id": "joinByField",
@@ -902,90 +943,33 @@
           "id": "organize",
           "options": {
             "indexByName": {
-              "name": 0,
-              "pod_name": 1,
               "Value #cpu": 2,
+              "Value #diskr": 7,
+              "Value #diskw": 8,
               "Value #mem": 3,
               "Value #mempct": 4,
               "Value #netin": 5,
               "Value #netout": 6,
-              "Value #diskr": 7,
-              "Value #diskw": 8,
-              "Value #pids": 9
+              "Value #pids": 9,
+              "name": 0,
+              "pod_name": 1
             },
             "renameByName": {
-              "name": "Container",
-              "pod_name": "Pod",
               "Value #cpu": "CPU %",
+              "Value #diskr": "Disk R",
+              "Value #diskw": "Disk W",
               "Value #mem": "Memory",
               "Value #mempct": "Mem %",
               "Value #netin": "Net In",
               "Value #netout": "Net Out",
-              "Value #diskr": "Disk R",
-              "Value #diskw": "Disk W",
-              "Value #pids": "PIDs"
+              "Value #pids": "PIDs",
+              "name": "Container",
+              "pod_name": "Pod"
             }
           }
         }
       ],
-      "targets": [
-        {
-          "expr": "(rate(podman_container_cpu_seconds_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"})",
-          "legendFormat": "{{name}}",
-          "refId": "cpu",
-          "format": "table",
-          "instant": true
-        },
-        {
-          "expr": "(podman_container_mem_usage_bytes * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"})",
-          "legendFormat": "{{name}}",
-          "refId": "mem",
-          "format": "table",
-          "instant": true
-        },
-        {
-          "expr": "((podman_container_mem_usage_bytes * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}) / clamp_min((podman_container_mem_limit_bytes * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}), 1))",
-          "legendFormat": "{{name}}",
-          "refId": "mempct",
-          "format": "table",
-          "instant": true
-        },
-        {
-          "expr": "(rate(podman_container_net_input_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"})",
-          "legendFormat": "{{name}}",
-          "refId": "netin",
-          "format": "table",
-          "instant": true
-        },
-        {
-          "expr": "(rate(podman_container_net_output_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"})",
-          "legendFormat": "{{name}}",
-          "refId": "netout",
-          "format": "table",
-          "instant": true
-        },
-        {
-          "expr": "(rate(podman_container_block_input_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"})",
-          "legendFormat": "{{name}}",
-          "refId": "diskr",
-          "format": "table",
-          "instant": true
-        },
-        {
-          "expr": "(rate(podman_container_block_output_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"})",
-          "legendFormat": "{{name}}",
-          "refId": "diskw",
-          "format": "table",
-          "instant": true
-        },
-        {
-          "expr": "(podman_container_pids * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"})",
-          "legendFormat": "{{name}}",
-          "refId": "pids",
-          "format": "table",
-          "instant": true
-        }
-      ]
+      "type": "table"
     },
     {
       "collapsed": false,
@@ -1000,22 +984,12 @@
       "type": "row"
     },
     {
-      "id": 20,
-      "title": "CPU per Container",
-      "type": "bargauge",
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 0,
-        "y": 22
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
           "min": 0,
           "thresholds": {
             "mode": "absolute",
@@ -1033,48 +1007,48 @@
                 "value": 0.7
               }
             ]
-          }
+          },
+          "unit": "percentunit"
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "id": 20,
       "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "namePlacement": "left",
+        "orientation": "horizontal",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
-        },
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "namePlacement": "left",
-        "minVizWidth": 0,
-        "minVizHeight": 10
+        }
       },
       "targets": [
         {
-          "expr": "sort_desc((rate(podman_container_cpu_seconds_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
+          "expr": "sort_desc((podman_container_cpu_percent / 100 * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
+          "instant": true,
           "legendFormat": "{{name}}",
-          "refId": "A",
-          "instant": true
+          "refId": "A"
         }
-      ]
+      ],
+      "title": "CPU per Container",
+      "type": "bargauge"
     },
     {
-      "id": 21,
-      "title": "Memory per Container",
-      "type": "bargauge",
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 22
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
           "min": 0,
           "thresholds": {
             "mode": "absolute",
@@ -1092,48 +1066,48 @@
                 "value": 536870912
               }
             ]
-          }
+          },
+          "unit": "bytes"
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "id": 21,
       "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "namePlacement": "left",
+        "orientation": "horizontal",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
-        },
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "namePlacement": "left",
-        "minVizWidth": 0,
-        "minVizHeight": 10
+        }
       },
       "targets": [
         {
           "expr": "sort_desc((podman_container_mem_usage_bytes * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
+          "instant": true,
           "legendFormat": "{{name}}",
-          "refId": "A",
-          "instant": true
+          "refId": "A"
         }
-      ]
+      ],
+      "title": "Memory per Container",
+      "type": "bargauge"
     },
     {
-      "id": 22,
-      "title": "Network In per Container",
-      "type": "bargauge",
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 0,
-        "y": 32
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "Bps",
           "min": 0,
           "thresholds": {
             "mode": "absolute",
@@ -1151,107 +1125,107 @@
                 "value": 10485760
               }
             ]
-          }
+          },
+          "unit": "Bps"
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "id": 22,
       "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "namePlacement": "left",
+        "orientation": "horizontal",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
-        },
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "namePlacement": "left",
-        "minVizWidth": 0,
-        "minVizHeight": 10
+        }
       },
       "targets": [
         {
           "expr": "sort_desc((rate(podman_container_net_input_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
+          "instant": true,
           "legendFormat": "{{name}}",
-          "refId": "A",
-          "instant": true
+          "refId": "A"
         }
-      ]
+      ],
+      "title": "Network In per Container",
+      "type": "bargauge"
     },
     {
-      "id": 23,
-      "title": "Network Out per Container",
-      "type": "bargauge",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#37872D",
+                "value": null
+              },
+              {
+                "color": "#FF9830",
+                "value": 1048576
+              },
+              {
+                "color": "#C4162A",
+                "value": 10485760
+              }
+            ]
+          },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
       "gridPos": {
         "h": 10,
         "w": 12,
         "x": 12,
         "y": 32
       },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps",
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "#37872D",
-                "value": null
-              },
-              {
-                "color": "#FF9830",
-                "value": 1048576
-              },
-              {
-                "color": "#C4162A",
-                "value": 10485760
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
+      "id": 23,
       "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "namePlacement": "left",
+        "orientation": "horizontal",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
-        },
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "namePlacement": "left",
-        "minVizWidth": 0,
-        "minVizHeight": 10
+        }
       },
       "targets": [
         {
           "expr": "sort_desc((rate(podman_container_net_output_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
+          "instant": true,
           "legendFormat": "{{name}}",
-          "refId": "A",
-          "instant": true
+          "refId": "A"
         }
-      ]
+      ],
+      "title": "Network Out per Container",
+      "type": "bargauge"
     },
     {
-      "id": 24,
-      "title": "Disk I/O per Container",
-      "type": "bargauge",
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 0,
-        "y": 42
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "Bps",
           "min": 0,
           "thresholds": {
             "mode": "absolute",
@@ -1269,48 +1243,48 @@
                 "value": 52428800
               }
             ]
-          }
+          },
+          "unit": "Bps"
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 42
+      },
+      "id": 24,
       "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "namePlacement": "left",
+        "orientation": "horizontal",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
-        },
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "namePlacement": "left",
-        "minVizWidth": 0,
-        "minVizHeight": 10
+        }
       },
       "targets": [
         {
           "expr": "sort_desc((rate(podman_container_block_input_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}) + (rate(podman_container_block_output_total[5m]) * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
+          "instant": true,
           "legendFormat": "{{name}}",
-          "refId": "A",
-          "instant": true
+          "refId": "A"
         }
-      ]
+      ],
+      "title": "Disk I/O per Container",
+      "type": "bargauge"
     },
     {
-      "id": 25,
-      "title": "PIDs per Container",
-      "type": "bargauge",
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 42
-      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
           "min": 0,
           "thresholds": {
             "mode": "absolute",
@@ -1328,32 +1302,57 @@
                 "value": 200
               }
             ]
-          }
+          },
+          "unit": "short"
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 42
+      },
+      "id": 25,
       "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "namePlacement": "left",
+        "orientation": "horizontal",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ]
-        },
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "namePlacement": "left",
-        "minVizWidth": 0,
-        "minVizHeight": 10
+        }
       },
       "targets": [
         {
           "expr": "sort_desc((podman_container_pids * on(id) group_left(name, pod_name, image) podman_container_info{name!~\".*-infra\"}))",
+          "instant": true,
           "legendFormat": "{{name}}",
-          "refId": "A",
-          "instant": true
+          "refId": "A"
         }
-      ]
+      ],
+      "title": "PIDs per Container",
+      "type": "bargauge"
     }
   ],
+  "refresh": "30s",
   "schemaVersion": 39,
-  "version": 1
+  "tags": [
+    "containers",
+    "overview",
+    "podman"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-5m",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Containers - Overview",
+  "uid": "containers-overview"
 }
