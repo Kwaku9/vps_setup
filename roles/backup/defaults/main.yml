@@ -1,0 +1,72 @@
+---
+# Backup Role Defaults
+# Provides backup/restore for all VPS persistent data
+
+backup:
+  enabled: true
+  # Base backup directory
+  backup_dir: /opt/backups
+  # Retention: number of daily backups to keep
+  retention_days: 7
+  # S3 sync (optional)
+  s3_enabled: false
+  s3_bucket: "REDACTED_BUCKET"
+  s3_region: "us-east-1"
+
+  # Data directories to backup (bind mounts under /opt/podman-data)
+  data_dirs:
+    - /opt/podman-data/postgres
+    - /opt/podman-data/ai-stack/postgres
+    - /opt/podman-data/ai-stack/openwebui
+    - /opt/podman-data/ai-stack/litellm
+    - /opt/podman-data/redis
+    - /opt/podman-data/crowdsec/data
+    - /opt/podman-data/crowdsec/config
+    - /opt/podman-data/journey-tracker
+    - /opt/podman-data/mcp
+    - /opt/podman-data/victoriametrics
+
+  # Named Podman volumes to export
+  named_volumes:
+    - grafana-data
+    - loki-data
+    - tempo-data
+    - authentik-postgres-data
+    - trivy-cache
+    - traefik-plugins
+
+  # Config directories to backup
+  config_dirs:
+    - /opt/compose
+
+  # Exclude patterns for tar
+  exclude_patterns:
+    - "*.tmp"
+    - "*.log"
+    - "*.pid"
+
+  # Pods to stop during backup for consistent snapshots
+  # security-infra-pod stays running (Traefik serves traffic)
+  stop_pods:
+    - metrics-pod
+    - logs-pod
+    - tempo-pod
+    - ai-stack-pod
+    - management-pod
+    - authentication-pod
+    - frontend-pod
+    - shared-db-pod
+    - security-pod
+
+  # All pods to restart after restore
+  all_pods:
+    - security-infra-pod
+    - metrics-pod
+    - logs-pod
+    - tempo-pod
+    - ai-stack-pod
+    - authentication-pod
+    - management-pod
+    - frontend-pod
+    - shared-db-pod
+    - security-pod
