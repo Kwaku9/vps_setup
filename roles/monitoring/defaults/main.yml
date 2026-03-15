@@ -34,7 +34,7 @@ monitoring:
   tempo:
     enabled: true
     version: "2.9.0"
-    memory: "384m"  # Reduced from 512m — isolated from gRPC instability
+    memory: "512m"  # Keep at 512m — 384m was too tight (92% at 372MB actual)
   alloy:
     enabled: true
     version: "v1.12.2"
