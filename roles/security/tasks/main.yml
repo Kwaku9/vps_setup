@@ -273,10 +273,11 @@
   tags: ['security', 'wazuh', 'wazuh-agent']
 
 # ============================================
-# TRIVY DEPLOYMENT (Containerized)
+# TRIVY (One-shot cron scan — no persistent server)
+# Runs as a disposable container via cron, saves ~80MB RAM
 # ============================================
 
-- name: Create Trivy scan script
+- name: Create Trivy scan script (one-shot container mode)
   template:
     src: trivy-scan.sh.j2
     dest: /usr/local/bin/trivy-scan-all
@@ -284,29 +285,19 @@
   when: security.trivy.enabled | default(true)
   tags: ['security', 'trivy']
 
-- name: Deploy Trivy scanner container
+- name: Remove old Trivy server container (migrated to one-shot)
   containers.podman.podman_container:
     name: trivy-scanner
-    image: "docker.io/aquasec/trivy:{{ security.trivy.version | default('latest') }}"
-    state: started
-    pod: security-pod
-    memory: "192m"
-    command: "server --listen 0.0.0.0:8080"
-    volumes:
-      - trivy-cache:/root/.cache/
-      - /var/run/podman/podman.sock:/var/run/docker.sock:ro
-    privileged: yes
-  when: security.trivy.enabled | default(true)
-  tags: ['security', 'trivy']
-
-- name: Run initial Trivy scan if enabled
-  command: /usr/local/bin/trivy-scan-all
-  register: trivy_initial_scan
-  changed_when: false
+    state: absent
   failed_when: false
-  when:
-    - security.trivy.enabled | default(true)
-    - security.trivy.scan_on_startup | default(true)
+  when: security.trivy.enabled | default(true)
+  tags: ['security', 'trivy', 'cleanup']
+
+- name: Pull Trivy image for one-shot scans
+  containers.podman.podman_image:
+    name: "docker.io/aquasec/trivy:{{ security.trivy.version | default('0.68.2') }}"
+    state: present
+  when: security.trivy.enabled | default(true)
   tags: ['security', 'trivy']
 
 # ============================================
@@ -461,7 +452,7 @@
       - "  Γ£ô Wazuh Indexer: {{ 'Running on port 9200' if security.wazuh.enabled | default(true) else 'Disabled' }}"
       - "  Γ£ô Wazuh Manager: {{ 'Running (API port 55000)' if security.wazuh.enabled | default(true) else 'Disabled' }}"
       - "  Γ£ô Wazuh Dashboard: {{ 'Running on port 5601' if security.wazuh.enabled | default(true) else 'Disabled' }}"
-      - "  Γ£ô Trivy Scanner: {{ 'Running (server mode on port 8080, 192MB limit)' if security.trivy.enabled | default(true) else 'Disabled' }}"
+      - "  Γ£ô Trivy Scanner: {{ 'One-shot cron scan (daily 2AM, no persistent server)' if security.trivy.enabled | default(true) else 'Disabled' }}"
       - ""
       - "SECURITY-INFRA-POD (via shared-services):"
       - "  Γ£ô CrowdSec: {{ 'Running in security-infra-pod (LAPI on 8180, metrics on 6060)' if security.crowdsec.enabled | default(false) else 'Disabled' }}"
