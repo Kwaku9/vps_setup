@@ -1,4 +1,4 @@
----
+﻿---
 # Management Role Defaults
 # Container management and administration tools
 
@@ -9,7 +9,7 @@ management:
     enabled: true
     version: "2.33.6"
     image: "portainer/portainer-ce:2.33.6"
-    port: 9443
+    port: 9444  # Changed from 9443 (conflict with Authentik)
     data_volume: "portainer-data"
 
   dockge:

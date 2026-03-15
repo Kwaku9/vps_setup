@@ -1,4 +1,4 @@
----
+﻿---
 # Shared Services Role Defaults
 
 deploy_shared_services: true
@@ -17,5 +17,9 @@ shared_services:
     image: "docker.io/library/traefik:latest"
     port: 80
 
+# Base domain for all services (subdomains: grafana., chat., auth., etc.)
+domain: "REDACTED_DOMAIN"
+
 # Will be overridden by vault
 postgres_password: "VAULT_OVERRIDE"
+crowdsec_bouncer_api_key: "VAULT_OVERRIDE"

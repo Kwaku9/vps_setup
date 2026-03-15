@@ -1,4 +1,4 @@
----
+﻿---
 # Claude Prep Role - Prepare System for Claude Code
 # Installs ONLY Claude CLI and creates workspace structure
 # MCP servers run in containers (no Python dependencies needed)

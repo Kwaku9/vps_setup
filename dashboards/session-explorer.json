@@ -1,0 +1,336 @@
+{
+  "uid": "session-explorer",
+  "title": "CLI Session Explorer",
+  "description": "Browse and search Claude Code CLI sessions across all projects",
+  "tags": ["ai", "sessions", "claude"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "project",
+        "type": "query",
+        "label": "Project",
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "query": "SELECT display_name AS __text, id AS __value FROM sessions.projects ORDER BY last_session_at DESC",
+        "includeAll": true,
+        "allValue": "0",
+        "current": {"text": "All", "value": "$__all"},
+        "refresh": 1,
+        "multi": false
+      },
+      {
+        "name": "source",
+        "type": "custom",
+        "label": "Source",
+        "query": "all,local,vps",
+        "includeAll": false,
+        "current": {"text": "all", "value": "all"},
+        "refresh": 0,
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Overview",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Sessions",
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "blue", "value": null}]}
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value"},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT COUNT(*) FROM sessions.sessions WHERE started_at <= $__timeTo() AND COALESCE(ended_at, NOW()) >= $__timeFrom() AND (${project} = 0 OR project_id = ${project}) AND ('${source}' = 'all' OR source = '${source}')",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "Messages",
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "purple", "value": null}]}
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value"},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT SUM(total_messages) FROM sessions.sessions WHERE started_at <= $__timeTo() AND COALESCE(ended_at, NOW()) >= $__timeFrom() AND (${project} = 0 OR project_id = ${project}) AND ('${source}' = 'all' OR source = '${source}')",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "Tool Calls",
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 1},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "orange", "value": null}]}
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value"},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT SUM(total_tool_calls) FROM sessions.sessions WHERE started_at <= $__timeTo() AND COALESCE(ended_at, NOW()) >= $__timeFrom() AND (${project} = 0 OR project_id = ${project}) AND ('${source}' = 'all' OR source = '${source}')",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "Artifacts",
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 1},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "green", "value": null}]}
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value"},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT SUM(files_created + files_modified) FROM sessions.sessions WHERE started_at <= $__timeTo() AND COALESCE(ended_at, NOW()) >= $__timeFrom() AND (${project} = 0 OR project_id = ${project}) AND ('${source}' = 'all' OR source = '${source}')",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "Avg Duration",
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 1},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "yellow", "value": null}]},
+          "decimals": 0
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value"},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT AVG(duration_seconds) FROM sessions.sessions WHERE started_at <= $__timeTo() AND COALESCE(ended_at, NOW()) >= $__timeFrom() AND duration_seconds > 0 AND (${project} = 0 OR project_id = ${project}) AND ('${source}' = 'all' OR source = '${source}')",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "Projects",
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 1},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "cyan", "value": null}]}
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value"},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT COUNT(DISTINCT project_id) FROM sessions.sessions WHERE started_at <= $__timeTo() AND COALESCE(ended_at, NOW()) >= $__timeFrom() AND (${project} = 0 OR project_id = ${project}) AND ('${source}' = 'all' OR source = '${source}')",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "row",
+      "title": "Trends",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5},
+      "panels": []
+    },
+    {
+      "type": "barchart",
+      "title": "Sessions Over Time",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "options": {
+        "stacking": "normal",
+        "showValue": "never",
+        "barWidth": 0.8
+      },
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT date_trunc('day', s.started_at) AS time, p.display_name AS project, COUNT(*) AS sessions FROM sessions.sessions s JOIN sessions.projects p ON s.project_id = p.id WHERE s.started_at <= $__timeTo() AND COALESCE(s.ended_at, NOW()) >= $__timeFrom() AND (${project} = 0 OR s.project_id = ${project}) AND ('${source}' = 'all' OR s.source = '${source}') GROUP BY 1, 2 ORDER BY 1",
+        "format": "table",
+        "refId": "A"
+      }],
+      "transformations": [
+        {
+          "id": "prepareTimeSeries",
+          "options": {"format": "multi"}
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Token Usage Over Time",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"fillOpacity": 20, "lineWidth": 2}
+        }
+      },
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT date_trunc('day', started_at) AS time, SUM(input_tokens) AS \"Input Tokens\", SUM(output_tokens) AS \"Output Tokens\" FROM sessions.sessions WHERE started_at <= $__timeTo() AND COALESCE(ended_at, NOW()) >= $__timeFrom() AND (${project} = 0 OR project_id = ${project}) AND ('${source}' = 'all' OR source = '${source}') GROUP BY 1 ORDER BY 1",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "row",
+      "title": "Distribution",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+      "panels": []
+    },
+    {
+      "type": "piechart",
+      "title": "Sessions by Project",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 15},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "values": ["value", "percent"]},
+        "pieType": "donut"
+      },
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT p.display_name, COUNT(*) FROM sessions.sessions s JOIN sessions.projects p ON s.project_id = p.id WHERE s.started_at <= $__timeTo() AND COALESCE(s.ended_at, NOW()) >= $__timeFrom() AND ('${source}' = 'all' OR s.source = '${source}') GROUP BY 1 ORDER BY 2 DESC",
+        "format": "table",
+        "refId": "A"
+      }],
+      "transformations": [{"id": "rowsToFields"}]
+    },
+    {
+      "type": "piechart",
+      "title": "Sessions by Source",
+      "gridPos": {"h": 8, "w": 4, "x": 8, "y": 15},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom", "values": ["value"]},
+        "pieType": "donut"
+      },
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT source, COUNT(*) FROM sessions.sessions WHERE started_at <= $__timeTo() AND COALESCE(ended_at, NOW()) >= $__timeFrom() GROUP BY 1",
+        "format": "table",
+        "refId": "A"
+      }],
+      "transformations": [{"id": "rowsToFields"}]
+    },
+    {
+      "type": "piechart",
+      "title": "Top Tools",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 15},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "values": ["value", "percent"]},
+        "pieType": "donut"
+      },
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT tc.tool_name, COUNT(*) FROM sessions.tool_calls tc JOIN sessions.sessions s ON tc.session_id = s.id WHERE s.started_at <= $__timeTo() AND COALESCE(s.ended_at, NOW()) >= $__timeFrom() AND (${project} = 0 OR s.project_id = ${project}) AND ('${source}' = 'all' OR s.source = '${source}') GROUP BY 1 ORDER BY 2 DESC LIMIT 10",
+        "format": "table",
+        "refId": "A"
+      }],
+      "transformations": [{"id": "rowsToFields"}]
+    },
+    {
+      "type": "row",
+      "title": "Sessions",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 23},
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Recent Sessions",
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 24},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Title"},
+            "properties": [{"id": "custom.width", "value": 350}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Duration"},
+            "properties": [{"id": "unit", "value": "m"}, {"id": "decimals", "value": 1}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "session_id"},
+            "properties": [
+              {"id": "custom.width", "value": 60},
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "View Session Replay",
+                    "url": "/d/cli-session-replay?var-session_id=${__data.fields.session_id}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Source"},
+            "properties": [{"id": "custom.width", "value": 60}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Model"},
+            "properties": [{"id": "custom.width", "value": 120}]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "Started", "desc": true}]
+      },
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT s.id AS session_id, p.display_name AS \"Project\", LEFT(s.title, 80) AS \"Title\", s.source AS \"Source\", s.model AS \"Model\", s.total_messages AS \"Messages\", s.total_tool_calls AS \"Tools\", (s.files_created + s.files_modified) AS \"Files\", ROUND(s.duration_seconds / 60.0, 1) AS \"Duration\", s.started_at AS \"Started\" FROM sessions.sessions s JOIN sessions.projects p ON s.project_id = p.id WHERE s.started_at <= $__timeTo() AND COALESCE(s.ended_at, NOW()) >= $__timeFrom() AND (${project} = 0 OR s.project_id = ${project}) AND ('${source}' = 'all' OR s.source = '${source}') ORDER BY s.started_at DESC LIMIT 100",
+        "format": "table",
+        "refId": "A"
+      }]
+    }
+  ]
+}

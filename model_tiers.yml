@@ -1,0 +1,165 @@
+# Model Tier Assignments
+# =====================
+# Single source of truth for model visibility in OpenWebUI.
+#
+# Tier auto-assignment based on input cost per million tokens:
+#   free  — $0.30/M and below
+#   paid  — $0.31/M to $2.99/M
+#   admin — $3.00/M and above
+#   none  — hidden from all non-admin users (duplicates, legacy, etc.)
+#
+# IMPORTANT: is_active / active flag is BROKEN in Open WebUI (known upstream bug).
+# To hide models from a tier's dropdown, move them to a higher tier instead.
+# Example: change tier from 'free' to 'paid' to hide from free_users group.
+#
+# Override: set tier_override to force a tier regardless of price.
+# Admins always see ALL models regardless of tier assignment.
+#
+# To change model visibility: edit tier values and redeploy with:
+#   ansible-playbook -i inventory/hosts site.yml --tags openwebui-setup
+#
+# Prices are input cost per million tokens (USD).
+# The 'id' must match the model_name in litellm-config.yml.j2 or LiteLLM DB.
+
+model_tier_list:
+
+  # ═══════════════════════════════════════════════════════════
+  # FREE TIER — $0.30/M input and below
+  # ═══════════════════════════════════════════════════════════
+
+  # ── Direct API ──
+  - { id: "deepseek-chat",       name: "DeepSeek V3",               price: 0.28,  tier: free }
+  - { id: "deepseek-r1",         name: "DeepSeek R1",               price: 0.28,  tier: free }
+  - { id: "gemini-2.0-flash",    name: "Gemini 2.0 Flash",          price: 0.10,  tier: paid }
+  - { id: "gemini-2.5-flash",    name: "Gemini 2.5 Flash",          price: 0.30,  tier: free }
+  - { id: "gpt-4o-mini",         name: "GPT-4o Mini",               price: 0.15,  tier: free }
+  - { id: "grok-3-mini",         name: "Grok 3 Mini",               price: 0.30,  tier: free }
+  - { id: "command-r",           name: "Command R",                 price: 0.15,  tier: free }
+
+  # ── OpenRouter (only auto visible to free; rest restricted to paid via access_control) ──
+  # NOTE: is_active flag is broken in Open WebUI (known bug), so we use tier-based
+  # access_control to hide models from the free tier dropdown instead.
+  - { id: "openrouter/auto",                                     name: "OpenRouter Auto",                price: 0.00,  tier: free }
+  - { id: "openrouter/openai/gpt-oss-20b",                       name: "GPT-OSS 20B",                   price: 0.02,  tier: paid }
+  - { id: "openrouter/openai/gpt-5-nano",                        name: "GPT-5 Nano",                    price: 0.05,  tier: paid }
+  - { id: "openrouter/qwen/qwen3-235b-a22b-2507",                name: "Qwen3 235B",                    price: 0.07,  tier: paid }
+  - { id: "openrouter/z-ai/glm-4.7-flash",                       name: "GLM 4.7 Flash",                 price: 0.07,  tier: paid }
+  - { id: "openrouter/xiaomi/mimo-v2-flash",                      name: "MiMo V2 Flash",                 price: 0.09,  tier: paid }
+  - { id: "openrouter/bytedance/ui-tars-1.5-7b",                  name: "UI-TARS 1.5 7B",                price: 0.10,  tier: paid }
+  - { id: "openrouter/google/gemini-2.0-flash-001",               name: "Gemini 2.0 Flash (OR)",         price: 0.10,  tier: paid }
+  - { id: "openrouter/mistralai/ministral-3b-2512",               name: "Ministral 3B",                  price: 0.10,  tier: paid }
+  - { id: "openrouter/mistralai/mistral-small-3.1-24b-instruct",  name: "Mistral Small 3.1 24B",         price: 0.10,  tier: paid }
+  - { id: "openrouter/mistralai/mistral-small-3.2-24b-instruct",  name: "Mistral Small 3.2 24B",         price: 0.10,  tier: paid }
+  - { id: "openrouter/openai/gpt-4.1-nano",                       name: "GPT-4.1 Nano",                  price: 0.10,  tier: paid }
+  - { id: "openrouter/qwen/qwen3-235b-a22b-thinking-2507",        name: "Qwen3 235B Thinking",           price: 0.11,  tier: paid }
+  - { id: "openrouter/mistralai/mistral-7b-instruct",              name: "Mistral 7B Instruct",           price: 0.13,  tier: paid }
+  - { id: "openrouter/deepseek/deepseek-chat-v3-0324",             name: "DeepSeek V3 0324 (OR)",         price: 0.14,  tier: paid }
+  - { id: "openrouter/deepseek/deepseek-chat",                     name: "DeepSeek Chat (OR)",            price: 0.14,  tier: paid }
+  - { id: "openrouter/mistralai/devstral-2512",                    name: "Devstral",                      price: 0.15,  tier: paid }
+  - { id: "openrouter/mistralai/ministral-8b-2512",                name: "Ministral 8B",                  price: 0.15,  tier: paid }
+  - { id: "openrouter/openai/gpt-oss-120b",                       name: "GPT-OSS 120B",                  price: 0.18,  tier: paid }
+  - { id: "openrouter/qwen/qwen-2.5-coder-32b-instruct",          name: "Qwen 2.5 Coder 32B",            price: 0.18,  tier: paid }
+  - { id: "openrouter/deepseek/deepseek-chat-v3.1",                name: "DeepSeek V3.1 (OR)",            price: 0.20,  tier: paid }
+  - { id: "openrouter/deepseek/deepseek-v3.2-exp",                 name: "DeepSeek V3.2 Exp (OR)",        price: 0.20,  tier: paid }
+  - { id: "openrouter/mistralai/ministral-14b-2512",               name: "Ministral 14B",                 price: 0.20,  tier: paid }
+  - { id: "openrouter/qwen/qwen-vl-plus",                         name: "Qwen VL Plus",                  price: 0.21,  tier: paid }
+  - { id: "openrouter/qwen/qwen3-coder",                          name: "Qwen3 Coder",                   price: 0.22,  tier: paid }
+  - { id: "openrouter/anthropic/claude-3-haiku",                   name: "Claude 3 Haiku (OR)",           price: 0.25,  tier: paid }
+  - { id: "openrouter/openai/gpt-5-mini",                         name: "GPT-5 Mini",                    price: 0.25,  tier: paid }
+  - { id: "openrouter/minimax/minimax-m2",                        name: "MiniMax M2",                    price: 0.26,  tier: paid }
+  - { id: "openrouter/minimax/minimax-m2.1",                      name: "MiniMax M2.1",                  price: 0.27,  tier: paid }
+  - { id: "openrouter/deepseek/deepseek-v3.2",                    name: "DeepSeek V3.2 (OR)",            price: 0.28,  tier: paid }
+  - { id: "openrouter/google/gemini-2.5-flash",                   name: "Gemini 2.5 Flash (OR)",         price: 0.30,  tier: paid }
+
+  # ═══════════════════════════════════════════════════════════
+  # PAID TIER — $0.31/M to $2.99/M input
+  # ═══════════════════════════════════════════════════════════
+
+  # ── Direct API ──
+  - { id: "gpt-4o",              name: "GPT-4o",                    price: 2.50,  tier: paid }
+  - { id: "o3-mini",             name: "o3-mini",                   price: 1.10,  tier: paid }
+  - { id: "claude-haiku-4-5",    name: "Claude Haiku 4.5",          price: 1.00,  tier: paid }
+  - { id: "gemini-2.5-pro",      name: "Gemini 2.5 Pro",            price: 1.25,  tier: paid }
+  - { id: "mistral-large",       name: "Mistral Large",             price: 0.50,  tier: paid }
+  - { id: "command-r-plus",      name: "Command R+",                price: 2.50,  tier: paid }
+
+  # ── OpenRouter ──
+  - { id: "openrouter/openai/gpt-4.1-mini",                       name: "GPT-4.1 Mini",                  price: 0.40,  tier: paid }
+  - { id: "openrouter/z-ai/glm-4.6",                              name: "GLM 4.6",                       price: 0.40,  tier: paid }
+  - { id: "openrouter/z-ai/glm-4.7",                              name: "GLM 4.7",                       price: 0.40,  tier: paid }
+  - { id: "openrouter/z-ai/glm-4.6:exacto",                       name: "GLM 4.6 Exacto",                price: 0.45,  tier: paid }
+  - { id: "openrouter/deepseek/deepseek-r1-0528",                  name: "DeepSeek R1 0528 (OR)",         price: 0.50,  tier: paid }
+  - { id: "openrouter/google/gemini-3-flash-preview",              name: "Gemini 3 Flash Preview",        price: 0.50,  tier: paid }
+  - { id: "openrouter/mistralai/mistral-large-2512",               name: "Mistral Large 2512 (OR)",       price: 0.50,  tier: paid }
+  - { id: "openrouter/deepseek/deepseek-r1",                       name: "DeepSeek R1 (OR)",              price: 0.55,  tier: paid }
+  - { id: "openrouter/meta-llama/llama-3-70b-instruct",            name: "Llama 3 70B Instruct (OR)",     price: 0.59,  tier: paid }
+  - { id: "openrouter/moonshotai/kimi-k2.5",                       name: "Kimi K2.5",                     price: 0.60,  tier: paid }
+  - { id: "openrouter/mistralai/mixtral-8x22b-instruct",           name: "Mixtral 8x22B Instruct",        price: 0.65,  tier: paid }
+  - { id: "openrouter/switchpoint/router",                         name: "SwitchPoint Router",            price: 0.85,  tier: paid }
+  - { id: "openrouter/anthropic/claude-haiku-4.5",                  name: "Claude Haiku 4.5 (OR)",         price: 1.00,  tier: paid }
+  - { id: "openrouter/openai/o3-mini-high",                        name: "o3-mini High",                  price: 1.10,  tier: paid }
+  - { id: "openrouter/openai/o3-mini",                             name: "o3-mini (OR)",                  price: 1.10,  tier: paid }
+  - { id: "openrouter/google/gemini-2.5-pro",                      name: "Gemini 2.5 Pro (OR)",           price: 1.25,  tier: paid }
+  - { id: "openrouter/openai/gpt-5-chat",                          name: "GPT-5 Chat",                    price: 1.25,  tier: paid }
+  - { id: "openrouter/openai/gpt-5-codex",                         name: "GPT-5 Codex",                   price: 1.25,  tier: paid }
+  - { id: "openrouter/openai/gpt-5",                               name: "GPT-5",                         price: 1.25,  tier: paid }
+  - { id: "openrouter/openai/gpt-3.5-turbo",                       name: "GPT-3.5 Turbo (OR)",            price: 1.50,  tier: paid }
+  - { id: "openrouter/openai/gpt-5.2-chat",                        name: "GPT-5.2 Chat",                  price: 1.75,  tier: paid }
+  - { id: "openrouter/openai/gpt-5.2-codex",                       name: "GPT-5.2 Codex",                 price: 1.75,  tier: paid }
+  - { id: "openrouter/openai/gpt-5.2",                             name: "GPT-5.2",                       price: 1.75,  tier: paid }
+  - { id: "openrouter/gryphe/mythomax-l2-13b",                     name: "MythoMax L2 13B",               price: 1.88,  tier: paid }
+  - { id: "openrouter/undi95/remm-slerp-l2-13b",                   name: "ReMM SLERP L2 13B",             price: 1.88,  tier: paid }
+  - { id: "openrouter/google/gemini-3-pro-preview",                name: "Gemini 3 Pro Preview",          price: 2.00,  tier: paid }
+  - { id: "openrouter/openai/gpt-4.1",                             name: "GPT-4.1",                       price: 2.00,  tier: paid }
+  - { id: "openrouter/openai/gpt-4o",                              name: "GPT-4o (OR)",                   price: 2.50,  tier: paid }
+
+  # ═══════════════════════════════════════════════════════════
+  # ADMIN TIER — $3.00/M input and above
+  # ═══════════════════════════════════════════════════════════
+
+  # ── Direct API ──
+  - { id: "claude-sonnet-4-5",   name: "Claude Sonnet 4.5",         price: 3.00,  tier: admin }
+  - { id: "claude-3-5-sonnet",   name: "Claude 3.5 Sonnet",         price: 3.00,  tier: admin }
+  - { id: "grok-3",              name: "Grok 3",                    price: 3.00,  tier: admin }
+
+  # ── OpenRouter ──
+  - { id: "openrouter/anthropic/claude-3.5-sonnet",                name: "Claude 3.5 Sonnet (OR)",        price: 3.00,  tier: admin }
+  - { id: "openrouter/anthropic/claude-3.7-sonnet",                name: "Claude 3.7 Sonnet",             price: 3.00,  tier: admin }
+  - { id: "openrouter/anthropic/claude-sonnet-4.5",                name: "Claude Sonnet 4.5 (OR)",        price: 3.00,  tier: admin }
+  - { id: "openrouter/anthropic/claude-sonnet-4",                  name: "Claude Sonnet 4",               price: 3.00,  tier: admin }
+  - { id: "openrouter/openai/gpt-3.5-turbo-16k",                  name: "GPT-3.5 Turbo 16K (OR)",        price: 3.00,  tier: admin }
+  - { id: "openrouter/x-ai/grok-4",                               name: "Grok 4",                        price: 3.00,  tier: admin }
+  - { id: "openrouter/anthropic/claude-opus-4.5",                  name: "Claude Opus 4.5",               price: 5.00,  tier: admin }
+  - { id: "openrouter/openai/gpt-4o-2024-05-13",                  name: "GPT-4o 2024-05-13 (OR)",        price: 5.00,  tier: admin }
+  - { id: "openrouter/mancer/weaver",                              name: "Mancer Weaver",                 price: 5.62,  tier: admin }
+  - { id: "openrouter/mistralai/mistral-large",                    name: "Mistral Large Legacy (OR)",      price: 8.00,  tier: admin }
+  - { id: "openrouter/anthropic/claude-opus-4.1",                  name: "Claude Opus 4.1",               price: 15.00, tier: admin }
+  - { id: "openrouter/anthropic/claude-opus-4",                    name: "Claude Opus 4",                 price: 15.00, tier: admin }
+  - { id: "openrouter/openai/o1",                                  name: "o1",                            price: 15.00, tier: admin }
+  - { id: "openrouter/openai/gpt-5.2-pro",                        name: "GPT-5.2 Pro",                   price: 21.00, tier: admin }
+  - { id: "openrouter/openai/gpt-4",                               name: "GPT-4 Legacy (OR)",             price: 30.00, tier: admin }
+
+  # ═══════════════════════════════════════════════════════════
+  # NO PRICING DATA — tier set manually
+  # ═══════════════════════════════════════════════════════════
+
+  # Image gen / special models (no per-token pricing)
+  - { id: "dall-e-3",            name: "DALL-E 3",                  price: 0.00,  tier: paid }
+  - { id: "imagen-3",            name: "Imagen 3",                  price: 0.00,  tier: paid }
+  - { id: "flux-klein",          name: "Flux Klein",                price: 0.00,  tier: paid }
+
+  # Image-in / Image-out models
+  - { id: "gemini-2.5-flash-image",  name: "Gemini 2.5 Flash Image",   price: 0.30,  tier: free }
+  - { id: "gemini-3-pro-image",      name: "Gemini 3 Pro Image",       price: 2.00,  tier: paid }
+  - { id: "gpt-5-image-mini",        name: "GPT-5 Image Mini",         price: 2.50,  tier: paid }
+  - { id: "gpt-5-image",             name: "GPT-5 Image",              price: 10.00, tier: admin }
+
+  # Groq (fast inference — same models, different host)
+  - { id: "groq-llama-3.3-70b",  name: "Llama 3.3 70B (Groq)",     price: 0.00,  tier: free }
+  - { id: "groq-llama-3.1-8b",   name: "Llama 3.1 8B (Groq)",      price: 0.00,  tier: paid }
+  # groq-mixtral-8x7b removed — Groq no longer offers Mixtral models
+  - { id: "groq-qwen3-32b",   name: "Qwen3 32B (Groq)",      price: 0.00,  tier: free }
+
+  # OpenRouter via config (no per-token pricing — routed by wildcard)
+  - { id: "gemma-2-27b",         name: "Gemma 2 27B",               price: 0.00,  tier: paid }
+  - { id: "llama-3.3-70b",       name: "Llama 3.3 70B",             price: 0.00,  tier: paid }

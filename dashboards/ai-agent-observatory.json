@@ -1,0 +1,526 @@
+{
+  "uid": "ai-agent-observatory",
+  "title": "AI Agent Observatory",
+  "tags": ["ai-agents", "observatory"],
+  "timezone": "browser",
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "agent_type",
+        "label": "Agent Type",
+        "type": "query",
+        "datasource": { "type": "postgres", "uid": "postgres-trading" },
+        "query": "SELECT DISTINCT agent_type FROM gateway.commands ORDER BY agent_type",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "title": "Overview",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "id": 1,
+      "title": "Sessions",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(DISTINCT payload->>'session_id') AS sessions FROM gateway.responses WHERE payload->>'session_id' IS NOT NULL AND ($__timeFilter(created_at))",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Today",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS commands FROM gateway.commands WHERE created_at >= CURRENT_DATE AND ('${agent_type:raw}' = '$__all' OR agent_type IN (${agent_type:sqlstring}))",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "This Week",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "purple", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS commands FROM gateway.commands WHERE created_at >= date_trunc('week', CURRENT_DATE) AND ('${agent_type:raw}' = '$__all' OR agent_type IN (${agent_type:sqlstring}))",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Success Rate",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "green", "value": 95 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT CASE WHEN COUNT(*) = 0 THEN 100 ELSE ROUND(COUNT(*) FILTER (WHERE status = 'completed') * 100.0 / COUNT(*), 1) END AS success_rate FROM gateway.commands WHERE ($__timeFilter(created_at)) AND ('${agent_type:raw}' = '$__all' OR agent_type IN (${agent_type:sqlstring}))",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Avg Time",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 120 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT ROUND(AVG(EXTRACT(EPOCH FROM (completed_at - created_at)))::numeric, 1) AS avg_duration FROM gateway.commands WHERE completed_at IS NOT NULL AND ($__timeFilter(created_at)) AND ('${agent_type:raw}' = '$__all' OR agent_type IN (${agent_type:sqlstring}))",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Agents",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "orange", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(DISTINCT agent_type) AS agents FROM gateway.commands WHERE ($__timeFilter(created_at))",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 101,
+      "title": "Trends",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "collapsed": false
+    },
+    {
+      "id": 7,
+      "title": "Commands Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 16, "x": 0, "y": 6 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "stacking": { "mode": "normal", "group": "A" },
+            "lineWidth": 0,
+            "pointSize": 5,
+            "showPoints": "never"
+          },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, agent_type, COUNT(*) AS commands FROM gateway.commands WHERE ($__timeFilter(created_at)) AND ('${agent_type:raw}' = '$__all' OR agent_type IN (${agent_type:sqlstring})) GROUP BY 1, 2 ORDER BY 1",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "prepareTimeSeries",
+          "options": { "format": "multi" }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Response Type Distribution",
+      "type": "piechart",
+      "gridPos": { "h": 10, "w": 8, "x": 16, "y": 6 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] },
+        "tooltip": { "mode": "single" },
+        "pieType": "donut"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT response_type, COUNT(*) AS count FROM gateway.responses WHERE ($__timeFilter(created_at)) GROUP BY response_type ORDER BY count DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "title": "Activity",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "collapsed": false
+    },
+    {
+      "id": 9,
+      "title": "Recent Commands",
+      "description": "Click a row to open its Session Replay",
+      "type": "table",
+      "gridPos": { "h": 12, "w": 16, "x": 0, "y": 17 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "id" },
+            "properties": [
+              { "id": "custom.width", "value": 60 },
+              { "id": "links", "value": [
+                {
+                  "title": "Open Session Replay",
+                  "url": "/d/session-replay?var-command_id=${__data.fields.id}"
+                }
+              ]}
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "agent_type" },
+            "properties": [
+              { "id": "custom.width", "value": 120 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "message" },
+            "properties": [
+              { "id": "custom.width", "value": 350 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "status" },
+            "properties": [
+              { "id": "custom.width", "value": 100 },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              {
+                "id": "mappings",
+                "value": [
+                  { "type": "value", "options": { "completed": { "color": "green", "text": "completed" }, "failed": { "color": "red", "text": "failed" }, "running": { "color": "yellow", "text": "running" }, "pending": { "color": "blue", "text": "pending" } } }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "duration" },
+            "properties": [
+              { "id": "unit", "value": "s" },
+              { "id": "decimals", "value": 1 },
+              { "id": "custom.width", "value": 90 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "responses" },
+            "properties": [
+              { "id": "custom.width", "value": 90 }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "id", "desc": true }],
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT c.id, c.agent_type, LEFT(c.message, 80) AS message, c.status, ROUND(EXTRACT(EPOCH FROM (c.completed_at - c.created_at))::numeric, 1) AS duration, (SELECT COUNT(*) FROM gateway.responses r WHERE r.command_id = c.id) AS responses FROM gateway.commands c WHERE ($__timeFilter(c.created_at)) AND ('${agent_type:raw}' = '$__all' OR c.agent_type IN (${agent_type:sqlstring})) ORDER BY c.created_at DESC LIMIT 50",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Approval Summary",
+      "type": "table",
+      "gridPos": { "h": 12, "w": 8, "x": 16, "y": 17 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "status" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              {
+                "id": "mappings",
+                "value": [
+                  { "type": "value", "options": { "approved": { "color": "green" }, "denied": { "color": "red" }, "pending": { "color": "yellow" }, "expired": { "color": "orange" } } }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "avg_decision_time" },
+            "properties": [
+              { "id": "unit", "value": "s" },
+              { "id": "decimals", "value": 1 }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT status, COUNT(*) AS count, ROUND(AVG(EXTRACT(EPOCH FROM (decided_at - created_at)))::numeric, 1) AS avg_decision_time FROM gateway.approvals WHERE ($__timeFilter(created_at)) GROUP BY status ORDER BY count DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 103,
+      "title": "Failure Analysis",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
+      "collapsed": false
+    },
+    {
+      "id": 11,
+      "title": "Failure Rate Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "auto",
+            "pointSize": 5
+          },
+          "color": { "fixedColor": "red", "mode": "fixed" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 20 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "single" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(COUNT(*) FILTER (WHERE status = 'failed') * 100.0 / COUNT(*), 1) END AS failure_rate FROM gateway.commands WHERE ($__timeFilter(created_at)) AND ('${agent_type:raw}' = '$__all' OR agent_type IN (${agent_type:sqlstring})) GROUP BY 1 ORDER BY 1",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Recent Failures",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "id" },
+            "properties": [
+              { "id": "custom.width", "value": 60 },
+              { "id": "links", "value": [
+                {
+                  "title": "Open Session Replay",
+                  "url": "/d/session-replay?var-command_id=${__data.fields.id}"
+                }
+              ]}
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "stderr" },
+            "properties": [
+              { "id": "custom.width", "value": 400 },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "created_at", "desc": true }],
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT c.id, c.agent_type, LEFT(c.message, 60) AS message, c.created_at, LEFT(COALESCE((SELECT r.content FROM gateway.responses r WHERE r.command_id = c.id AND r.response_type = 'stderr' ORDER BY r.created_at DESC LIMIT 1), 'N/A'), 200) AS stderr FROM gateway.commands c WHERE c.status = 'failed' AND ($__timeFilter(c.created_at)) AND ('${agent_type:raw}' = '$__all' OR c.agent_type IN (${agent_type:sqlstring})) ORDER BY c.created_at DESC LIMIT 20",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

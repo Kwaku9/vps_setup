@@ -1,0 +1,39 @@
+---
+# LiteLLM Post-Deployment Setup
+# Verifies LiteLLM API health after container start.
+#
+# Per-user spend tracking is handled via user_header_name in litellm-config.yml.j2
+# which maps X-OpenWebUI-User-Email headers to LiteLLM end-users automatically.
+# Model access control is managed in openwebui-setup.yml via per-model access_control.
+
+# ============================================================
+# Step 1: Wait for LiteLLM API
+# ============================================================
+
+- name: "[LiteLLM Setup] Wait for LiteLLM API health"
+  uri:
+    url: "http://127.0.0.1:{{ ai_stack.litellm.port }}/health/liveness"
+    method: GET
+    status_code: 200
+    return_content: yes
+  register: litellm_health
+  retries: 30
+  delay: 10
+  until: litellm_health.status == 200
+  check_mode: no
+  ignore_errors: false
+  tags: ['ai-stack', 'litellm', 'litellm-setup']
+
+- name: "[LiteLLM Setup] Display status"
+  debug:
+    msg:
+      - "============================================"
+      - "LiteLLM Setup Complete!"
+      - "============================================"
+      - ""
+      - "API: http://127.0.0.1:{{ ai_stack.litellm.port }}"
+      - "Auth: master key (single key, no virtual keys)"
+      - "End-user tracking: via X-OpenWebUI-User-Email header"
+      - "Models: stored in database (STORE_MODEL_IN_DB=True)"
+      - "============================================"
+  tags: ['ai-stack', 'litellm', 'litellm-setup']

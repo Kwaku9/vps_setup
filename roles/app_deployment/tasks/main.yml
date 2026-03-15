@@ -1,10 +1,5 @@
----
+﻿---
 # Tasks for app_deployment
-
-- name: Ensure community.docker collection is installed
-  command: ansible-galaxy collection install community.docker
-  changed_when: false
-  tags: ['containers', 'setup']
 
 - name: Find docker-compose files in vscode projects
   find:
@@ -13,6 +8,9 @@
       - "docker-compose.yml"
       - "docker-compose.yaml"
     recurse: yes
+    excludes:
+      - "*/scripts/docker/*"          # Exclude nested dev/test compose files
+      - "*/.devcontainer/*"           # Exclude devcontainer configs
   register: vscode_compose_files
   tags: ['containers']
 
@@ -23,6 +21,9 @@
       - "docker-compose.yml"
       - "docker-compose.yaml"
     recurse: yes
+    excludes:
+      - "*/scripts/docker/*"
+      - "*/.devcontainer/*"
   register: pycharm_compose_files
   tags: ['containers']
 
@@ -49,17 +50,43 @@
   when: all_compose_files is defined and all_compose_files | length > 0
   tags: ['containers', 'path-fix']
 
-- name: Start services from compose files
-  community.docker.docker_compose:
-    project_src: "{{ item.path | dirname }}"
-    executable: "podman-compose"
-    state: present
+- name: Replace /mnt/c/ Docker Desktop style paths for .claude
+  replace:
+    path: "{{ item.path }}"
+    regexp: '/mnt/c/Users/swirl/\.claude'
+    replace: "/root/.claude"
   loop: "{{ all_compose_files }}"
   when: all_compose_files is defined and all_compose_files | length > 0
-  tags: ['containers', 'deploy']
+  tags: ['containers', 'path-fix']
 
-- name: Display container deployment summary
+- name: Replace C:/ Windows style paths for .claude
+  replace:
+    path: "{{ item.path }}"
+    regexp: 'C:(\/|\\)+Users(\/|\\)+swirl(\/|\\)+\.claude'
+    replace: "/root/.claude"
+  loop: "{{ all_compose_files }}"
+  when: all_compose_files is defined and all_compose_files | length > 0
+  tags: ['containers', 'path-fix']
+
+- name: Extract networks from compose files
+  shell: |
+    cd "{{ item.path | dirname }}"
+    podman-compose config 2>/dev/null | grep -A 5 '^networks:' | grep -v '^--$' || echo "default"
+  loop: "{{ all_compose_files }}"
+  when: all_compose_files is defined and all_compose_files | length > 0
+  register: compose_networks
+  ignore_errors: yes
+  changed_when: false
+  tags: ['containers', 'networks']
+
+- name: Display compose file readiness summary
   debug:
-    msg: "✓ Processed and started services for {{ all_compose_files | length }} docker-compose file(s)."
+    msg:
+      - "Γ£ô Found {{ all_compose_files | length }} docker-compose file(s)"
+      - "Γ£ô Windows paths replaced with Linux paths"
+      - "Γ£ô Files ready for manual container deployment"
+      - ""
+      - "Compose files prepared:"
+      - "{{ all_compose_files | map(attribute='path') | list }}"
   when: all_compose_files is defined and all_compose_files | length > 0
   tags: ['containers']

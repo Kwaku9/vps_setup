@@ -1,0 +1,875 @@
+<?xml version="1.0" ?>
+<mxfile host="app.diagrams.net" modified="2026-02-17T00:00:00.000Z" agent="AICortex Architecture Generator" version="25.0.3" type="device">
+  <diagram id="main" name="AICortex Cloud Infrastructure">
+    <mxGraphModel dx="2400" dy="1600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="7400" pageHeight="4800" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="layer_security" value="Security Layers" style="locked=0;" parent="0" visible="1"/>
+        <mxCell id="layer_userflow" value="User Transaction Flow" style="locked=0;" parent="0" visible="1"/>
+        <mxCell id="layer_networking" value="Container Networking" style="locked=0;" parent="0" visible="0"/>
+        <mxCell id="layer_observability" value="Observability Pipeline" style="locked=0;" parent="0" visible="1"/>
+        <mxCell id="layer_aimodels" value="AI Model Ecosystem" style="locked=0;" parent="0" visible="1"/>
+        <mxCell id="layer_claude" value="Claude Code &amp;amp; MCP" style="locked=0;" parent="0" visible="1"/>
+        <mxCell id="layer_engineering" value="Engineering Details" style="locked=0;" parent="0" visible="0"/>
+        <mxCell id="title" value="&lt;b&gt;AICortex Cloud&lt;/b&gt; — Full Infrastructure Architecture" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=24;fontStyle=1;fontColor=#263238;" parent="1" vertex="1">
+          <mxGeometry x="1600" y="10" width="800" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Alpine Linux VPS (REDACTED_IP) | Podman Pods | Cloudflare Tunnel | enterprise_network REDACTED_CIDR | AWS GPU Inference (us-east-1)" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=14;fontColor=#546E7A;" parent="1" vertex="1">
+          <mxGeometry x="1400" y="50" width="1200" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="user" value="Users /&lt;br/&gt;Browsers" style="shape=mxgraph.basic.user;fillColor=#1565C0;fontColor=#FFFFFF;strokeColor=#0D47A1;fontSize=12;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="1900" y="100" width="80" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="internet" value="Internet" style="ellipse;shape=cloud;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#BDBDBD;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="1700" y="200" width="480" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="cf_zone" value="&lt;b&gt;Cloudflare&lt;/b&gt; — *.REDACTED_DOMAIN" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F9A825;strokeWidth=2;fontSize=13;fontStyle=1;arcSize=8;container=1;collapsible=0;" parent="1" vertex="1">
+          <mxGeometry x="900" y="310" width="1280" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="cf_dns" value="&lt;b&gt;DNS&lt;/b&gt;&lt;br/&gt;CNAME *.REDACTED_DOMAIN&lt;br/&gt;→ Tunnel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F9A825;fontSize=11;arcSize=12;" parent="cf_zone" vertex="1">
+          <mxGeometry x="30" y="35" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="cf_waf" value="&lt;b&gt;WAF&lt;/b&gt;&lt;br/&gt;OWASP Rules&lt;br/&gt;Bot Protection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F9A825;fontSize=11;arcSize=12;" parent="cf_zone" vertex="1">
+          <mxGeometry x="260" y="35" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="cf_ddos" value="&lt;b&gt;DDoS&lt;/b&gt;&lt;br/&gt;L3/L4/L7&lt;br/&gt;Rate Limiting" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F9A825;fontSize=11;arcSize=12;" parent="cf_zone" vertex="1">
+          <mxGeometry x="490" y="35" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="cf_ssl" value="&lt;b&gt;Edge TLS&lt;/b&gt;&lt;br/&gt;Full (Strict)&lt;br/&gt;HTTPS Only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F9A825;fontSize=11;arcSize=12;" parent="cf_zone" vertex="1">
+          <mxGeometry x="720" y="35" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="cf_access" value="&lt;b&gt;Cloudflare Access&lt;/b&gt;&lt;br/&gt;Zero Trust Policies&lt;br/&gt;Email OTP + Authentik IDP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE082;strokeColor=#F57F17;fontSize=11;fontStyle=1;arcSize=12;" parent="cf_zone" vertex="1">
+          <mxGeometry x="950" y="35" width="280" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="cf_tunnel" value="&lt;b&gt;cloudflared&lt;/b&gt;&lt;br/&gt;Cloudflare Tunnel (QUIC)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=10;strokeWidth=2;fillColor=#FFF8E1;strokeColor=#F9A825;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="1800" y="530" width="280" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="vps" value="&lt;b&gt;VPS — REDACTED_IP&lt;/b&gt;  |  Alpine Linux  |  Podman Rootless" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#78909C;strokeWidth=3;dashed=1;dashPattern=8 4;fontSize=14;fontStyle=1;verticalAlign=top;arcSize=4;container=1;collapsible=0;" parent="1" vertex="1">
+          <mxGeometry x="80" y="480" width="3700" height="1680" as="geometry"/>
+        </mxCell>
+        <mxCell id="fw" value="iptables FIREWALL — Policy: DROP | Allow: 22 (SSH), 80 (HTTP), 443 (HTTPS), ICMP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D32F2F;strokeColor=#B71C1C;fontSize=11;fontColor=#FFFFFF;fontStyle=1;arcSize=4;" parent="layer_security" vertex="1">
+          <mxGeometry x="180" y="492" width="3500" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="traefik" value="&lt;b&gt;Traefik v3.6&lt;/b&gt;&lt;br/&gt;Reverse Proxy + TLS Termination&lt;br/&gt;Let's Encrypt (Cloudflare DNS Challenge)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=10;strokeWidth=2;fillColor=#E3F2FD;strokeColor=#1565C0;fontStyle=1;strokeWidth=3;" parent="1" vertex="1">
+          <mxGeometry x="1600" y="620" width="680" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="pod_ai" value="&lt;b&gt;ai-stack-pod&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;fontSize=12;fontStyle=1;verticalAlign=top;arcSize=6;container=1;collapsible=0;fillColor=#E3F2FD;strokeColor=#42A5F5;" parent="1" vertex="1">
+          <mxGeometry x="500" y="750" width="1300" height="540" as="geometry"/>
+        </mxCell>
+        <mxCell id="owui" value="&lt;b&gt;REDACTED_DOMAIN&lt;/b&gt;&lt;br/&gt;(OpenWebUI v0.8.1)&lt;br/&gt;AI Chat Hub&lt;br/&gt;OIDC Auth | Group Access Control" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#1565C0;strokeColor=#0D47A1;fontColor=#FFFFFF;fontStyle=1;fontSize=12;strokeWidth=2;" parent="pod_ai" vertex="1">
+          <mxGeometry x="30" y="40" width="340" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="litellm" value="&lt;b&gt;LiteLLM&lt;/b&gt;&lt;br/&gt;AI Proxy Gateway&lt;br/&gt;Multi-Provider Routing&lt;br/&gt;Per-User Spend Tracking" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#E8F5E9;strokeColor=#43A047;fontStyle=1;" parent="pod_ai" vertex="1">
+          <mxGeometry x="30" y="195" width="340" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="kokoro" value="&lt;b&gt;Kokoro TTS&lt;/b&gt;&lt;br/&gt;Text-to-Speech&lt;br/&gt;CPU Inference&lt;br/&gt;OpenAI-compat /v1/audio/speech" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFF3E0;strokeColor=#FB8C00;fontStyle=1;" parent="pod_ai" vertex="1">
+          <mxGeometry x="400" y="40" width="280" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="ai_pg" value="&lt;b&gt;PostgreSQL 16&lt;/b&gt;&lt;br/&gt;LiteLLM DB + n8n DB" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#BBDEFB;strokeColor=#42A5F5;fontSize=10;" parent="pod_ai" vertex="1">
+          <mxGeometry x="400" y="185" width="280" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="n8n_claude" value="&lt;b&gt;n8n-claude&lt;/b&gt;&lt;br/&gt;Workflow Automation&lt;br/&gt;Claude CLI Integration" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#E8EAF6;strokeColor=#5C6BC0;" parent="pod_ai" vertex="1">
+          <mxGeometry x="710" y="40" width="260" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="searxng" value="&lt;b&gt;SearXNG&lt;/b&gt;&lt;br/&gt;Web Search" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#EFEBE9;strokeColor=#8D6E63;" parent="pod_ai" vertex="1">
+          <mxGeometry x="710" y="155" width="260" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="ai_ports" value=":8080 (WebUI) | :4000 (LiteLLM) | :5678 (n8n) | :8880 (TTS) | :5432 (PG)" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;" parent="layer_engineering" vertex="1">
+          <mxGeometry x="500" y="1270" width="420" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="pod_auth" value="&lt;b&gt;authentication-pod&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;fontSize=12;fontStyle=1;verticalAlign=top;arcSize=6;container=1;collapsible=0;fillColor=#F3E5F5;strokeColor=#AB47BC;" parent="1" vertex="1">
+          <mxGeometry x="1900" y="750" width="700" height="300" as="geometry"/>
+        </mxCell>
+        <mxCell id="auth_server" value="&lt;b&gt;Authentik Server&lt;/b&gt;&lt;br/&gt;2025.10&lt;br/&gt;Identity Provider (IDP)&lt;br/&gt;OIDC / OAuth2 / SAML" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#CE93D8;strokeColor=#8E24AA;fontStyle=1;" parent="pod_auth" vertex="1">
+          <mxGeometry x="20" y="40" width="300" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="auth_worker" value="&lt;b&gt;Authentik Worker&lt;/b&gt;&lt;br/&gt;Background Tasks&lt;br/&gt;Email, Flows, Policies" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#E1BEE7;strokeColor=#AB47BC;" parent="pod_auth" vertex="1">
+          <mxGeometry x="350" y="40" width="300" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="auth_pg" value="&lt;b&gt;PostgreSQL 16&lt;/b&gt;&lt;br/&gt;Users, Flows, Tokens&lt;br/&gt;(No Redis — 2025.10)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#BBDEFB;strokeColor=#42A5F5;fontSize=10;" parent="pod_auth" vertex="1">
+          <mxGeometry x="140" y="170" width="340" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="auth_ports" value=":9000 (HTTP) | :9443 (HTTPS) | :9300 (metrics)" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;" parent="layer_engineering" vertex="1">
+          <mxGeometry x="1920" y="1035" width="350" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="pod_mon" value="&lt;b&gt;monitoring-pod&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;fontSize=12;fontStyle=1;verticalAlign=top;arcSize=6;container=1;collapsible=0;fillColor=#FFF3E0;strokeColor=#FF9800;" parent="1" vertex="1">
+          <mxGeometry x="2700" y="750" width="1000" height="600" as="geometry"/>
+        </mxCell>
+        <mxCell id="grafana" value="&lt;b&gt;Grafana 12.3.1&lt;/b&gt;&lt;br/&gt;Dashboards | OIDC Auth&lt;br/&gt;Pre-configured Data Sources" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFE0B2;strokeColor=#F57C00;fontStyle=1;" parent="pod_mon" vertex="1">
+          <mxGeometry x="20" y="40" width="220" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="prometheus" value="&lt;b&gt;Prometheus v3.8.1&lt;/b&gt;&lt;br/&gt;Metrics (15d)&lt;br/&gt;Recording Rules&lt;br/&gt;→ VM remote_write" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFF3E0;strokeColor=#FF9800;fontStyle=1;" parent="pod_mon" vertex="1">
+          <mxGeometry x="260" y="40" width="230" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="loki" value="&lt;b&gt;Loki 3.6.3&lt;/b&gt;&lt;br/&gt;Logs (7d)&lt;br/&gt;Multitenancy" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFF3E0;strokeColor=#FF9800;" parent="pod_mon" vertex="1">
+          <mxGeometry x="510" y="40" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="tempo" value="&lt;b&gt;Tempo 2.9.0&lt;/b&gt;&lt;br/&gt;Traces (7d)&lt;br/&gt;OTLP + Correlation" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFF3E0;strokeColor=#FF9800;" parent="pod_mon" vertex="1">
+          <mxGeometry x="730" y="40" width="230" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="alloy" value="&lt;b&gt;Alloy v1.13.2&lt;/b&gt;&lt;br/&gt;OTLP Gateway&lt;br/&gt;Log/Metric/Trace Collector&lt;br/&gt;Container Discovery" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFE082;strokeColor=#F9A825;fontStyle=1;fontSize=10;" parent="pod_mon" vertex="1">
+          <mxGeometry x="20" y="160" width="300" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="victoriametrics" value="&lt;b&gt;VictoriaMetrics v1.115.0&lt;/b&gt;&lt;br/&gt;Long-term Storage (6mo)&lt;br/&gt;Prometheus remote_write" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#E8F5E9;strokeColor=#43A047;fontStyle=1;" parent="pod_mon" vertex="1">
+          <mxGeometry x="350" y="160" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_exp" value="&lt;b&gt;Node Exporter v1.10.2&lt;/b&gt;&lt;br/&gt;Host Metrics" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFF3E0;strokeColor=#FF9800;" parent="pod_mon" vertex="1">
+          <mxGeometry x="580" y="160" width="180" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="podman_exp" value="&lt;b&gt;Podman Exporter v1.14.0&lt;/b&gt;&lt;br/&gt;Container Metrics" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFF3E0;strokeColor=#FF9800;" parent="pod_mon" vertex="1">
+          <mxGeometry x="580" y="250" width="180" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="img_renderer" value="&lt;b&gt;Image Renderer&lt;/b&gt;&lt;br/&gt;Dashboard Rendering" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFF3E0;strokeColor=#FF9800;" parent="pod_mon" vertex="1">
+          <mxGeometry x="780" y="160" width="180" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="mon_ports" value=":3000 (Grafana) | :9090 (Prom) | :3100/3200 (Loki) | :4317-4318 (OTLP) | :8428 (VM) | :9882 (Podman Exp)" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;" parent="layer_engineering" vertex="1">
+          <mxGeometry x="2720" y="1335" width="500" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="obs_label_m" value="Metrics" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#78909C;fontColor=#E65100;fontStyle=1;" parent="layer_observability" vertex="1">
+          <mxGeometry x="2970" y="830" width="60" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="obs_label_l" value="Logs" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#78909C;fontColor=#E65100;fontStyle=1;" parent="layer_observability" vertex="1">
+          <mxGeometry x="3220" y="830" width="40" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="obs_label_t" value="Traces" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#78909C;fontColor=#E65100;fontStyle=1;" parent="layer_observability" vertex="1">
+          <mxGeometry x="3440" y="830" width="50" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="pod_sec" value="&lt;b&gt;security-pod&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;fontSize=12;fontStyle=1;verticalAlign=top;arcSize=6;container=1;collapsible=0;fillColor=#FFEBEE;strokeColor=#EF5350;" parent="1" vertex="1">
+          <mxGeometry x="100" y="1400" width="900" height="330" as="geometry"/>
+        </mxCell>
+        <mxCell id="wazuh_mgr" value="&lt;b&gt;Wazuh Manager&lt;/b&gt;&lt;br/&gt;4.14.3 — SIEM&lt;br/&gt;FIM, Rootkit, Rules" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFCDD2;strokeColor=#EF5350;fontStyle=1;" parent="pod_sec" vertex="1">
+          <mxGeometry x="20" y="40" width="250" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="wazuh_idx" value="&lt;b&gt;Wazuh Indexer&lt;/b&gt;&lt;br/&gt;OpenSearch&lt;br/&gt;Alert Storage" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFCDD2;strokeColor=#EF5350;" parent="pod_sec" vertex="1">
+          <mxGeometry x="290" y="40" width="250" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="wazuh_dash" value="&lt;b&gt;Wazuh Dashboard&lt;/b&gt;&lt;br/&gt;Security Analytics" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFCDD2;strokeColor=#EF5350;" parent="pod_sec" vertex="1">
+          <mxGeometry x="20" y="170" width="250" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="trivy" value="&lt;b&gt;Trivy 0.68.2&lt;/b&gt;&lt;br/&gt;Container Vuln Scanner&lt;br/&gt;Image + Config Scanning" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFCDD2;strokeColor=#EF5350;" parent="pod_sec" vertex="1">
+          <mxGeometry x="290" y="170" width="250" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="tetragon" value="&lt;b&gt;Tetragon v1.6&lt;/b&gt;&lt;br/&gt;eBPF Kernel Security&lt;br/&gt;Process + File + Network" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFEBEE;strokeColor=#C62828;fontStyle=1;" parent="layer_security" vertex="1">
+          <mxGeometry x="600" y="1470" width="260" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="fail2ban" value="&lt;b&gt;Fail2ban&lt;/b&gt;&lt;br/&gt;SSH Protection&lt;br/&gt;5 retries / 1h ban" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFEBEE;strokeColor=#C62828;" parent="layer_security" vertex="1">
+          <mxGeometry x="100" y="1780" width="220" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="wazuh_agent" value="&lt;b&gt;Wazuh Agent&lt;/b&gt;&lt;br/&gt;Host Monitor&lt;br/&gt;FIM + Log Analysis" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#FFEBEE;strokeColor=#C62828;" parent="layer_security" vertex="1">
+          <mxGeometry x="360" y="1780" width="220" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="sec_ports" value=":1514-1515 (agent) | :5601 (dashboard) | :9200 (indexer) | :55000 (API)" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;" parent="layer_engineering" vertex="1">
+          <mxGeometry x="120" y="1720" width="400" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="pod_mgmt" value="&lt;b&gt;management-pod&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;fontSize=12;fontStyle=1;verticalAlign=top;arcSize=6;container=1;collapsible=0;fillColor=#E8F5E9;strokeColor=#66BB6A;" parent="1" vertex="1">
+          <mxGeometry x="1100" y="1400" width="350" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="portainer" value="&lt;b&gt;Portainer CE 2.33.6&lt;/b&gt;&lt;br/&gt;Container Management UI&lt;br/&gt;OIDC Auth via Authentik" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#C8E6C9;strokeColor=#43A047;fontStyle=1;" parent="pod_mgmt" vertex="1">
+          <mxGeometry x="30" y="40" width="290" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="pod_front" value="&lt;b&gt;frontend-pod&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;fontSize=12;fontStyle=1;verticalAlign=top;arcSize=6;container=1;collapsible=0;fillColor=#ECEFF1;strokeColor=#90A4AE;" parent="1" vertex="1">
+          <mxGeometry x="1550" y="1400" width="350" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="nginx" value="&lt;b&gt;Nginx 1.29&lt;/b&gt;&lt;br/&gt;portal.REDACTED_DOMAIN&lt;br/&gt;Static Frontend Portal" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#ECEFF1;strokeColor=#78909C;" parent="pod_front" vertex="1">
+          <mxGeometry x="30" y="40" width="290" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="shared_label" value="&lt;b&gt;Shared Services&lt;/b&gt; (Standalone Containers)" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=14;fontColor=#546E7A;fontSize=12;fontColor=#37474F;align=left;" parent="1" vertex="1">
+          <mxGeometry x="100" y="1600" width="350" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="pg_shared" value="&lt;b&gt;PostgreSQL 16&lt;/b&gt;&lt;br/&gt;Shared DB&lt;br/&gt;REDACTED_DNS6" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#BBDEFB;strokeColor=#42A5F5;fontSize=10;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="100" y="1640" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="redis" value="&lt;b&gt;Redis 8&lt;/b&gt;&lt;br/&gt;Cache + Sessions&lt;br/&gt;REDACTED_DNS7&lt;br/&gt;requirepass enabled" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#FFCCBC;strokeColor=#FF7043;fontSize=10;fontSize=11;" parent="1" vertex="1">
+          <mxGeometry x="360" y="1640" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="ansible_ct" value="&lt;b&gt;ansible-deployment&lt;/b&gt;&lt;br/&gt;IaC Controller Container&lt;br/&gt;14 roles | vault.yml encrypted" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=10;strokeWidth=2;fillColor=#EDE7F6;strokeColor=#7E57C2;fontSize=10;" parent="claude_zone" vertex="1">
+          <mxGeometry x="30" y="170" width="340" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="prov_label" value="&lt;b&gt;External AI Providers&lt;/b&gt; — API Connections via LiteLLM Proxy" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=14;fontColor=#546E7A;fontSize=13;fontColor=#E65100;fontStyle=1;align=center;" parent="layer_aimodels" vertex="1">
+          <mxGeometry x="400" y="1880" width="600" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="prov_anthropic" value="&lt;b&gt;Anthropic&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#BDBDBD;fontSize=11;arcSize=8;container=1;collapsible=0;strokeColor=#D4A574;fillColor=#FFF8F0;" parent="layer_aimodels" vertex="1">
+          <mxGeometry x="100" y="1920" width="280" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="101" value="claude-sonnet-4-5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_anthropic" vertex="1">
+          <mxGeometry x="10" y="30" width="125" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="102" value="claude-haiku-4-5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_anthropic" vertex="1">
+          <mxGeometry x="145" y="30" width="125" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="prov_openai" value="&lt;b&gt;OpenAI&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#BDBDBD;fontSize=11;arcSize=8;container=1;collapsible=0;strokeColor=#10A37F;fillColor=#F0FFF8;" parent="layer_aimodels" vertex="1">
+          <mxGeometry x="420" y="1920" width="340" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="103" value="gpt-4o" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_openai" vertex="1">
+          <mxGeometry x="10" y="30" width="90" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="104" value="gpt-4o-mini" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_openai" vertex="1">
+          <mxGeometry x="110" y="30" width="100" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="105" value="o3-mini" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_openai" vertex="1">
+          <mxGeometry x="220" y="30" width="90" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="106" value="DALL-E 3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;fillColor=#FFE0B2;" parent="prov_openai" vertex="1">
+          <mxGeometry x="10" y="65" width="90" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="prov_google" value="&lt;b&gt;Google / Vertex AI&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#BDBDBD;fontSize=11;arcSize=8;container=1;collapsible=0;strokeColor=#4285F4;fillColor=#F0F4FF;" parent="layer_aimodels" vertex="1">
+          <mxGeometry x="800" y="1920" width="340" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="107" value="gemini-2.5-pro" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_google" vertex="1">
+          <mxGeometry x="10" y="30" width="120" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="108" value="gemini-2.5-flash" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_google" vertex="1">
+          <mxGeometry x="140" y="30" width="120" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="109" value="Imagen-3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;fillColor=#FFE0B2;" parent="prov_google" vertex="1">
+          <mxGeometry x="10" y="65" width="100" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="110" value="gemini-image" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;fillColor=#FFE0B2;" parent="prov_google" vertex="1">
+          <mxGeometry x="120" y="65" width="120" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="prov_deepseek" value="&lt;b&gt;DeepSeek&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#BDBDBD;fontSize=11;arcSize=8;container=1;collapsible=0;" parent="layer_aimodels" vertex="1">
+          <mxGeometry x="1180" y="1920" width="230" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="111" value="deepseek-r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_deepseek" vertex="1">
+          <mxGeometry x="10" y="30" width="100" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="112" value="deepseek-chat" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_deepseek" vertex="1">
+          <mxGeometry x="120" y="30" width="100" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="prov_xai" value="&lt;b&gt;XAI&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#BDBDBD;fontSize=11;arcSize=8;container=1;collapsible=0;" parent="layer_aimodels" vertex="1">
+          <mxGeometry x="1450" y="1920" width="200" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="113" value="grok-3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_xai" vertex="1">
+          <mxGeometry x="10" y="30" width="80" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="114" value="grok-3-mini" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_xai" vertex="1">
+          <mxGeometry x="100" y="30" width="90" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="prov_groq" value="&lt;b&gt;Groq&lt;/b&gt;&lt;br/&gt;&lt;i&gt;Fast Inference&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#BDBDBD;fontSize=11;arcSize=8;container=1;collapsible=0;" parent="layer_aimodels" vertex="1">
+          <mxGeometry x="1690" y="1920" width="260" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="115" value="llama-3.3-70b" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_groq" vertex="1">
+          <mxGeometry x="10" y="45" width="110" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="116" value="qwen3-32b" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_groq" vertex="1">
+          <mxGeometry x="130" y="45" width="100" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="prov_cohere" value="&lt;b&gt;Cohere&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#BDBDBD;fontSize=11;arcSize=8;container=1;collapsible=0;" parent="layer_aimodels" vertex="1">
+          <mxGeometry x="1990" y="1920" width="240" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="117" value="command-r-plus" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_cohere" vertex="1">
+          <mxGeometry x="10" y="30" width="110" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="118" value="command-r" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_cohere" vertex="1">
+          <mxGeometry x="130" y="30" width="100" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="prov_openrouter" value="&lt;b&gt;OpenRouter&lt;/b&gt;&lt;br/&gt;&lt;i&gt;Multi-Model Aggregator&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#BDBDBD;fontSize=11;arcSize=8;container=1;collapsible=0;strokeColor=#6366F1;fillColor=#F0F0FF;" parent="layer_aimodels" vertex="1">
+          <mxGeometry x="2270" y="1920" width="320" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="119" value="mistral-large" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_openrouter" vertex="1">
+          <mxGeometry x="10" y="45" width="100" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="120" value="llama-3.3-70b" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_openrouter" vertex="1">
+          <mxGeometry x="120" y="45" width="100" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="121" value="flux-klein" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;fillColor=#FFE0B2;" parent="prov_openrouter" vertex="1">
+          <mxGeometry x="10" y="80" width="90" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="122" value="gemma-2-27b" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;" parent="prov_openrouter" vertex="1">
+          <mxGeometry x="110" y="80" width="100" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="123" value="openrouter/*" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=9;arcSize=12;fillColor=#E8EAF6;" parent="prov_openrouter" vertex="1">
+          <mxGeometry x="220" y="80" width="90" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="claude_zone" value="&lt;b&gt;Claude Code CLI &amp;amp; MCP Tools&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;fontSize=12;fontStyle=1;verticalAlign=top;arcSize=6;container=1;collapsible=0;fillColor=#EDE7F6;strokeColor=#7E57C2;" parent="layer_claude" vertex="1">
+          <mxGeometry x="3900" y="480" width="400" height="900" as="geometry"/>
+        </mxCell>
+        <mxCell id="claude_cli" value="&lt;b&gt;Claude Code CLI&lt;/b&gt;&lt;br/&gt;AI Agent (Opus 4.6)&lt;br/&gt;SSH → VPS&lt;br/&gt;Infrastructure Mgmt" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=10;fillColor=#B39DDB;strokeColor=#5E35B1;fontStyle=1;fontColor=#FFFFFF;" parent="claude_zone" vertex="1">
+          <mxGeometry x="30" y="45" width="340" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="mcp_label" value="&lt;b&gt;MCP Tool Servers (Containerized)&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#5E35B1;fontStyle=1;" parent="claude_zone" vertex="1">
+          <mxGeometry x="30" y="260" width="250" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="mcp_n8n" value="&lt;b&gt;n8n-mcp&lt;/b&gt;&lt;br/&gt;Workflow Tools&lt;br/&gt;:3002 | Bearer Auth" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE7F6;strokeColor=#7E57C2;fontSize=10;arcSize=10;" parent="claude_zone" vertex="1">
+          <mxGeometry x="30" y="290" width="160" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="mcp_gdocs" value="&lt;b&gt;Google Docs MCP&lt;/b&gt;&lt;br/&gt;Drive + Docs MCP&lt;br/&gt;:9091 | SSE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE7F6;strokeColor=#7E57C2;fontSize=10;arcSize=10;" parent="claude_zone" vertex="1">
+          <mxGeometry x="210" y="290" width="160" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="mcp_ctx7" value="&lt;b&gt;Context7 MCP&lt;/b&gt;&lt;br/&gt;Protocol Impl&lt;br/&gt;:3001" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE7F6;strokeColor=#7E57C2;fontSize=10;arcSize=10;" parent="claude_zone" vertex="1">
+          <mxGeometry x="30" y="390" width="160" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="mcp_scrapy" value="&lt;b&gt;Scrapy MCP&lt;/b&gt;&lt;br/&gt;Web Scraping&lt;br/&gt;:8888 | DinD" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE7F6;strokeColor=#7E57C2;fontSize=10;arcSize=10;" parent="claude_zone" vertex="1">
+          <mxGeometry x="210" y="390" width="160" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="claude_ansible_label" value="IaC: Playbooks, Roles, Templates, Deploy" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#5E35B1;" parent="claude_zone" vertex="1">
+          <mxGeometry x="30" y="245" width="340" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_cloud" value="&lt;b&gt;AWS — us-east-1 — AI Inference Platform&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8F0;strokeColor=#FF9900;strokeWidth=3;fontSize=14;fontStyle=1;verticalAlign=top;arcSize=6;container=1;collapsible=0;" parent="layer_aimodels" vertex="1">
+          <mxGeometry x="4500" y="480" width="1200" height="1100" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_vpc" value="&lt;b&gt;VPC 10.0.0.0/16&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F4FD;strokeColor=#1976D2;strokeWidth=2;dashed=1;dashPattern=8 4;fontSize=12;fontStyle=1;verticalAlign=top;arcSize=4;container=1;collapsible=0;" parent="aws_cloud" vertex="1">
+          <mxGeometry x="30" y="50" width="1140" height="900" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_pub_sub" value="&lt;b&gt;Public Subnet&lt;/b&gt; (10.0.1.0/24)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#43A047;strokeWidth=1;dashed=1;fontSize=10;fontStyle=1;verticalAlign=top;arcSize=4;container=1;collapsible=0;" parent="aws_vpc" vertex="1">
+          <mxGeometry x="20" y="40" width="350" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_alb" value="&lt;b&gt;Application Load Balancer&lt;/b&gt;&lt;br/&gt;aws-gpu.REDACTED_DOMAIN&lt;br/&gt;HTTPS :443" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FF9900;fontSize=10;arcSize=10;fontStyle=1;" parent="aws_pub_sub" vertex="1">
+          <mxGeometry x="20" y="30" width="310" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_nat" value="&lt;b&gt;NAT Gateway&lt;/b&gt;&lt;br/&gt;Outbound Internet" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FF9900;fontSize=10;arcSize=10;fontSize=9;" parent="aws_pub_sub" vertex="1">
+          <mxGeometry x="200" y="110" width="130" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_priv_sub" value="&lt;b&gt;Private Subnet&lt;/b&gt; (10.0.2.0/24)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#1565C0;strokeWidth=1;dashed=1;fontSize=10;fontStyle=1;verticalAlign=top;arcSize=4;container=1;collapsible=0;" parent="aws_vpc" vertex="1">
+          <mxGeometry x="20" y="220" width="1100" height="440" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_orch" value="&lt;b&gt;Orchestrator&lt;/b&gt;&lt;br/&gt;t3.medium&lt;br/&gt;LiteLLM Proxy + Auto-Router" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FF9900;fontSize=10;arcSize=10;fontStyle=1;strokeWidth=2;" parent="aws_priv_sub" vertex="1">
+          <mxGeometry x="20" y="40" width="240" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_g5" value="&lt;b&gt;g5.12xlarge&lt;/b&gt;&lt;br/&gt;4x NVIDIA A10G (96GB)&lt;br/&gt;vLLM — 32B/70B Models" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;fontStyle=1;arcSize=10;strokeWidth=2;" parent="aws_priv_sub" vertex="1">
+          <mxGeometry x="320" y="30" width="240" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_p4de" value="&lt;b&gt;p4de.24xlarge&lt;/b&gt;&lt;br/&gt;8x NVIDIA A100 (640GB)&lt;br/&gt;vLLM — DeepSeek R1 671B" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;fontStyle=1;arcSize=10;strokeWidth=2;fillColor=#FFECB3;strokeColor=#E65100;" parent="aws_priv_sub" vertex="1">
+          <mxGeometry x="620" y="30" width="260" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_rds" value="&lt;b&gt;RDS PostgreSQL&lt;/b&gt;&lt;br/&gt;Spend Tracking DB" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#FFFFFF;strokeColor=#FF9900;fontSize=10;" parent="aws_priv_sub" vertex="1">
+          <mxGeometry x="20" y="160" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_efs" value="&lt;b&gt;EFS&lt;/b&gt;&lt;br/&gt;Shared Model Storage&lt;br/&gt;NFS :2049" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#FFFFFF;strokeColor=#FF9900;fontSize=10;" parent="aws_priv_sub" vertex="1">
+          <mxGeometry x="400" y="170" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_sqs" value="&lt;b&gt;SQS Queue&lt;/b&gt;&lt;br/&gt;Heavy Reasoning&lt;br/&gt;Requests" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FF9900;fontSize=10;arcSize=10;fontSize=9;" parent="aws_vpc" vertex="1">
+          <mxGeometry x="400" y="40" width="170" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_lambda_up" value="&lt;b&gt;Λ Scale-Up&lt;/b&gt;&lt;br/&gt;SQS-triggered" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#F57C00;fontSize=9;arcSize=12;" parent="aws_vpc" vertex="1">
+          <mxGeometry x="600" y="40" width="130" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_lambda_down" value="&lt;b&gt;Λ Scale-Down&lt;/b&gt;&lt;br/&gt;EventBridge 2-min" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#F57C00;fontSize=9;arcSize=12;" parent="aws_vpc" vertex="1">
+          <mxGeometry x="600" y="110" width="130" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_s3" value="&lt;b&gt;S3&lt;/b&gt;&lt;br/&gt;Model Weights" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#FFFFFF;strokeColor=#FF9900;fontSize=10;" parent="aws_cloud" vertex="1">
+          <mxGeometry x="30" y="980" width="160" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_cw" value="&lt;b&gt;CloudWatch&lt;/b&gt;&lt;br/&gt;Dashboards +&lt;br/&gt;Budget Alerts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FF9900;fontSize=10;arcSize=10;fontSize=9;" parent="aws_cloud" vertex="1">
+          <mxGeometry x="230" y="980" width="160" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_ssm" value="&lt;b&gt;SSM Parameter Store&lt;/b&gt;&lt;br/&gt;Secrets" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FF9900;fontSize=10;arcSize=10;fontSize=9;" parent="aws_cloud" vertex="1">
+          <mxGeometry x="430" y="980" width="170" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_eb" value="&lt;b&gt;EventBridge&lt;/b&gt;&lt;br/&gt;Idle Scheduler&lt;br/&gt;Cron: every 5 min" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FF9900;fontSize=10;arcSize=10;fontSize=9;" parent="aws_cloud" vertex="1">
+          <mxGeometry x="640" y="980" width="150" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_acm" value="&lt;b&gt;ACM&lt;/b&gt;&lt;br/&gt;TLS Certificate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FF9900;fontSize=10;arcSize=10;fontSize=9;" parent="aws_cloud" vertex="1">
+          <mxGeometry x="830" y="980" width="150" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_iam" value="&lt;b&gt;IAM Roles&lt;/b&gt;&lt;br/&gt;Least-Privilege" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FF9900;fontSize=10;arcSize=10;fontSize=9;" parent="aws_cloud" vertex="1">
+          <mxGeometry x="1010" y="980" width="150" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_cost_note" value="&lt;b&gt;Cost Optimization:&lt;/b&gt;&lt;br/&gt;• Idle (scaled to 0): ~$47/mo&lt;br/&gt;• Full GPU burst: ~$2,840/mo&lt;br/&gt;• G5: ~$5.67/hr | P4de: ~$40.96/hr&lt;br/&gt;• Auto scale-down after 2-min idle&lt;br/&gt;• SQS-triggered scale-up for heavy reasoning&lt;br/&gt;• 47 AWS Resources | 12 GPU Cards | 736 GB VRAM" style="text;html=1;align=left;verticalAlign=top;resizable=0;points=[];autosize=1;strokeColor=#FF9900;fillColor=#FFF8E1;fontSize=8;fontColor=#37474F;rounded=1;" parent="layer_aimodels" vertex="1">
+          <mxGeometry x="5720" y="1420" width="300" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_aws_alb_orch" value="HTTP :4000" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#FF9900;strokeWidth=2;flowAnimation=1;" parent="layer_aimodels" edge="1" source="aws_alb" target="aws_orch">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_aws_orch_g5" value="vLLM :8000" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#FF9900;strokeWidth=2;flowAnimation=1;" parent="layer_aimodels" edge="1" source="aws_orch" target="aws_g5">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_aws_orch_p4de" value="vLLM :8000" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#FF9900;strokeWidth=2;flowAnimation=1;" parent="layer_aimodels" edge="1" source="aws_orch" target="aws_p4de">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_aws_orch_rds" value=":5432" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#FF9900;strokeWidth=2;flowAnimation=1;" parent="layer_aimodels" edge="1" source="aws_orch" target="aws_rds">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_aws_g5_efs" value="NFS" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#FF9900;strokeWidth=2;flowAnimation=1;" parent="layer_aimodels" edge="1" source="aws_g5" target="aws_efs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_aws_p4de_efs" value="NFS" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#FF9900;strokeWidth=2;flowAnimation=1;" parent="layer_aimodels" edge="1" source="aws_p4de" target="aws_efs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_aws_sqs_lambda" value="trigger" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#FF9900;strokeWidth=2;flowAnimation=1;" parent="layer_aimodels" edge="1" source="aws_sqs" target="aws_lambda_up">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_aws_eb_lambda" value="trigger" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#FF9900;strokeWidth=2;flowAnimation=1;" parent="layer_aimodels" edge="1" source="aws_eb" target="aws_lambda_down">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_aws_orch_s3" value="weights" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#FF9900;strokeWidth=2;flowAnimation=1;" parent="layer_aimodels" edge="1" source="aws_orch" target="aws_s3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_aws_orch_cw" value="metrics" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#FF9900;strokeWidth=2;flowAnimation=1;" parent="layer_aimodels" edge="1" source="aws_orch" target="aws_cw">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_litellm_aws" value="&lt;b&gt;HTTPS&lt;/b&gt;&lt;br/&gt;Self-hosted GPU Inference&lt;br/&gt;api_base: aws-gpu.REDACTED_DOMAIN/v1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#FF9900;strokeWidth=2;flowAnimation=1;strokeWidth=3;" parent="layer_aimodels" edge="1" source="litellm" target="aws_alb">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="aws_fallback_label" value="&lt;b&gt;Fallback:&lt;/b&gt; Orchestrator → External APIs&lt;br/&gt;(Anthropic, DeepSeek) when GPU unavailable" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=8;fontColor=#FF6F00;fontStyle=2;" parent="layer_aimodels" vertex="1">
+          <mxGeometry x="4550" y="1600" width="300" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_user_inet" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565C0;strokeWidth=3;flowAnimation=1;" parent="layer_userflow" edge="1" source="user" target="internet">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_inet_cf" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565C0;strokeWidth=3;flowAnimation=1;" parent="layer_userflow" edge="1" source="internet" target="cf_zone">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_cf_tunnel" value="Encrypted&lt;br/&gt;QUIC Tunnel" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565C0;strokeWidth=3;flowAnimation=1;" parent="layer_userflow" edge="1" source="cf_zone" target="cf_tunnel">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_tunnel_traefik" value="HTTPS&lt;br/&gt;(noTLSVerify)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565C0;strokeWidth=3;flowAnimation=1;" parent="layer_userflow" edge="1" source="cf_tunnel" target="traefik">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_traefik_owui" value="chat.REDACTED_DOMAIN&lt;br/&gt;→ :8080" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565C0;strokeWidth=3;flowAnimation=1;" parent="layer_userflow" edge="1" source="traefik" target="owui">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_traefik_auth" value="auth.REDACTED_DOMAIN&lt;br/&gt;→ :9000" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565C0;strokeWidth=3;flowAnimation=1;" parent="layer_userflow" edge="1" source="traefik" target="auth_server">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1940" y="690"/>
+              <mxPoint x="1940" y="730"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_traefik_grafana" value="grafana.REDACTED_DOMAIN&lt;br/&gt;→ :3000" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565C0;strokeWidth=3;flowAnimation=1;" parent="layer_userflow" edge="1" source="traefik" target="grafana">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2280" y="700"/>
+              <mxPoint x="2830" y="700"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_traefik_portainer" value="portainer.REDACTED_DOMAIN" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1;" parent="layer_userflow" edge="1" source="traefik" target="portainer">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1850" y="1350"/>
+              <mxPoint x="1275" y="1350"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_traefik_n8n" value="n8n.REDACTED_DOMAIN" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1;" parent="layer_userflow" edge="1" source="traefik" target="n8n_claude">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_traefik_prom" value="prometheus.REDACTED_DOMAIN" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1;" parent="layer_userflow" edge="1" source="traefik" target="prometheus">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2280" y="710"/>
+              <mxPoint x="3095" y="710"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_traefik_portal" value="portal.REDACTED_DOMAIN" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1;" parent="layer_userflow" edge="1" source="traefik" target="nginx">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1870" y="1350"/>
+              <mxPoint x="1725" y="1350"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_traefik_kokoro" value="tts.REDACTED_DOMAIN" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1;" parent="layer_userflow" edge="1" source="traefik" target="kokoro">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_traefik_litellm_route" value="litellm.REDACTED_DOMAIN" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1;" parent="layer_userflow" edge="1" source="traefik" target="litellm">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_owui_litellm" value="&lt;b&gt;API Calls&lt;/b&gt;&lt;br/&gt;+ x-openwebui-user-email&lt;br/&gt;header (spend tracking)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E65100;strokeWidth=2;flowAnimation=1;" parent="layer_userflow" edge="1" source="owui" target="litellm">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_owui_kokoro" value="&lt;b&gt;Text → Speech&lt;/b&gt;&lt;br/&gt;/v1/audio/speech&lt;br/&gt;AI Voice Output" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E65100;strokeWidth=2;flowAnimation=1;" parent="layer_userflow" edge="1" source="owui" target="kokoro">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="124" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E65100;strokeWidth=2;flowAnimation=1;" parent="layer_aimodels" edge="1" source="litellm" target="prov_anthropic">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="125" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E65100;strokeWidth=2;flowAnimation=1;" parent="layer_aimodels" edge="1" source="litellm" target="prov_openai">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="126" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E65100;strokeWidth=2;flowAnimation=1;" parent="layer_aimodels" edge="1" source="litellm" target="prov_google">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="127" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E65100;strokeWidth=1;flowAnimation=1;" parent="layer_aimodels" edge="1" source="litellm" target="prov_deepseek">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="128" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E65100;strokeWidth=1;flowAnimation=1;" parent="layer_aimodels" edge="1" source="litellm" target="prov_xai">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="129" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E65100;strokeWidth=1;flowAnimation=1;" parent="layer_aimodels" edge="1" source="litellm" target="prov_groq">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="130" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E65100;strokeWidth=1;flowAnimation=1;" parent="layer_aimodels" edge="1" source="litellm" target="prov_cohere">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="131" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E65100;strokeWidth=1;flowAnimation=1;" parent="layer_aimodels" edge="1" source="litellm" target="prov_openrouter">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_owui_oidc" value="&lt;b&gt;OIDC Login&lt;/b&gt;&lt;br/&gt;OAuth2 Flow" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C62828;strokeWidth=2;dashed=1;dashPattern=4 4;" parent="layer_security" edge="1" source="owui" target="auth_server">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="700" y="740"/>
+              <mxPoint x="1960" y="740"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_grafana_oidc" value="OIDC" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C62828;strokeWidth=2;dashed=1;dashPattern=4 4;" parent="layer_security" edge="1" source="grafana" target="auth_server">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2830" y="730"/>
+              <mxPoint x="2070" y="730"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_portainer_oidc" value="OIDC" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C62828;strokeWidth=2;dashed=1;dashPattern=4 4;" parent="layer_security" edge="1" source="portainer" target="auth_server">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1275" y="1350"/>
+              <mxPoint x="1870" y="1350"/>
+              <mxPoint x="1870" y="1060"/>
+              <mxPoint x="2070" y="1060"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_auth_db" value="Users, Sessions,&lt;br/&gt;Flows, Policies" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1;" parent="1" edge="1" source="auth_server" target="auth_pg">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_auth_worker_db" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1;" parent="1" edge="1" source="auth_worker" target="auth_pg">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_wazuh_agent_mgr" value="Agent Enrollment&lt;br/&gt;:1514-1515" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C62828;strokeWidth=2;dashed=1;dashPattern=4 4;" parent="layer_security" edge="1" source="wazuh_agent" target="wazuh_mgr">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="tls_1" value="TLS 1.3&lt;br/&gt;Encrypted" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#78909C;fontColor=#1B5E20;fontStyle=3;fontSize=8;" parent="layer_security" vertex="1">
+          <mxGeometry x="1700" y="600" width="70" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="tls_2" value="QUIC&lt;br/&gt;Encrypted" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#78909C;fontColor=#1B5E20;fontStyle=3;fontSize=8;" parent="layer_security" vertex="1">
+          <mxGeometry x="1750" y="455" width="60" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="mfa_label" value="MFA/TOTP&lt;br/&gt;Required for&lt;br/&gt;admins group" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#78909C;fontColor=#C62828;fontStyle=1;fontSize=8;" parent="layer_security" vertex="1">
+          <mxGeometry x="2350" y="870" width="80" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="enc_rest" value="Encryption at Rest:&lt;br/&gt;Ansible Vault (AES-256)&lt;br/&gt;GPG Backup Encryption" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;fillColor=#FFEBEE;fontColor=#C62828;fontSize=8;" parent="layer_security" vertex="1">
+          <mxGeometry x="100" y="2120" width="200" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_alloy_prom" value="remote_write&lt;br/&gt;:9090/api/v1/write" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="alloy" target="prometheus">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_alloy_loki" value="logs push&lt;br/&gt;:3100 + X-Scope-OrgID" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="alloy" target="loki">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_alloy_tempo" value="OTLP traces&lt;br/&gt;:4320" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="alloy" target="tempo">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_litellm_otel" value="OTEL traces&lt;br/&gt;+ Prometheus metrics&lt;br/&gt;callbacks" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="litellm" target="alloy">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="700" y="1320"/>
+              <mxPoint x="2870" y="1320"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_traefik_otel" value="OTEL traces&lt;br/&gt;:4318" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="traefik" target="alloy">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="docker_sock_label" value="Podman Socket&lt;br/&gt;(container logs&lt;br/&gt;+ discovery)" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#78909C;fontColor=#2E7D32;fontStyle=1;fontSize=8;" parent="layer_observability" vertex="1">
+          <mxGeometry x="2730" y="1070" width="90" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_grafana_prom" value="Query Metrics" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="grafana" target="prometheus">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_grafana_loki" value="Query Logs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="grafana" target="loki">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_grafana_tempo" value="Query Traces" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="grafana" target="tempo">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_grafana_wazuh" value="Wazuh Alerts&lt;br/&gt;(Elasticsearch DS)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="grafana" target="wazuh_idx">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2830" y="1380"/>
+              <mxPoint x="690" y="1380"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_wazuh_loki" value="SIEM Alerts&lt;br/&gt;JSON → Alloy → Loki" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="wazuh_mgr" target="alloy">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="370" y="1800"/>
+              <mxPoint x="2870" y="1800"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_tetragon_loki" value="eBPF Events&lt;br/&gt;→ Alloy → Loki" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="tetragon" target="alloy">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="730" y="1820"/>
+              <mxPoint x="2870" y="1820"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_prom_node" value="scrape :9100" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="prometheus" target="node_exp">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_alloy_scrape_traefik" value="scrape traefik:8080" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="alloy" target="traefik">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2870" y="1380"/>
+              <mxPoint x="2670" y="1380"/>
+              <mxPoint x="2670" y="655"/>
+              <mxPoint x="2280" y="655"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_alloy_scrape_auth" value="scrape :9300" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="alloy" target="auth_server">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2870" y="1400"/>
+              <mxPoint x="2650" y="1400"/>
+              <mxPoint x="2650" y="810"/>
+              <mxPoint x="2220" y="810"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_alloy_scrape_cf" value="scrape :2000/metrics" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="alloy" target="cf_tunnel">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2870" y="1420"/>
+              <mxPoint x="2630" y="1420"/>
+              <mxPoint x="2630" y="560"/>
+              <mxPoint x="2080" y="560"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_prom_vm" value="remote_write&lt;br/&gt;:8428/api/v1/write" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="prometheus" target="victoriametrics">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_prom_podman_exp" value="scrape :9882" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="prometheus" target="podman_exp">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_grafana_vm" value="Query Long-term&lt;br/&gt;Metrics (6mo)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="grafana" target="victoriametrics">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_grafana_renderer" value="Render&lt;br/&gt;Dashboards" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=1;dashed=1;dashPattern=4 4;" parent="layer_observability" edge="1" source="grafana" target="img_renderer">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_alloy_scrape_crowdsec" value="scrape :6060" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="alloy" target="crowdsec">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_alloy_scrape_tetragon" value="scrape :2112" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="alloy" target="tetragon">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_alloy_scrape_owui" value="scrape :8080" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="alloy" target="owui">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_alloy_scrape_litellm" value="scrape :4000" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;flowAnimation=1;" parent="layer_observability" edge="1" source="alloy" target="litellm">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="corr_label" value="&lt;b&gt;Observability Correlation&lt;/b&gt;&lt;br/&gt;Traces ↔ Logs (traceID)&lt;br/&gt;Traces ↔ Metrics (service.name)&lt;br/&gt;Logs ↔ Traces (regex extraction)" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;fillColor=#E8F5E9;fontSize=9;" parent="layer_observability" vertex="1">
+          <mxGeometry x="3430" y="800" width="240" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_claude_ssh" value="&lt;b&gt;SSH&lt;/b&gt;&lt;br/&gt;Remote Execution" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#6A1B9A;strokeWidth=2;flowAnimation=1;dashed=1;dashPattern=8 4;" parent="layer_claude" edge="1" source="claude_cli" target="vps">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_claude_mcp_n8n" value="HTTP :3002" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#6A1B9A;strokeWidth=2;flowAnimation=1;dashed=1;dashPattern=8 4;" parent="layer_claude" edge="1" source="claude_cli" target="mcp_n8n">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_claude_mcp_gdocs" value="SSE :9091" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#6A1B9A;strokeWidth=2;flowAnimation=1;dashed=1;dashPattern=8 4;" parent="layer_claude" edge="1" source="claude_cli" target="mcp_gdocs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_claude_mcp_ctx7" value="HTTP :3001" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#6A1B9A;strokeWidth=2;flowAnimation=1;dashed=1;dashPattern=8 4;" parent="layer_claude" edge="1" source="claude_cli" target="mcp_ctx7">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_claude_mcp_scrapy" value="HTTP :8888" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#6A1B9A;strokeWidth=2;flowAnimation=1;dashed=1;dashPattern=8 4;" parent="layer_claude" edge="1" source="claude_cli" target="mcp_scrapy">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_claude_ansible" value="IaC Deployment" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#6A1B9A;strokeWidth=2;flowAnimation=1;" parent="layer_claude" edge="1" source="claude_cli" target="ansible_ct">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_litellm_db" value="Spend Data&lt;br/&gt;Model Config" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1;" parent="1" edge="1" source="litellm" target="ai_pg">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_n8n_db" value="Workflow Data" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1;" parent="1" edge="1" source="n8n_claude" target="ai_pg">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_owui_searxng" value="Web Search" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1;" parent="1" edge="1" source="owui" target="searxng">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_n8n_litellm" value="API Calls" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1;" parent="1" edge="1" source="n8n_claude" target="litellm">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_wazuh_mgr_idx" value="Index Alerts" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1;" parent="1" edge="1" source="wazuh_mgr" target="wazuh_idx">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_wazuh_dash_idx" value="Query" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1;" parent="1" edge="1" source="wazuh_dash" target="wazuh_idx">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend" value="&lt;b&gt;Legend — Connection Types (Toggle Layers)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E0E0E0;fontSize=10;verticalAlign=top;arcSize=6;container=1;collapsible=0;" parent="1" vertex="1">
+          <mxGeometry x="3900" y="1400" width="400" height="400" as="geometry"/>
+        </mxCell>
+        <mxCell id="132" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1565C0;strokeColor=#1565C0;" parent="legend" vertex="1">
+          <mxGeometry x="20" y="30" width="30" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="133" value="User Transaction Flow" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;" parent="legend" vertex="1">
+          <mxGeometry x="60" y="28" width="200" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="134" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C62828;strokeColor=#C62828;" parent="legend" vertex="1">
+          <mxGeometry x="20" y="65" width="30" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="135" value="Security / Auth / OIDC" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;" parent="legend" vertex="1">
+          <mxGeometry x="60" y="63" width="200" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="136" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#00897B;strokeColor=#00897B;" parent="legend" vertex="1">
+          <mxGeometry x="20" y="100" width="30" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="137" value="Container Networking" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;" parent="legend" vertex="1">
+          <mxGeometry x="60" y="98" width="200" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="138" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2E7D32;strokeColor=#2E7D32;" parent="legend" vertex="1">
+          <mxGeometry x="20" y="135" width="30" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="139" value="Observability Pipeline" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;" parent="legend" vertex="1">
+          <mxGeometry x="60" y="133" width="200" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="140" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E65100;strokeColor=#E65100;" parent="legend" vertex="1">
+          <mxGeometry x="20" y="170" width="30" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="141" value="AI Model / Provider" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;" parent="legend" vertex="1">
+          <mxGeometry x="60" y="168" width="200" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="142" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FF9900;strokeColor=#FF9900;" parent="legend" vertex="1">
+          <mxGeometry x="20" y="205" width="30" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="143" value="AWS Infrastructure" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;" parent="legend" vertex="1">
+          <mxGeometry x="60" y="203" width="200" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="144" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6A1B9A;strokeColor=#6A1B9A;" parent="legend" vertex="1">
+          <mxGeometry x="20" y="240" width="30" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="145" value="Claude Code / MCP" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;" parent="legend" vertex="1">
+          <mxGeometry x="60" y="238" width="200" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="146" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#757575;strokeColor=#757575;" parent="legend" vertex="1">
+          <mxGeometry x="20" y="275" width="30" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="147" value="Internal / Data" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;" parent="legend" vertex="1">
+          <mxGeometry x="60" y="273" width="200" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="148" value="&lt;i&gt;Animated edges ( ───▶ ) = active data flow&lt;/i&gt;" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#78909C;" parent="legend" vertex="1">
+          <mxGeometry x="20" y="320" width="300" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="stats_box" value="&lt;b&gt;Infrastructure Summary&lt;/b&gt;&lt;br/&gt;Security Layers: 10 | AI Providers: 8&lt;br/&gt;Containers: 35+ | MCP Tools: 4 | GPU Clusters: 2" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=#1565C0;fillColor=#E3F2FD;fontSize=9;fontColor=#263238;rounded=1;" parent="1" vertex="1">
+          <mxGeometry x="3900" y="1870" width="400" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="149" value="&lt;i&gt;Dashed edges ( - - - ) = auth/security boundary&lt;/i&gt;" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#78909C;" parent="legend" vertex="1">
+          <mxGeometry x="20" y="340" width="300" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="150" value="&lt;i&gt;Toggle 'Engineering Details' layer for IPs/ports&lt;/i&gt;" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#78909C;" parent="legend" vertex="1">
+          <mxGeometry x="20" y="360" width="300" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="151" value="10.89.0.4" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;" parent="layer_engineering" vertex="1">
+          <mxGeometry x="570" y="730" width="200" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="152" value="10.89.0.7" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;" parent="layer_engineering" vertex="1">
+          <mxGeometry x="1970" y="730" width="200" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="153" value="10.89.0.9" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;" parent="layer_engineering" vertex="1">
+          <mxGeometry x="2770" y="730" width="200" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="154" value="10.89.0.2" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;" parent="layer_engineering" vertex="1">
+          <mxGeometry x="170" y="1380" width="200" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="155" value="10.89.0.5" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;" parent="layer_engineering" vertex="1">
+          <mxGeometry x="1170" y="1380" width="200" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="156" value="10.89.0.3" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;" parent="layer_engineering" vertex="1">
+          <mxGeometry x="1620" y="1380" width="200" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="157" value="REDACTED_DNS9 | 0.0.0.0:80,443" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;" parent="layer_engineering" vertex="1">
+          <mxGeometry x="1600" y="695" width="200" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="158" value="REDACTED_DNS1 | 127.0.0.1:2000" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;" parent="layer_engineering" vertex="1">
+          <mxGeometry x="1800" y="595" width="200" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="159" value="REDACTED_DNS6 | 127.0.0.1:5432" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;" parent="layer_engineering" vertex="1">
+          <mxGeometry x="100" y="1725" width="200" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="160" value="REDACTED_DNS7 | 127.0.0.1:6379" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;" parent="layer_engineering" vertex="1">
+          <mxGeometry x="360" y="1725" width="200" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="net_subnet" value="&lt;b&gt;enterprise_network&lt;/b&gt; — REDACTED_CIDR&lt;br/&gt;Podman Bridge (aardvark-dns)&lt;br/&gt;All pods share this L2 network. DNS resolves &lt;b&gt;pod names&lt;/b&gt; (not container names)." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2F1;strokeColor=#00897B;strokeWidth=2;dashed=1;dashPattern=12 4;fontSize=11;fontColor=#00695C;verticalAlign=bottom;arcSize=4;opacity=40;" parent="layer_networking" vertex="1">
+          <mxGeometry x="60" y="470" width="3740" height="1310" as="geometry"/>
+        </mxCell>
+        <mxCell id="161" value="&lt;b&gt;10.89.0.4&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#00897B;fontStyle=1;" parent="layer_networking" vertex="1">
+          <mxGeometry x="500" y="740" width="120" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="162" value="&lt;b&gt;10.89.0.7&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#00897B;fontStyle=1;" parent="layer_networking" vertex="1">
+          <mxGeometry x="1900" y="740" width="120" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="163" value="&lt;b&gt;10.89.0.9&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#00897B;fontStyle=1;" parent="layer_networking" vertex="1">
+          <mxGeometry x="2700" y="740" width="120" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="164" value="&lt;b&gt;10.89.0.2&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#00897B;fontStyle=1;" parent="layer_networking" vertex="1">
+          <mxGeometry x="100" y="1390" width="120" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="165" value="&lt;b&gt;10.89.0.5&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#00897B;fontStyle=1;" parent="layer_networking" vertex="1">
+          <mxGeometry x="1100" y="1390" width="120" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="166" value="&lt;b&gt;10.89.0.3&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#00897B;fontStyle=1;" parent="layer_networking" vertex="1">
+          <mxGeometry x="1550" y="1390" width="120" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="167" value="&lt;b&gt;REDACTED_DNS9&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#00897B;fontStyle=1;" parent="layer_networking" vertex="1">
+          <mxGeometry x="1600" y="610" width="120" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="168" value="&lt;b&gt;REDACTED_DNS1&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#00897B;fontStyle=1;" parent="layer_networking" vertex="1">
+          <mxGeometry x="1800" y="520" width="120" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="169" value="&lt;b&gt;REDACTED_DNS6&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#00897B;fontStyle=1;" parent="layer_networking" vertex="1">
+          <mxGeometry x="100" y="1630" width="120" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="170" value="&lt;b&gt;REDACTED_DNS7&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#00897B;fontStyle=1;" parent="layer_networking" vertex="1">
+          <mxGeometry x="360" y="1630" width="120" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="net_localhost_ai" value="Containers share&lt;br/&gt;network namespace&lt;br/&gt;(localhost)" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#00897B;fontStyle=1;fontSize=8;fontStyle=0;" parent="layer_networking" vertex="1">
+          <mxGeometry x="1050" y="1050" width="110" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="net_localhost_mon" value="localhost&lt;br/&gt;namespace" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#00897B;fontStyle=1;fontSize=8;fontStyle=0;" parent="layer_networking" vertex="1">
+          <mxGeometry x="3200" y="1100" width="80" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="net_bind_ext" value="&lt;b&gt;0.0.0.0:80,443&lt;/b&gt;&lt;br/&gt;Public-facing" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#00897B;fontStyle=1;fontSize=8;fontColor=#C62828;" parent="layer_networking" vertex="1">
+          <mxGeometry x="2100" y="630" width="120" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="net_bind_int" value="&lt;b&gt;127.0.0.1&lt;/b&gt; only&lt;br/&gt;Internal services" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=9;fontColor=#00897B;fontStyle=1;fontSize=8;fontColor=#1565C0;" parent="layer_networking" vertex="1">
+          <mxGeometry x="100" y="1730" width="120" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="171" value="ai-stack-pod" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#00897B;strokeWidth=2;dashed=1;dashPattern=6 3;" parent="layer_networking" edge="1" source="traefik" target="pod_ai">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="172" value="authentication-pod" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#00897B;strokeWidth=2;dashed=1;dashPattern=6 3;" parent="layer_networking" edge="1" source="traefik" target="pod_auth">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="173" value="monitoring-pod" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#00897B;strokeWidth=2;dashed=1;dashPattern=6 3;" parent="layer_networking" edge="1" source="traefik" target="pod_mon">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="174" value="security-pod" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#00897B;strokeWidth=2;dashed=1;dashPattern=6 3;" parent="layer_networking" edge="1" source="traefik" target="pod_sec">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="175" value="management-pod" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#00897B;strokeWidth=2;dashed=1;dashPattern=6 3;" parent="layer_networking" edge="1" source="traefik" target="pod_mgmt">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="176" value="frontend-pod" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#00897B;strokeWidth=2;dashed=1;dashPattern=6 3;" parent="layer_networking" edge="1" source="traefik" target="pod_front">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="net_tetragon_enforce" value="Tetragon eBPF&lt;br/&gt;Network Policy&lt;br/&gt;Enforcement" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=8;fontColor=#C62828;fontStyle=3;" parent="layer_networking" vertex="1">
+          <mxGeometry x="800" y="1400" width="100" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="net_dns_chain" value="&lt;b&gt;DNS Resolution Chain:&lt;/b&gt;&lt;br/&gt;Browser → Cloudflare DNS → Tunnel CNAME → cloudflared&lt;br/&gt;→ Traefik (host matching) → aardvark-dns → Pod IP" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=#00897B;fillColor=#E0F2F1;fontSize=9;fontColor=#00695C;rounded=1;" parent="layer_networking" vertex="1">
+          <mxGeometry x="100" y="2170" width="400" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="net_label" value="&lt;b&gt;enterprise_network&lt;/b&gt; — REDACTED_CIDR — Podman Bridge (aardvark-dns)&lt;br/&gt;All pods share this network. DNS resolves pod names (not container names)." style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;fillColor=#E3F2FD;fontSize=9;" parent="layer_engineering" vertex="1">
+          <mxGeometry x="1200" y="2120" width="500" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="spend_label" value="&lt;b&gt;End-User Spend Tracking Flow:&lt;/b&gt;&lt;br/&gt;1. User logs in via Authentik OIDC → OpenWebUI&lt;br/&gt;2. OpenWebUI sends x-openwebui-user-email header&lt;br/&gt;3. LiteLLM maps header → user field (user_header_name)&lt;br/&gt;4. Per-user cost tracked in PostgreSQL&lt;br/&gt;5. OTEL traces include user metadata" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;fillColor=#E8F5E9;fontSize=9;" parent="layer_aimodels" vertex="1">
+          <mxGeometry x="100" y="2120" width="350" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="tts_label" value="&lt;b&gt;AI Voice Pipeline:&lt;/b&gt;&lt;br/&gt;1. AI generates text response&lt;br/&gt;2. REDACTED_DOMAIN calls Kokoro TTS&lt;br/&gt;   /v1/audio/speech (OpenAI-compatible)&lt;br/&gt;3. Kokoro runs CPU inference (containerized)&lt;br/&gt;4. Audio streamed back to user browser" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=#FFFDE7;fontSize=8;fontColor=#37474F;fillColor=#FFF3E0;fontSize=9;" parent="layer_aimodels" vertex="1">
+          <mxGeometry x="500" y="2120" width="300" height="90" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

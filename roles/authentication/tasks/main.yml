@@ -1,4 +1,4 @@
----
+﻿---
 # Authentication Role - Authentik SSO & Authentication
 # Deploys centralized authentication and SSO infrastructure
 
@@ -8,8 +8,8 @@
     network: "{{ podman_network_name | default('enterprise_network') }}"
     state: started
     ports:
-      - "9000:9000"    # Authentik HTTP
-      - "9443:9443"    # Authentik HTTPS
+      - "127.0.0.1:9000:9000"    # Authentik HTTP (internal - SSH tunnel)
+      - "127.0.0.1:9443:9443"    # Authentik HTTPS (internal - SSH tunnel)
   when: authentication.enabled | default(true)
   tags: ['authentication', 'pod']
 
@@ -48,7 +48,7 @@
     state: started
     pod: authentication-pod
     env:
-      AUTHENTIK_REDIS__HOST: "localhost"  # Not used in 2025.10+, but kept for compatibility
+      AUTHENTIK_REDIS__HOST: "redis"
       AUTHENTIK_POSTGRESQL__HOST: "localhost"
       AUTHENTIK_POSTGRESQL__NAME: "{{ authentication.authentik.postgres_db | default('authentik') }}"
       AUTHENTIK_POSTGRESQL__USER: "{{ authentication.authentik.postgres_user | default('authentik') }}"
@@ -56,7 +56,12 @@
       AUTHENTIK_SECRET_KEY: "{{ authentik_secret_key }}"
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
       AUTHENTIK_LOG_LEVEL: "info"
+      AUTHENTIK_OUTPOSTS__DISCOVER: "false"
+      AUTHENTIK_OUTPOSTS__DISABLE_EMBEDDED_OUTPOST: "true"
+      AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS: "REDACTED_CIDR,127.0.0.0/8"
+      AUTHENTIK_LISTEN__METRICS: "0.0.0.0:9300"
     command: server
+    memory: "512m"
     volumes:
       - authentik-media:/media
       - authentik-templates:/templates
@@ -72,7 +77,7 @@
     state: started
     pod: authentication-pod
     env:
-      AUTHENTIK_REDIS__HOST: "localhost"  # Not used in 2025.10+
+      AUTHENTIK_REDIS__HOST: "redis"
       AUTHENTIK_POSTGRESQL__HOST: "localhost"
       AUTHENTIK_POSTGRESQL__NAME: "{{ authentication.authentik.postgres_db | default('authentik') }}"
       AUTHENTIK_POSTGRESQL__USER: "{{ authentication.authentik.postgres_user | default('authentik') }}"
@@ -81,6 +86,7 @@
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
       AUTHENTIK_LOG_LEVEL: "info"
     command: worker
+    memory: "384m"
     volumes:
       - authentik-media:/media
       - authentik-templates:/templates

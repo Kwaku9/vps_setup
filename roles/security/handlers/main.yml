@@ -1,12 +1,22 @@
----
-# Security Role Handlers
+﻿---
+# Security Role Handlers (Alpine Linux OpenRC)
 
 - name: restart fail2ban
-  service:
-    name: fail2ban
-    state: restarted
+  command: rc-service fail2ban restart
 
 - name: restart sshd
+  command: rc-service sshd restart
+
+- name: restart wazuh-agent
+  command: rc-service wazuh-agent restart
+
+- name: restart crowdsec
+  containers.podman.podman_container:
+    name: crowdsec
+    state: started
+    force_restart: true
+
+- name: restart squid
   service:
-    name: sshd
+    name: squid
     state: restarted

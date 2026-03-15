@@ -1,10 +1,14 @@
----
+﻿---
 # Security Role - Firewall, Fail2ban, Wazuh, Trivy
 # Implements security hardening and threat detection
 
 - name: Import hardening tasks
   import_tasks: ../../hardening.yml
   tags: ['security', 'hardening']
+
+# ============================================
+# HOST-LEVEL SECURITY (Fail2ban & Firewall)
+# ============================================
 
 - name: Install Fail2ban
   apk:
@@ -24,11 +28,19 @@
   notify: restart fail2ban
   tags: ['security', 'fail2ban']
 
-- name: Enable and start Fail2ban
-  service:
-    name: fail2ban
-    enabled: yes
-    state: started
+- name: Add Fail2ban to default runlevel
+  command: rc-update add fail2ban default
+  register: fail2ban_runlevel
+  changed_when: "'already added' not in fail2ban_runlevel.stderr"
+  failed_when: false
+  when: security.fail2ban.enabled | default(true)
+  tags: ['security', 'fail2ban']
+
+- name: Start Fail2ban service
+  command: rc-service fail2ban start
+  register: fail2ban_start
+  changed_when: "'started' in fail2ban_start.stdout"
+  failed_when: false
   when: security.fail2ban.enabled | default(true)
   tags: ['security', 'fail2ban']
 
@@ -40,10 +52,229 @@
   when: security.firewall.enabled | default(true)
   tags: ['security', 'firewall']
 
+- name: Create iptables directory
+  file:
+    path: /etc/iptables
+    state: directory
+    mode: '0755'
+  when: security.firewall.enabled | default(true)
+  tags: ['security', 'firewall']
+
 - name: Apply firewall rules
   command: /usr/local/bin/configure-firewall.sh start
   when: security.firewall.enabled | default(true)
   tags: ['security', 'firewall']
+
+- name: Save iptables rules for persistence
+  shell: |
+    iptables-save > /etc/iptables/rules-save
+  when: security.firewall.enabled | default(true)
+  tags: ['security', 'firewall']
+
+- name: Create iptables restore service
+  copy:
+    content: |
+      #!/sbin/openrc-run
+      description="Restore iptables rules"
+      depend() {
+        before net
+        need localmount
+      }
+      start() {
+        ebegin "Restoring iptables rules"
+        if [ -f /etc/iptables/rules-save ]; then
+          iptables-restore < /etc/iptables/rules-save
+        fi
+        eend $?
+      }
+    dest: /etc/init.d/iptables
+    mode: '0755'
+  when: security.firewall.enabled | default(true)
+  tags: ['security', 'firewall']
+
+- name: Enable iptables service on boot
+  command: rc-update add iptables boot
+  register: iptables_runlevel
+  changed_when: "'already added' not in iptables_runlevel.stderr"
+  failed_when: false
+  when: security.firewall.enabled | default(true)
+  tags: ['security', 'firewall']
+
+# ============================================
+# SECURITY POD (Wazuh Stack & Trivy)
+# ============================================
+
+- name: Create security pod
+  containers.podman.podman_pod:
+    name: security-pod
+    network: "{{ podman_network_name | default('enterprise_network') }}"
+    state: started
+    ports:
+      - "127.0.0.1:1514:1514"    # Wazuh Agent (TCP) (internal)
+      - "127.0.0.1:1514:1514/udp" # Wazuh Agent (UDP) (internal)
+      - "127.0.0.1:1515:1515"    # Wazuh enrollment (internal)
+      - "127.0.0.1:55000:55000"  # Wazuh API (internal)
+      - "127.0.0.1:5601:5601"    # Wazuh Dashboard (internal - SSH tunnel)
+      - "127.0.0.1:9200:9200"    # Wazuh Indexer (internal)
+      - "127.0.0.1:8080:8080"    # Trivy Scanner (internal)
+  when: security.wazuh.enabled | default(true) or security.trivy.enabled | default(true)
+  tags: ['security', 'pod']
+
+# ============================================
+# WAZUH DEPLOYMENT (Containerized)
+# ============================================
+
+- name: Create Wazuh configuration directory
+  file:
+    path: /opt/compose/wazuh
+    state: directory
+    mode: '0755'
+  when: security.wazuh.enabled | default(true)
+  tags: ['security', 'wazuh']
+
+- name: Deploy Wazuh Indexer container
+  containers.podman.podman_container:
+    name: wazuh-indexer
+    image: "docker.io/wazuh/wazuh-indexer:{{ security.wazuh.version | default('4.14.1') }}"
+    state: started
+    pod: security-pod
+    env:
+      OPENSEARCH_JAVA_OPTS: "-Xms1g -Xmx1g"
+      discovery.type: "single-node"
+      network.host: "0.0.0.0"
+      plugins.security.disabled: "true"
+      bootstrap.memory_lock: "true"
+    volumes:
+      - wazuh-indexer-data:/var/lib/wazuh-indexer
+    ulimits:
+      - "nofile=65536:65536"
+      - "memlock=-1:-1"
+  when: security.wazuh.enabled | default(true)
+  tags: ['security', 'wazuh', 'wazuh-indexer']
+
+- name: Wait for Wazuh Indexer to start
+  wait_for:
+    host: localhost
+    port: 9200
+    delay: 15
+    timeout: 180
+  when: security.wazuh.enabled | default(true)
+  tags: ['security', 'wazuh']
+
+- name: Deploy Wazuh Manager container
+  containers.podman.podman_container:
+    name: wazuh-manager
+    image: "docker.io/wazuh/wazuh-manager:{{ security.wazuh.version | default('4.14.1') }}"
+    state: started
+    pod: security-pod
+    env:
+      INDEXER_URL: "https://127.0.0.1:9200"
+      INDEXER_USERNAME: "admin"
+      INDEXER_PASSWORD: "{{ wazuh_password | default('SecurePass123!') }}"
+      FILEBEAT_SSL_VERIFICATION_MODE: "none"
+      API_USERNAME: "wazuh-wui"
+      API_PASSWORD: "{{ wazuh_password | default('SecurePass123!') }}"
+    volumes:
+      - wazuh-manager-data:/var/ossec/data
+      - wazuh-manager-logs:/var/ossec/logs
+      - wazuh-manager-etc:/var/ossec/etc
+      - /var/log:/host-logs:ro
+  when: security.wazuh.enabled | default(true)
+  tags: ['security', 'wazuh', 'wazuh-manager']
+
+- name: Wait for Wazuh Manager to start
+  wait_for:
+    host: localhost
+    port: 55000
+    delay: 20
+    timeout: 180
+  when: security.wazuh.enabled | default(true)
+  tags: ['security', 'wazuh']
+
+- name: Deploy Wazuh Dashboard container
+  containers.podman.podman_container:
+    name: wazuh-dashboard
+    image: "docker.io/wazuh/wazuh-dashboard:{{ security.wazuh.version | default('4.14.1') }}"
+    state: started
+    pod: security-pod
+    env:
+      INDEXER_USERNAME: "admin"
+      INDEXER_PASSWORD: "{{ wazuh_password | default('SecurePass123!') }}"
+      WAZUH_API_URL: "https://127.0.0.1"
+      API_USERNAME: "wazuh-wui"
+      API_PASSWORD: "{{ wazuh_password | default('SecurePass123!') }}"
+      OPENSEARCH_HOSTS: "https://127.0.0.1:9200"
+      SERVER_HOST: "0.0.0.0"
+      SERVER_PORT: "5601"
+    volumes:
+      - wazuh-dashboard-data:/usr/share/wazuh-dashboard/data
+  when: security.wazuh.enabled | default(true)
+  tags: ['security', 'wazuh', 'wazuh-dashboard']
+
+# ============================================
+# WAZUH AGENT (Host Installation)
+# ============================================
+
+- name: Check if Wazuh agent is already installed
+  stat:
+    path: /var/ossec/bin/wazuh-control
+  register: wazuh_agent_installed
+  when: security.wazuh.enabled | default(true)
+  tags: ['security', 'wazuh', 'wazuh-agent']
+
+- name: Download Wazuh agent for Alpine Linux
+  get_url:
+    url: "https://packages.wazuh.com/4.x/alpine/v3.19/main/x86_64/wazuh-agent-{{ security.wazuh.version | default('4.14.1') }}.apk"
+    dest: "/tmp/wazuh-agent.apk"
+    mode: '0644'
+  when:
+    - security.wazuh.enabled | default(true)
+    - not wazuh_agent_installed.stat.exists
+  tags: ['security', 'wazuh', 'wazuh-agent']
+
+- name: Install Wazuh agent
+  command: apk add --allow-untrusted /tmp/wazuh-agent.apk
+  when:
+    - security.wazuh.enabled | default(true)
+    - not wazuh_agent_installed.stat.exists
+  tags: ['security', 'wazuh', 'wazuh-agent']
+
+- name: Configure Wazuh agent to connect to manager
+  template:
+    src: ossec.conf.j2
+    dest: /var/ossec/etc/ossec.conf
+    mode: '0644'
+  when: security.wazuh.enabled | default(true)
+  notify: restart wazuh-agent
+  tags: ['security', 'wazuh', 'wazuh-agent']
+
+- name: Import Wazuh manager key (for agent authentication)
+  command: /var/ossec/bin/manage_agents -i {{ wazuh_agent_key }}
+  when:
+    - security.wazuh.enabled | default(true)
+    - wazuh_agent_key is defined
+  failed_when: false
+  tags: ['security', 'wazuh', 'wazuh-agent']
+
+- name: Add Wazuh agent to default runlevel
+  command: rc-update add wazuh-agent default
+  register: wazuh_agent_runlevel
+  changed_when: "'already added' not in wazuh_agent_runlevel.stderr"
+  failed_when: false
+  when: security.wazuh.enabled | default(true)
+  tags: ['security', 'wazuh', 'wazuh-agent']
+
+- name: Start Wazuh agent service
+  command: rc-service wazuh-agent start
+  register: wazuh_agent_start
+  changed_when: "'started' in wazuh_agent_start.stdout"
+  failed_when: false
+  when: security.wazuh.enabled | default(true)
+  tags: ['security', 'wazuh', 'wazuh-agent']
+
+# ============================================
+# TRIVY DEPLOYMENT (Containerized)
+# ============================================
 
 - name: Create Trivy scan script
   template:
@@ -52,6 +283,147 @@
     mode: '0755'
   when: security.trivy.enabled | default(true)
   tags: ['security', 'trivy']
+
+- name: Deploy Trivy scanner container
+  containers.podman.podman_container:
+    name: trivy-scanner
+    image: "docker.io/aquasec/trivy:{{ security.trivy.version | default('latest') }}"
+    state: started
+    pod: security-pod
+    memory: "192m"
+    command: "server --listen 0.0.0.0:8080"
+    volumes:
+      - trivy-cache:/root/.cache/
+      - /var/run/podman/podman.sock:/var/run/docker.sock:ro
+    privileged: yes
+  when: security.trivy.enabled | default(true)
+  tags: ['security', 'trivy']
+
+- name: Run initial Trivy scan if enabled
+  command: /usr/local/bin/trivy-scan-all
+  register: trivy_initial_scan
+  changed_when: false
+  failed_when: false
+  when:
+    - security.trivy.enabled | default(true)
+    - security.trivy.scan_on_startup | default(true)
+  tags: ['security', 'trivy']
+
+# ============================================
+# CROWDSEC (Config only — container in security-infra-pod via shared-services)
+# ============================================
+
+- name: Remove old standalone CrowdSec container (migrated to security-infra-pod)
+  containers.podman.podman_container:
+    name: crowdsec
+    state: absent
+  failed_when: false
+  when: security.crowdsec.enabled | default(false)
+  tags: ['security', 'crowdsec', 'cleanup']
+
+- name: Install logrotate
+  apk:
+    name: logrotate
+    state: present
+  when: security.crowdsec.enabled | default(false)
+  tags: ['security', 'crowdsec', 'logrotate']
+
+- name: Deploy Traefik access log rotation
+  template:
+    src: traefik-logrotate.j2
+    dest: /etc/logrotate.d/traefik
+    mode: '0644'
+  when: security.crowdsec.enabled | default(false)
+  tags: ['security', 'crowdsec', 'logrotate']
+
+# ============================================
+# SQUID TRANSPARENT PROXY (Host-level egress control)
+# ============================================
+
+- name: Install Squid packages
+  apk:
+    name:
+      - squid
+      - squid-openrc
+    state: present
+  when: security.squid.enabled | default(false)
+  tags: ['security', 'squid']
+
+- name: Create Squid SSL directory
+  file:
+    path: /etc/squid/ssl
+    state: directory
+    mode: '0750'
+    owner: squid
+    group: squid
+  when: security.squid.enabled | default(false)
+  tags: ['security', 'squid']
+
+- name: Generate Squid CA certificate (if not exists)
+  shell: |
+    if [ ! -f /etc/squid/ssl/squid-ca.pem ]; then
+      openssl req -new -newkey rsa:2048 -days 3650 -nodes -x509 \
+        -subj "/CN=Squid Transparent Proxy CA" \
+        -keyout /etc/squid/ssl/squid-ca-key.pem \
+        -out /etc/squid/ssl/squid-ca-cert.pem
+      cat /etc/squid/ssl/squid-ca-key.pem /etc/squid/ssl/squid-ca-cert.pem > /etc/squid/ssl/squid-ca.pem
+      chown squid:squid /etc/squid/ssl/*
+      chmod 640 /etc/squid/ssl/*
+    fi
+  args:
+    creates: /etc/squid/ssl/squid-ca.pem
+  when: security.squid.enabled | default(false)
+  tags: ['security', 'squid']
+
+- name: Initialize Squid SSL certificate database
+  shell: |
+    if [ ! -d /var/lib/squid/ssl_db ]; then
+      /usr/lib/squid/security_file_certgen -c -s /var/lib/squid/ssl_db -M 4MB
+      chown -R squid:squid /var/lib/squid/ssl_db
+    fi
+  args:
+    creates: /var/lib/squid/ssl_db
+  when: security.squid.enabled | default(false)
+  tags: ['security', 'squid']
+
+- name: Create Squid log directory
+  file:
+    path: /var/log/squid
+    state: directory
+    mode: '0755'
+    owner: squid
+    group: squid
+  when: security.squid.enabled | default(false)
+  tags: ['security', 'squid']
+
+- name: Deploy Squid configuration
+  template:
+    src: squid.conf.j2
+    dest: /etc/squid/squid.conf
+    mode: '0644'
+  notify: restart squid
+  when: security.squid.enabled | default(false)
+  tags: ['security', 'squid']
+
+- name: Deploy Squid egress report script
+  template:
+    src: squid-report.py.j2
+    dest: /usr/local/bin/squid-report
+    mode: '0755'
+  when: security.squid.enabled | default(false)
+  tags: ['security', 'squid']
+
+- name: Enable and start Squid service
+  service:
+    name: squid
+    enabled: yes
+    state: started
+  when: security.squid.enabled | default(false)
+  tags: ['security', 'squid']
+
+# ============================================
+# SECURITY AUDIT
+# ============================================
 
 - name: Create security check script
   template:
@@ -72,8 +444,40 @@
     var: security_scan.stdout_lines
   tags: ['security', 'audit']
 
-- name: Deploy Wazuh stack (optional - resource intensive)
+- name: Display security stack status
   debug:
-    msg: "Wazuh deployment skipped - enable manually if needed"
-  when: security.wazuh.enabled | default(false)
-  tags: ['security', 'wazuh']
+    msg:
+      - "================================================"
+      - "Security Stack Deployment Complete"
+      - "================================================"
+      - ""
+      - "HOST-LEVEL SERVICES:"
+      - "  Γ£ô Fail2ban: {{ 'Enabled (protecting SSH)' if security.fail2ban.enabled | default(true) else 'Disabled' }}"
+      - "  Γ£ô Firewall: {{ 'Enabled (iptables rules applied)' if security.firewall.enabled | default(true) else 'Disabled' }}"
+      - "  Γ£ô Wazuh Agent: {{ 'Installed and running' if security.wazuh.enabled | default(true) else 'Disabled' }}"
+      - "  Γ£ô Squid Proxy: {{ 'Enabled (' + security.squid.mode | default('discovery') + ' mode)' if security.squid.enabled | default(false) else 'Disabled' }}"
+      - ""
+      - "CONTAINERIZED SERVICES (security-pod):"
+      - "  Γ£ô Wazuh Indexer: {{ 'Running on port 9200' if security.wazuh.enabled | default(true) else 'Disabled' }}"
+      - "  Γ£ô Wazuh Manager: {{ 'Running (API port 55000)' if security.wazuh.enabled | default(true) else 'Disabled' }}"
+      - "  Γ£ô Wazuh Dashboard: {{ 'Running on port 5601' if security.wazuh.enabled | default(true) else 'Disabled' }}"
+      - "  Γ£ô Trivy Scanner: {{ 'Running (server mode on port 8080, 192MB limit)' if security.trivy.enabled | default(true) else 'Disabled' }}"
+      - ""
+      - "SECURITY-INFRA-POD (via shared-services):"
+      - "  Γ£ô CrowdSec: {{ 'Running in security-infra-pod (LAPI on 8180, metrics on 6060)' if security.crowdsec.enabled | default(false) else 'Disabled' }}"
+      - ""
+      - "ACCESS URLs:"
+      - "  Wazuh Dashboard: http://{{ ansible_host }}:5601"
+      - "  Wazuh API: https://{{ ansible_host }}:55000"
+      - ""
+      - "SECURITY SCRIPTS:"
+      - "  Trivy scan: /usr/local/bin/trivy-scan-all"
+      - "  Security check: /usr/local/bin/security-check"
+      - ""
+      - "WAZUH AGENT:"
+      - "  Status: systemctl status wazuh-agent (or rc-service wazuh-agent status)"
+      - "  Config: /var/ossec/etc/ossec.conf"
+      - "  Logs: /var/ossec/logs/ossec.log"
+      - ""
+      - "================================================"
+  tags: ['security']

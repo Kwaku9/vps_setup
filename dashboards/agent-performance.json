@@ -1,0 +1,302 @@
+{
+  "uid": "agent-performance",
+  "title": "Agent Performance Analytics",
+  "tags": ["ai-agents", "performance"],
+  "timezone": "browser",
+  "editable": true,
+  "refresh": "5m",
+  "time": { "from": "now-7d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "agent_type",
+        "label": "Agent Type",
+        "type": "query",
+        "datasource": { "type": "postgres", "uid": "postgres-trading" },
+        "query": "SELECT DISTINCT agent_type FROM gateway.commands ORDER BY agent_type",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 200,
+      "title": "Response Time",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "id": 1,
+      "title": "Response Time Histogram by Agent Type",
+      "type": "volkovlabs-echarts-panel",
+      "gridPos": { "h": 12, "w": 12, "x": 0, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "options": {
+        "renderer": "canvas",
+        "editor": { "height": 600, "format": "javascript" },
+        "getOption": "const data = context.panel.data.series[0];\nif (!data || !data.fields || data.fields.length === 0) {\n  return { title: { text: 'No data', left: 'center', top: 'center', textStyle: { color: '#ccc', fontSize: 16 } } };\n}\n\nconst agentField = data.fields.find(f => f.name === 'agent_type');\nconst bucketField = data.fields.find(f => f.name === 'bucket');\nconst countField = data.fields.find(f => f.name === 'count');\n\nif (!agentField || !bucketField || !countField) {\n  return { title: { text: 'Missing fields', left: 'center', top: 'center', textStyle: { color: '#ccc' } } };\n}\n\nconst agents = [...new Set(agentField.values)];\nconst buckets = [...new Set(bucketField.values)].sort((a, b) => a - b);\nconst bucketLabels = buckets.map(b => b + 's');\n\nconst series = agents.map(agent => {\n  const agentData = buckets.map(bucket => {\n    for (let i = 0; i < agentField.values.length; i++) {\n      if (agentField.values[i] === agent && bucketField.values[i] === bucket) {\n        return countField.values[i];\n      }\n    }\n    return 0;\n  });\n  return {\n    name: agent,\n    type: 'bar',\n    stack: 'total',\n    emphasis: { focus: 'series' },\n    data: agentData\n  };\n});\n\nreturn {\n  tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },\n  legend: { data: agents, bottom: 0, textStyle: { color: '#ccc' } },\n  grid: { left: 50, right: 20, top: 30, bottom: 40 },\n  xAxis: { type: 'category', data: bucketLabels, axisLabel: { color: '#ccc' }, name: 'Duration', nameTextStyle: { color: '#999' } },\n  yAxis: { type: 'value', axisLabel: { color: '#ccc' }, name: 'Count', nameTextStyle: { color: '#999' } },\n  series: series\n};"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT agent_type, (FLOOR(EXTRACT(EPOCH FROM (completed_at - created_at)) / 5) * 5)::int AS bucket, COUNT(*) AS count FROM gateway.commands WHERE completed_at IS NOT NULL AND ($__timeFilter(created_at)) AND ('${agent_type:raw}' = '$__all' OR agent_type IN (${agent_type:sqlstring})) GROUP BY 1, 2 ORDER BY 1, 2",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Success/Failure Rate Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 12, "w": 12, "x": 12, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "auto",
+            "pointSize": 5
+          },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, agent_type || ' success' AS metric, CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(COUNT(*) FILTER (WHERE status = 'completed') * 100.0 / COUNT(*), 1) END AS value FROM gateway.commands WHERE ($__timeFilter(created_at)) AND ('${agent_type:raw}' = '$__all' OR agent_type IN (${agent_type:sqlstring})) GROUP BY 1, agent_type ORDER BY 1",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 201,
+      "title": "Activity Patterns",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "collapsed": false
+    },
+    {
+      "id": 3,
+      "title": "Activity Heatmap \u2014 Day x Hour",
+      "type": "volkovlabs-echarts-panel",
+      "gridPos": { "h": 12, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "options": {
+        "renderer": "canvas",
+        "editor": { "height": 600, "format": "javascript" },
+        "getOption": "const data = context.panel.data.series[0];\nif (!data || !data.fields || data.fields.length === 0) {\n  return { title: { text: 'No data', left: 'center', top: 'center', textStyle: { color: '#ccc', fontSize: 16 } } };\n}\n\nconst dayField = data.fields.find(f => f.name === 'dow');\nconst hourField = data.fields.find(f => f.name === 'hour');\nconst countField = data.fields.find(f => f.name === 'count');\n\nif (!dayField || !hourField || !countField) {\n  return { title: { text: 'Missing fields', left: 'center', top: 'center', textStyle: { color: '#ccc' } } };\n}\n\nconst days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];\nconst hours = Array.from({length: 24}, (_, i) => i + ':00');\n\nconst heatData = [];\nlet maxVal = 0;\nfor (let i = 0; i < dayField.values.length; i++) {\n  const val = countField.values[i] || 0;\n  heatData.push([hourField.values[i], dayField.values[i], val]);\n  if (val > maxVal) maxVal = val;\n}\n\nreturn {\n  tooltip: {\n    position: 'top',\n    formatter: function(p) {\n      return days[p.value[1]] + ' ' + hours[p.value[0]] + ': ' + p.value[2] + ' commands';\n    }\n  },\n  grid: { left: 60, right: 40, top: 20, bottom: 40 },\n  xAxis: { type: 'category', data: hours, splitArea: { show: true }, axisLabel: { color: '#ccc', interval: 2 } },\n  yAxis: { type: 'category', data: days, splitArea: { show: true }, axisLabel: { color: '#ccc' } },\n  visualMap: {\n    min: 0,\n    max: Math.max(maxVal, 1),\n    calculable: true,\n    orient: 'horizontal',\n    left: 'center',\n    bottom: 0,\n    inRange: { color: ['#1a1a2e', '#533483', '#e94560', '#f5af19'] },\n    textStyle: { color: '#ccc' }\n  },\n  series: [{\n    name: 'Commands',\n    type: 'heatmap',\n    data: heatData,\n    label: { show: false },\n    emphasis: {\n      itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' }\n    }\n  }]\n};"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT EXTRACT(DOW FROM created_at)::int AS dow, EXTRACT(HOUR FROM created_at)::int AS hour, COUNT(*) AS count FROM gateway.commands WHERE ($__timeFilter(created_at)) AND ('${agent_type:raw}' = '$__all' OR agent_type IN (${agent_type:sqlstring})) GROUP BY 1, 2 ORDER BY 1, 2",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Response Volume by Type",
+      "type": "timeseries",
+      "gridPos": { "h": 12, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 0,
+            "stacking": { "mode": "normal", "group": "A" },
+            "showPoints": "never"
+          },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('day', r.created_at) AS time, r.response_type, COUNT(*) AS count FROM gateway.responses r WHERE ($__timeFilter(r.created_at)) GROUP BY 1, 2 ORDER BY 1",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 202,
+      "title": "Comparison",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "collapsed": false
+    },
+    {
+      "id": 5,
+      "title": "Agent Type Comparison",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 8, "x": 0, "y": 27 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "avg_duration" },
+            "properties": [
+              { "id": "unit", "value": "s" },
+              { "id": "decimals", "value": 1 },
+              { "id": "displayName", "value": "Avg Duration" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "success_rate" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "decimals", "value": 1 },
+              { "id": "displayName", "value": "Success %" },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "red", "value": null },
+                    { "color": "yellow", "value": 80 },
+                    { "color": "green", "value": 95 }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "total", "desc": true }],
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT agent_type, COUNT(*) AS total, COUNT(*) FILTER (WHERE status = 'completed') AS completed, COUNT(*) FILTER (WHERE status = 'failed') AS failed, ROUND(AVG(EXTRACT(EPOCH FROM (completed_at - created_at)))::numeric, 1) AS avg_duration, CASE WHEN COUNT(*) = 0 THEN 100 ELSE ROUND(COUNT(*) FILTER (WHERE status = 'completed') * 100.0 / COUNT(*), 1) END AS success_rate FROM gateway.commands WHERE ($__timeFilter(created_at)) AND ('${agent_type:raw}' = '$__all' OR agent_type IN (${agent_type:sqlstring})) GROUP BY agent_type ORDER BY total DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Approval Decision Time",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 8, "x": 8, "y": 27 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "auto",
+            "pointSize": 5
+          },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "avg_time" },
+            "properties": [
+              { "id": "displayName", "value": "Avg Decision Time" },
+              { "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "p95_time" },
+            "properties": [
+              { "id": "displayName", "value": "P95 Decision Time" },
+              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, ROUND(AVG(EXTRACT(EPOCH FROM (decided_at - created_at)))::numeric, 1) AS avg_time, ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (decided_at - created_at)))::numeric, 1) AS p95_time FROM gateway.approvals WHERE status IN ('approved', 'denied') AND ($__timeFilter(created_at)) GROUP BY 1 ORDER BY 1",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Most Active Periods",
+      "type": "bargauge",
+      "gridPos": { "h": 10, "w": 8, "x": 16, "y": 27 },
+      "datasource": { "type": "postgres", "uid": "postgres-trading" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "purple", "value": 10 },
+              { "color": "red", "value": 25 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "namePlacement": "left",
+        "minVizWidth": 0,
+        "minVizHeight": 10
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT trim(to_char(created_at, 'Dy')) || ' ' || EXTRACT(HOUR FROM created_at)::int || ':00' AS period, COUNT(*) AS commands FROM gateway.commands WHERE ($__timeFilter(created_at)) AND ('${agent_type:raw}' = '$__all' OR agent_type IN (${agent_type:sqlstring})) GROUP BY trim(to_char(created_at, 'Dy')), EXTRACT(HOUR FROM created_at) ORDER BY commands DESC LIMIT 10",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "rowsToFields",
+          "options": {
+            "mappings": [
+              { "fieldName": "period", "handlerKey": "field.name" },
+              { "fieldName": "commands", "handlerKey": "field.value" }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

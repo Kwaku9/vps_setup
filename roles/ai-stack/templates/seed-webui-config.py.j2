@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""
+{{ ansible_managed }}
+
+Idempotent Open WebUI database configuration seeder.
+Reads the config table (single row, id=1), deep-merges desired values,
+and only writes back if changes are detected.
+
+Prints CHANGED or OK for Ansible changed_when detection.
+"""
+
+import json
+import sqlite3
+import copy
+import sys
+from datetime import datetime
+
+DB_PATH = "/app/backend/data/webui.db"
+
+DESIRED_CONFIG = {
+    "ui": {
+        "enable_signup": False
+    },
+    "user": {
+        "permissions": {
+            "features": {
+                "web_search": True,
+                "code_interpreter": True
+            },
+            "chat": {
+                "temporary_enforced": True,
+                "params": True,
+                "rate_response": True
+            }
+        }
+    },
+    "rag": {
+        "web": {
+            "search": {
+                "enable": True,
+                "engine": "searxng",
+                "result_count": 5,
+                "searxng_query_url": "http://searxng:8080/search",
+                "bypass_embedding_and_retrieval": True,
+                "bypass_web_loader": True,
+                "domain": {
+                    "filter_list": []
+                }
+            }
+        }
+    }
+}
+
+
+def deep_merge(base, override):
+    """Deep merge override into base. Returns merged dict."""
+    result = copy.deepcopy(base)
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = deep_merge(result[key], value)
+        else:
+            result[key] = copy.deepcopy(value)
+    return result
+
+
+def values_match(current, desired):
+    """Check if all desired values exist in current config."""
+    for key, value in desired.items():
+        if key not in current:
+            return False
+        if isinstance(value, dict):
+            if not isinstance(current[key], dict):
+                return False
+            if not values_match(current[key], value):
+                return False
+        elif current[key] != value:
+            return False
+    return True
+
+
+def main():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        # Read current config
+        cursor.execute("SELECT data FROM config WHERE id = 1")
+        row = cursor.fetchone()
+
+        if row is None:
+            print("ERROR: No config row found (id=1). Open WebUI may not have initialized yet.")
+            sys.exit(1)
+
+        current_data = json.loads(row[0])
+
+        # Check if changes are needed
+        if values_match(current_data, DESIRED_CONFIG):
+            print("OK - Configuration already matches desired state")
+            conn.close()
+            sys.exit(0)
+
+        # Deep merge desired config into current
+        merged_data = deep_merge(current_data, DESIRED_CONFIG)
+
+        # Write back
+        now = datetime.utcnow().isoformat()
+        cursor.execute(
+            "UPDATE config SET data = ?, updated_at = ? WHERE id = 1",
+            (json.dumps(merged_data), now)
+        )
+        conn.commit()
+        conn.close()
+
+        print("CHANGED - Database configuration updated:")
+        print(f"  - Web search: enabled (SearXNG)")
+        print(f"  - Code interpreter: enabled")
+        print(f"  - Signup: disabled")
+        print(f"  - Temporary chat enforced: yes")
+        sys.exit(0)
+
+    except Exception as e:
+        print(f"ERROR: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

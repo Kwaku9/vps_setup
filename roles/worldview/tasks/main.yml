@@ -1,0 +1,60 @@
+---
+# WorldView Geospatial Dashboard Deployment
+# Deploys Vite dev server in a node:22-alpine container with bind-mounted source
+
+- name: Ensure WorldView source directory exists
+  file:
+    path: "{{ worldview.source_dir }}"
+    state: directory
+    mode: '0755'
+  tags: ['worldview']
+
+- name: Deploy WorldView environment file
+  template:
+    src: worldview.env.j2
+    dest: "{{ worldview.source_dir }}/.env"
+    mode: '0600'
+  notify: restart worldview
+  tags: ['worldview', 'config']
+
+- name: Install npm dependencies
+  command: podman run --rm -v {{ worldview.source_dir }}:/app:Z -w /app {{ worldview.image }} npm install
+  args:
+    creates: "{{ worldview.source_dir }}/node_modules/.package-lock.json"
+  tags: ['worldview', 'deps']
+
+- name: Deploy WorldView container
+  containers.podman.podman_container:
+    name: "{{ worldview.container_name }}"
+    image: "{{ worldview.image }}"
+    state: started
+    network: "{{ worldview.network }}"
+    memory: "{{ worldview.memory }}"
+    command: "sh -c 'npm run dev -- --host'"
+    workdir: /app
+    env:
+      NODE_ENV: "development"
+      NODE_OPTIONS: "--max-old-space-size={{ worldview.node_max_old_space }}"
+    volumes:
+      - "{{ worldview.source_dir }}:/app:Z"
+    restart_policy: "unless-stopped"
+    recreate: false
+  tags: ['worldview']
+
+- name: Wait for Vite dev server to respond
+  uri:
+    url: "http://{{ worldview.container_name }}:{{ worldview.port }}/"
+    method: GET
+    status_code: 200
+    headers:
+      Host: "{{ worldview.domain }}"
+  register: worldview_health
+  retries: 12
+  delay: 5
+  until: worldview_health.status == 200
+  tags: ['worldview']
+
+- name: Show WorldView status
+  debug:
+    msg: "WorldView deployed: https://{{ worldview.domain }} (container={{ worldview.container_name }}, memory={{ worldview.memory }})"
+  tags: ['worldview']

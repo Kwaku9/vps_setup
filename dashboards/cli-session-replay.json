@@ -1,0 +1,338 @@
+{
+  "uid": "cli-session-replay",
+  "title": "CLI Session Replay",
+  "description": "Deep dive into a single Claude Code CLI session with conversation replay",
+  "tags": ["ai", "sessions", "claude", "replay"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "session_id",
+        "type": "query",
+        "label": "Session",
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "query": "SELECT s.id AS __value, s.id || ' | ' || p.display_name || ' | ' || LEFT(COALESCE(s.title, 'untitled'), 60) || ' (' || TO_CHAR(s.started_at, 'MM-DD HH24:MI') || ')' AS __text FROM sessions.sessions s JOIN sessions.projects p ON s.project_id = p.id ORDER BY s.started_at DESC LIMIT 200",
+        "includeAll": false,
+        "current": {},
+        "refresh": 1,
+        "multi": false,
+        "sort": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Session Info",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Duration",
+      "gridPos": {"h": 3, "w": 3, "x": 0, "y": 1},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "decimals": 1,
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "blue", "value": null}]}
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value"},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT duration_seconds / 60.0 FROM sessions.sessions WHERE id = ${session_id}",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "Messages",
+      "gridPos": {"h": 3, "w": 3, "x": 3, "y": 1},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "purple", "value": null}]}
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value"},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT total_messages FROM sessions.sessions WHERE id = ${session_id}",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "Turns",
+      "gridPos": {"h": 3, "w": 2, "x": 6, "y": 1},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "cyan", "value": null}]}
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value"},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT total_turns FROM sessions.sessions WHERE id = ${session_id}",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "Tools",
+      "gridPos": {"h": 3, "w": 2, "x": 8, "y": 1},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "orange", "value": null}]}
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value"},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT total_tool_calls FROM sessions.sessions WHERE id = ${session_id}",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "Created",
+      "gridPos": {"h": 3, "w": 2, "x": 10, "y": 1},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "green", "value": null}]}
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value"},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT files_created FROM sessions.sessions WHERE id = ${session_id}",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "Modified",
+      "gridPos": {"h": 3, "w": 2, "x": 12, "y": 1},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "yellow", "value": null}]}
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value"},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT files_modified FROM sessions.sessions WHERE id = ${session_id}",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "Model",
+      "gridPos": {"h": 3, "w": 4, "x": 14, "y": 1},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"fixedColor": "super-light-purple", "mode": "fixed"},
+          "mappings": [],
+          "thresholds": {"steps": [{"color": "super-light-purple", "value": null}]}
+        }
+      },
+      "options": {"colorMode": "background", "graphMode": "none", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "/.*model.*/"}},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT 1 AS value, COALESCE(model, 'unknown') AS model FROM sessions.sessions WHERE id = ${session_id}",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "Source",
+      "gridPos": {"h": 3, "w": 2, "x": 18, "y": 1},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"fixedColor": "semi-dark-blue", "mode": "fixed"},
+          "mappings": [],
+          "thresholds": {"steps": [{"color": "semi-dark-blue", "value": null}]}
+        }
+      },
+      "options": {"colorMode": "background", "graphMode": "none", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "/.*source.*/"}},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT 1 AS value, source FROM sessions.sessions WHERE id = ${session_id}",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "Tokens",
+      "gridPos": {"h": 3, "w": 4, "x": 20, "y": 1},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "red", "value": null}]},
+          "unit": "short"
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value"},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT input_tokens + output_tokens AS total_tokens FROM sessions.sessions WHERE id = ${session_id}",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "row",
+      "title": "Conversation Replay",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 4},
+      "panels": []
+    },
+    {
+      "type": "volkovlabs-echarts-panel",
+      "title": "Session Replay",
+      "gridPos": {"h": 20, "w": 24, "x": 0, "y": 5},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT m.type, m.role, m.content_text, m.content_json::text AS content_json, TO_CHAR(m.timestamp, 'HH24:MI:SS') AS time_str, m.model, m.sequence_num FROM sessions.messages m WHERE m.session_id = ${session_id} AND m.type IN ('user', 'assistant') ORDER BY m.sequence_num ASC LIMIT 500",
+        "format": "table",
+        "refId": "A"
+      }],
+      "options": {
+        "renderer": "canvas",
+        "editor": {
+          "height": 600,
+          "format": "auto"
+        },
+        "getOption": "const data = context.panel.data;\nif (!data || !data.series || data.series.length === 0) return {};\n\nconst series = data.series[0];\nconst fields = {};\nseries.fields.forEach(f => { fields[f.name] = f; });\n\nconst msgCount = fields.type ? fields.type.values.length : 0;\nif (msgCount === 0) return {};\n\nlet html = '<div style=\"font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; max-width: 900px; margin: 0 auto; padding: 16px; overflow-y: auto; max-height: 100%;\">';\n\nfor (let i = 0; i < msgCount; i++) {\n  const type = fields.type.values[i];\n  const role = fields.role.values[i];\n  const text = fields.content_text ? (fields.content_text.values[i] || '') : '';\n  const timeStr = fields.time_str ? fields.time_str.values[i] : '';\n  const model = fields.model ? (fields.model.values[i] || '') : '';\n  const contentJson = fields.content_json ? fields.content_json.values[i] : null;\n\n  if (type === 'user') {\n    const displayText = text.length > 500 ? text.substring(0, 500) + '...' : text;\n    const escapedText = displayText.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\n/g, '<br>');\n    html += '<div style=\"display: flex; justify-content: flex-end; margin-bottom: 12px;\">';\n    html += '<div style=\"background: #e67e22; color: white; padding: 10px 14px; border-radius: 12px 12px 2px 12px; max-width: 75%; font-size: 13px;\">';\n    html += '<div style=\"font-size: 10px; opacity: 0.8; margin-bottom: 4px;\">USER ' + timeStr + '</div>';\n    html += escapedText;\n    html += '</div></div>';\n  } else if (type === 'assistant') {\n    // Parse content_json to find tool_use blocks\n    let blocks = [];\n    if (contentJson) {\n      try {\n        const parsed = JSON.parse(contentJson);\n        if (Array.isArray(parsed)) {\n          blocks = parsed;\n        }\n      } catch(e) {}\n    }\n\n    // If we have structured content blocks, render them\n    if (blocks.length > 0) {\n      html += '<div style=\"margin-bottom: 12px;\">';\n      html += '<div style=\"font-size: 10px; color: #888; margin-bottom: 4px;\">ASSISTANT ' + timeStr + (model ? ' (' + model.replace('claude-', '') + ')' : '') + '</div>';\n      \n      for (const block of blocks) {\n        if (block.type === 'text' && block.text) {\n          const t = block.text.length > 1000 ? block.text.substring(0, 1000) + '...' : block.text;\n          const escaped = t.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\n/g, '<br>');\n          html += '<div style=\"background: #2d2d2d; color: #e0e0e0; padding: 10px 14px; border-radius: 12px 12px 12px 2px; max-width: 85%; font-size: 13px; margin-bottom: 6px;\">';\n          html += escaped;\n          html += '</div>';\n        } else if (block.type === 'tool_use') {\n          const toolName = block.name || 'unknown';\n          let inputPreview = '';\n          if (block.input) {\n            if (block.input.command) inputPreview = block.input.command.substring(0, 80);\n            else if (block.input.file_path) inputPreview = block.input.file_path;\n            else if (block.input.pattern) inputPreview = block.input.pattern;\n            else if (block.input.query) inputPreview = block.input.query.substring(0, 80);\n            else if (block.input.prompt) inputPreview = block.input.prompt.substring(0, 80);\n            else inputPreview = JSON.stringify(block.input).substring(0, 80);\n          }\n          const escapedPreview = inputPreview.replace(/</g, '&lt;').replace(/>/g, '&gt;');\n          let toolColor = '#6c5ce7';\n          if (['Read','Glob','Grep'].includes(toolName)) toolColor = '#0984e3';\n          else if (['Write','Edit','NotebookEdit'].includes(toolName)) toolColor = '#00b894';\n          else if (toolName === 'Bash') toolColor = '#d63031';\n          else if (toolName === 'Agent') toolColor = '#00cec9';\n          html += '<div style=\"background: ' + toolColor + '22; border-left: 3px solid ' + toolColor + '; padding: 6px 10px; border-radius: 4px; max-width: 85%; font-size: 12px; margin-bottom: 4px; color: #ccc;\">';\n          html += '<span style=\"color: ' + toolColor + '; font-weight: bold;\">' + toolName + '</span>';\n          if (escapedPreview) html += ' <span style=\"opacity: 0.7;\">' + escapedPreview + '</span>';\n          html += '</div>';\n        } else if (block.type === 'tool_result') {\n          let resultText = '';\n          if (typeof block.content === 'string') resultText = block.content;\n          else if (Array.isArray(block.content)) {\n            resultText = block.content.filter(b => b.type === 'text').map(b => b.text).join('\\n');\n          }\n          if (resultText) {\n            const truncated = resultText.length > 200 ? resultText.substring(0, 200) + '...' : resultText;\n            const escaped = truncated.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\n/g, '<br>');\n            html += '<div style=\"background: #1a1a2e; border-left: 3px solid #555; padding: 6px 10px; border-radius: 4px; max-width: 85%; font-size: 11px; margin-bottom: 6px; color: #999; font-family: monospace;\">';\n            html += escaped;\n            html += '</div>';\n          }\n        }\n      }\n      html += '</div>';\n    } else if (text) {\n      // Fallback: plain text rendering\n      const displayText = text.length > 1000 ? text.substring(0, 1000) + '...' : text;\n      const escapedText = displayText.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\n/g, '<br>');\n      html += '<div style=\"margin-bottom: 12px;\">';\n      html += '<div style=\"font-size: 10px; color: #888; margin-bottom: 4px;\">ASSISTANT ' + timeStr + '</div>';\n      html += '<div style=\"background: #2d2d2d; color: #e0e0e0; padding: 10px 14px; border-radius: 12px 12px 12px 2px; max-width: 85%; font-size: 13px;\">';\n      html += escapedText;\n      html += '</div></div>';\n    }\n  }\n}\n\nhtml += '</div>';\n\nconst container = context.panel.chart.getDom();\ncontainer.innerHTML = html;\ncontainer.style.overflow = 'auto';\n\nreturn {};"
+      }
+    },
+    {
+      "type": "row",
+      "title": "Artifacts Created",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 25},
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Files Created & Modified",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 26},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "File Path"},
+            "properties": [{"id": "custom.width", "value": 400}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Preview"},
+            "properties": [{"id": "custom.width", "value": 400}]
+          }
+        ]
+      },
+      "options": {"showHeader": true},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT a.file_path AS \"File Path\", a.action AS \"Action\", a.language AS \"Language\", a.size_bytes AS \"Size\", LEFT(a.content_preview, 100) AS \"Preview\", TO_CHAR(a.timestamp, 'HH24:MI:SS') AS \"Time\" FROM sessions.artifacts a WHERE a.session_id = ${session_id} ORDER BY a.timestamp ASC",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "row",
+      "title": "Tool Usage",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 34},
+      "panels": []
+    },
+    {
+      "type": "barchart",
+      "title": "Tool Call Distribution",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 35},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "always",
+        "barWidth": 0.7
+      },
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT tool_name AS \"Tool\", COUNT(*) AS \"Count\" FROM sessions.tool_calls WHERE session_id = ${session_id} GROUP BY tool_name ORDER BY COUNT(*) DESC",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "table",
+      "title": "Subagents Spawned",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 35},
+      "datasource": {"type": "postgres", "uid": "postgres-trading"},
+      "options": {"showHeader": true},
+      "targets": [{
+        "datasource": {"type": "postgres", "uid": "postgres-trading"},
+        "rawSql": "SELECT agent_id AS \"Agent\", COALESCE(agent_type, 'unknown') AS \"Type\", COALESCE(description, '') AS \"Description\", total_messages AS \"Messages\", TO_CHAR(started_at, 'HH24:MI:SS') AS \"Started\" FROM sessions.subagents WHERE parent_session_id = ${session_id} ORDER BY started_at ASC",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "row",
+      "title": "Session Details",
+      "collapsed": true,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 41},
+      "panels": [
+        {
+          "type": "table",
+          "title": "Session Metadata",
+          "gridPos": {"h": 6, "w": 24, "x": 0, "y": 42},
+          "datasource": {"type": "postgres", "uid": "postgres-trading"},
+          "options": {"showHeader": true},
+          "targets": [{
+            "datasource": {"type": "postgres", "uid": "postgres-trading"},
+            "rawSql": "SELECT s.session_uuid AS \"UUID\", p.project_path AS \"Project Path\", s.git_branch AS \"Git Branch\", s.cli_version AS \"CLI Version\", s.source AS \"Source\", s.status AS \"Status\", s.input_tokens AS \"Input Tokens\", s.output_tokens AS \"Output Tokens\", s.cache_read_tokens AS \"Cache Read\", s.cache_creation_tokens AS \"Cache Created\", TO_CHAR(s.started_at, 'YYYY-MM-DD HH24:MI:SS') AS \"Started\", TO_CHAR(s.ended_at, 'YYYY-MM-DD HH24:MI:SS') AS \"Ended\" FROM sessions.sessions s JOIN sessions.projects p ON s.project_id = p.id WHERE s.id = ${session_id}",
+            "format": "table",
+            "refId": "A"
+          }]
+        }
+      ]
+    }
+  ]
+}

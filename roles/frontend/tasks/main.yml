@@ -1,6 +1,6 @@
 ---
-# Frontend Role - Nginx Web Server
-# Deploys web services and landing page
+# Frontend Role - Nginx Web Server + Static Apps
+# Deploys web services, landing page, atlas-charts, and journey-tracker
 
 - name: Create frontend pod
   containers.podman.podman_pod:
@@ -8,9 +8,12 @@
     network: "{{ podman_network_name | default('enterprise_network') }}"
     state: started
     ports:
-      - "8080:80"  # Nginx
+      - "127.0.0.1:8081:80"      # Nginx landing page
+      - "127.0.0.1:3080:3080"    # Atlas Charts
   when: deploy_frontend | default(true)
   tags: ['frontend', 'pod']
+
+# ── Nginx Landing Page ──
 
 - name: Create Nginx configuration
   template:
@@ -38,6 +41,7 @@
     image: "docker.io/library/nginx:{{ frontend.nginx.version | default('alpine') }}"
     state: started
     pod: frontend-pod
+    memory: "32m"
     volumes:
       - /opt/compose/nginx.conf:/etc/nginx/nginx.conf:ro
       - /opt/compose/index.html:/usr/share/nginx/html/index.html:ro
@@ -46,8 +50,43 @@
     - frontend.nginx.enabled | default(true)
   tags: ['frontend', 'nginx']
 
+# ── Atlas Charts ──
+
+- name: Deploy Atlas Charts container
+  containers.podman.podman_container:
+    name: atlas-charts
+    image: "{{ frontend.atlas_charts.image | default('ghcr.io/atlas-charts/atlas-charts:latest') }}"
+    state: started
+    pod: frontend-pod
+    memory: "64m"
+    restart_policy: unless-stopped
+  when:
+    - deploy_frontend | default(true)
+    - frontend.atlas_charts.enabled | default(false)
+  tags: ['frontend', 'atlas-charts']
+
+# ── Journey Tracker ──
+
+- name: Deploy Journey Tracker container
+  containers.podman.podman_container:
+    name: journey-tracker
+    image: "{{ frontend.journey_tracker.image | default('nginx:alpine') }}"
+    state: started
+    pod: frontend-pod
+    memory: "32m"
+    volumes:
+      - /opt/podman-data/journey-tracker:/usr/share/nginx/html:ro
+    restart_policy: unless-stopped
+  when:
+    - deploy_frontend | default(true)
+    - frontend.journey_tracker.enabled | default(false)
+  tags: ['frontend', 'journey-tracker']
+
 - name: Display frontend status
   debug:
-    msg: "Frontend deployed at http://{{ ansible_host }}:8080"
+    msg:
+      - "Frontend pod deployed:"
+      - "  Nginx: http://{{ ansible_host }}:8081"
+      - "  Atlas Charts: http://{{ ansible_host }}:3080"
   when: deploy_frontend | default(true)
   tags: ['frontend']

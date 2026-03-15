@@ -1,0 +1,592 @@
+---
+# Global Variables for Alpine Podman Enterprise Stack
+# Customize these values for your deployment
+
+# System Configuration
+timezone: "America/New_York"
+enable_ipv6: false
+
+# Container Runtime
+podman_version: "latest"
+enable_rootless: true  # CHANGED - rootless for better security
+podman_network_name: "enterprise_network"
+podman_network_subnet: "REDACTED_CIDR"
+monitoring_network_name: "monitoring-net"
+monitoring_network_subnet: "REDACTED_CIDR"
+
+# Shared Services Configuration
+deploy_shared_services: true
+shared_services:
+  - name: "postgres"
+    enabled: true
+    image: "docker.io/library/postgres:16-alpine"
+    version: "16-alpine"
+    port: 5432
+  - name: "redis"
+    enabled: true
+    image: "docker.io/library/redis:8-alpine"
+    version: "8-alpine"
+    port: 6379
+  - name: "traefik"
+    enabled: true
+    image: "docker.io/library/traefik:v3.6"
+    version: "v3.6"
+    port: 80
+    dashboard_port: 8082
+
+# Container Management Tools
+management:
+  enabled: true
+  portainer:
+    enabled: true
+    version: "2.33.6"
+    image: "portainer/portainer-ce:2.33.6"
+    port: 9444  # Changed from 9443 (conflict with Authentik)
+    data_volume: "portainer-data"
+  ansible_deployment:
+    enabled: false  # Enable when ansible-deployment container is configured
+    image: "alpine:latest"
+# Monitoring Stack - Updated with Grafana Alloy and Tempo
+monitoring:
+  enabled: true
+  prometheus:
+    enabled: true
+    version: "v3.8.1"
+    image: "prom/prometheus:v3.8.1"
+    port: 9090
+    retention: "15d"
+  grafana:
+    enabled: true
+    version: "12.3.1-ubuntu"
+    image: "grafana/grafana:12.3.1-ubuntu"
+    port: 3000
+    admin_user: "admin"
+    admin_password: "{{ grafana_password }}"  # Loaded from vault.yml (separate from Portainer)
+  node_exporter:
+    enabled: true
+    version: "v1.10.2"
+    image: "prom/node-exporter:v1.10.2"
+    port: 9100
+  alloy:
+    enabled: true
+    version: "v1.12.2"
+    image: "grafana/alloy:v1.12.2"
+    port: 12345  # Internal metrics endpoint
+  loki:
+    enabled: true
+    version: "3.6.3"
+    image: "grafana/loki:3.6.3"
+    port: 3200  # FIXED - was 3100 (conflict with Claude Monitor Backend)
+  tempo:
+    enabled: true
+    version: "2.9.0"
+    image: "grafana/tempo:2.9.0"
+    port: 4318  # OTLP HTTP
+    retention: "168h"  # 7 days
+    cluster_name: "alpine-podman"
+  checkmk:
+    enabled: true
+    version: "2.4.0p21"
+    image: "checkmk/check-mk-raw:2.4.0p21"
+    port: 5000
+    site_name: "cmk"
+    admin_user: "cmkadmin"
+    admin_password: "{{ checkmk_password }}"  # Loaded from vault.yml
+
+# Security Stack
+security:
+  fail2ban:
+    enabled: true
+    bantime: "1h"
+    findtime: "10m"
+    maxretry: 5
+    jail_services:
+      - sshd
+  
+  wazuh:
+    enabled: true
+    version: "4.14.3"
+    image: "wazuh/wazuh:4.14.3"
+    manager_port: 1514
+    api_port: 55000
+    dashboard_port: 443
+
+  tetragon:
+    enabled: true
+    version: "v1.6.0"
+
+  trivy:
+    enabled: true
+    version: "0.68.2"
+    image: "aquasec/trivy:0.68.2"
+    scan_on_startup: true
+
+  crowdsec:
+    enabled: true
+    version: "1.6.4"
+    image: "crowdsecurity/crowdsec:v1.6.4"
+    collections:
+      - crowdsecurity/traefik
+      - crowdsecurity/http-cve
+      - crowdsecurity/base-http-scenarios
+      - crowdsecurity/sshd
+      - crowdsecurity/linux
+
+  firewall:
+    enabled: true
+    allowed_ports:
+      - 22     # SSH (required)
+      - 80     # HTTP (Traefik - public gateway)
+      - 443    # HTTPS (Traefik - public gateway)
+      # All other services bound to 127.0.0.1 (internal only)
+      # Access via SSH tunnels or Cloudflare Tunnel -> Traefik -> Authentik
+
+  squid:
+    enabled: true
+    mode: "discovery"  # discovery = log-only, enforcement = whitelist-based blocking
+    http_port: 3128
+    https_port: 3129
+    container_subnet: "REDACTED_CIDR"
+    dns_nameserver: "REDACTED_DNS"
+
+# Frontend Services
+deploy_frontend: true
+frontend:
+  nginx:
+    enabled: true
+    version: "1.29-alpine"
+    image: "nginx:1.29-alpine"
+    port: 8080
+  atlas_charts:
+    enabled: false  # Enable when atlas-charts is ready
+    image: "ghcr.io/atlas-charts/atlas-charts:latest"
+    port: 3080
+  journey_tracker:
+    enabled: false  # Enable when data is uploaded to /opt/podman-data/journey-tracker/
+    image: "nginx:alpine"
+
+# Backend Services
+deploy_backend: true
+backend:
+  ibeam:
+    enabled: false  # Enable when IB credentials are configured
+    image: "voyz/ibeam:latest"
+    port: 5055
+    env: {}
+    volumes: []
+  ib_mcp:
+    enabled: false  # Enable when ib-mcp-server is built
+    image: "ib-mcp-server:latest"
+    port: 5002
+    env: {}
+    volumes: []
+  api_services: []
+
+# Backup Configuration
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # 2 AM daily
+  retention_days: 30
+  destination: "/opt/backups"
+
+# Git Configuration
+git:
+  user_name: "Ansible Automation"
+  user_email: "ansible@localhost"
+  config_repo: ""  # Optional: Git repo for configuration tracking
+
+# Claude Code Configuration
+claude:
+  enabled: true
+  cli_version: "latest"
+  workspace_base: "/workspace"
+  backup_restore: true
+
+# MCP Servers Configuration (used by mcp-servers role)
+# Override defaults in roles/mcp-servers/defaults/main.yml
+mcp_servers:
+  workspace_base: "/workspace"
+  config_dir: "/root/.claude"
+  data_dir: "/opt/podman-data/mcp"
+  network: "{{ podman_network_name | default('enterprise_network') }}"
+
+  servers:
+    # n8n MCP - Workflow automation (HTTP)
+    n8n_mcp:
+      enabled: true
+      name: "n8n-mcp"
+      container_name: "n8n-mcp"
+      source_path: "vscode-projects/n8n-mcp"
+      transport: "http"
+      port: 3002  # Avoid conflict with Grafana on 3000
+      internal_port: 3000
+      endpoint: "/mcp"
+      image: "n8n-mcp:latest"
+      build: true
+      health_endpoint: "/health"
+      requires_auth: true
+      env:
+        MCP_MODE: "http"
+        PORT: "3000"
+        LOG_LEVEL: "info"
+        AUTH_TOKEN: "{{ n8n_mcp_auth_token }}"  # From vault.yml
+
+    # Google Docs/Drive MCP (HTTP)
+    google_docs:
+      enabled: true
+      name: "google-docs-drive"
+      container_name: "google-docs-mcp"
+      source_path: "vscode-projects/mcp-googledocs-server"
+      transport: "http"
+      port: 9091  # Changed from 9090 (used by Prometheus)
+      internal_port: 9091
+      image: "google-docs-mcp:latest"
+      build: true
+      health_endpoint: "/health"
+      env:
+        MCP_TRANSPORT: "sse"
+        PORT: "9091"
+      credentials_file: "credentials.json"
+
+    # Context7 MCP (HTTP)
+    context7:
+      enabled: true
+      name: "context7"
+      container_name: "context7-mcp"
+      source_path: "vscode-projects/context7-mcp"
+      transport: "http"
+      port: 3001
+      internal_port: 3001
+      image: "context7-mcp:latest"
+      build: true
+      health_endpoint: "/health"
+      env:
+        PORT: "3001"
+
+    # Scrapy Extractor MCP (HTTP with DinD)
+    scrapy:
+      enabled: true
+      name: "scrapy"
+      container_name: "scrapy-mcp"
+      source_path: "pycharm-projects/ScrapyExtractor"
+      transport: "http"
+      port: 8888
+      internal_port: 8888
+      image: "scrapy-mcp:latest"
+      build: true
+      health_endpoint: "/sse"
+      env:
+        PORT: "8888"
+        SCRAPY_PROJECT_PATH: "/workspace"
+
+# MCP Build/Runtime settings
+mcp_build:
+  force_rebuild: false
+  no_cache: false
+  pull: true
+
+mcp_runtime:
+  restart_policy: "unless-stopped"
+  memory_limit: "512m"
+  cpu_limit: "1.0"
+
+# Authentication & SSO
+authentication:
+  enabled: true
+  authentik:
+    enabled: true
+    version: "2025.10"
+    image: "ghcr.io/goauthentik/server:2025.10"
+    port: 9000
+    worker_image: "ghcr.io/goauthentik/server:2025.10"
+    postgres_db: "authentik"
+    postgres_user: "authentik"
+    postgres_password: "{{ authentik_password }}"  # Loaded from vault.yml
+    secret_key: "{{ authentik_secret_key }}"  # Loaded from vault.yml
+    # Cloudflare Zero Trust OIDC Integration
+    cloudflare_integration:
+      enabled: true
+      provider_name: "cloudflare-access"
+      application_name: "Cloudflare Access"
+      application_slug: "cloudflare-access"
+    # SSO: Native OIDC for Grafana, Portainer, OpenWebUI
+    sso:
+      enabled: true
+      enrollment:
+        enabled: true
+        email_verification: true
+      groups:
+        admin: "admins"
+        free: "free_users"
+        paid: "paid_users"
+      recovery:
+        enabled: true
+        token_expiry: 30  # minutes
+      mfa:
+        enabled: true
+        totp:
+          enabled: true
+          digits: 6
+          required_for_group: "admin"
+      oidc_services:
+        - name: grafana
+          slug: grafana
+          redirect_uri: "https://grafana.{{ domain_name }}/login/generic_oauth"
+          access_group: admin
+        - name: openwebui
+          slug: openwebui
+          redirect_uri: "https://chat.{{ domain_name }}/oauth/oidc/callback"
+          access_group: all
+        - name: portainer
+          slug: portainer
+          redirect_uri: "https://portainer.{{ domain_name }}"
+          access_group: admin
+      bookmark_services:
+        - name: n8n
+          slug: n8n
+          launch_url: "https://n8n.{{ domain_name }}"
+          access_group: admin
+        - name: prometheus
+          slug: prometheus
+          launch_url: "https://prometheus.{{ domain_name }}"
+          access_group: admin
+        - name: checkmk
+          slug: checkmk
+          launch_url: "https://checkmk.{{ domain_name }}"
+          access_group: admin
+        - name: litellm
+          slug: litellm
+          launch_url: "https://litellm.{{ domain_name }}"
+          access_group: admin
+        - name: traefik-dashboard
+          slug: traefik-dashboard
+          launch_url: "https://traefik.{{ domain_name }}"
+          access_group: admin
+        - name: kokoro-tts
+          slug: kokoro-tts
+          launch_url: "https://tts.{{ domain_name }}"
+          access_group: admin
+        - name: portal
+          slug: portal
+          launch_url: "https://portal.{{ domain_name }}"
+          access_group: admin
+
+# AI Stack Configuration (n8n-claude + OpenWebUI + LiteLLM + Fabric)
+ai_stack:
+  enabled: true
+  pod_name: "ai-stack-pod"
+  network: "enterprise_network"
+  data_dir: "/opt/podman-data/ai-stack"
+  compose_dir: "/workspace/vscode-projects"
+
+  # n8n with Claude Code CLI
+  n8n_claude:
+    enabled: true
+    name: "n8n-claude"
+    source_path: "n8n/n8n-claude"
+    image: "n8n-claude:latest"
+    port: 5678
+    build: true
+    env:
+      DB_TYPE: "postgresdb"
+      DB_POSTGRESDB_HOST: "127.0.0.1"
+      DB_POSTGRESDB_PORT: "5432"
+      DB_POSTGRESDB_DATABASE: "n8n"
+      DB_POSTGRESDB_USER: "aistack"
+      N8N_PROTOCOL: "http"
+      N8N_HOST: "localhost"
+      N8N_PORT: "5678"
+      NODE_ENV: "production"
+      WEBHOOK_URL: "http://localhost:5678/"
+      CLAUDE_TELEMETRY: "false"
+      NODE_FUNCTION_ALLOW_BUILTIN: "child_process"
+      N8N_RUNNERS_HEARTBEAT_INTERVAL: "60"
+
+  # OpenWebUI
+  openwebui:
+    enabled: true
+    name: "open-webui"
+    image: "ghcr.io/open-webui/open-webui:latest"
+    port: 3100
+    internal_port: 8080
+    env:
+      WEBUI_AUTH: "True"
+      OLLAMA_BASE_URL: "http://127.0.0.1:11434"
+    branding:
+      logo_url: "https://REDACTED_BUCKET.s3.amazonaws.com/logo4.png"
+      assets_base_url: "https://REDACTED_BUCKET.s3.amazonaws.com"
+    # OIDC credentials from Authentik (sso-openwebui provider)
+    # Static fallback values loaded from vault.yml; SSO automation generates dynamic ones at deploy time
+    oidc:
+      client_id: "{{ openwebui_oidc_client_id_static | default('') }}"
+      client_secret: "{{ openwebui_oidc_client_secret_static | default('') }}"
+
+  # LiteLLM Proxy
+  litellm:
+    enabled: true
+    name: "litellm"
+    image: "ghcr.io/berriai/litellm-database:main-latest"
+    port: 4000
+    config_file: "config.yml"
+    env:
+      STORE_MODEL_IN_DB: "True"
+
+  # Fabric API
+  fabric_api:
+    enabled: false  # Disabled - requires source to be present
+    name: "fabric-api"
+    source_path: "fabric"
+    image: "fabric-api:latest"
+    port: 8088
+    internal_port: 8080
+    build: true
+
+  # Kokoro TTS
+  kokoro_tts:
+    enabled: true
+    name: "kokoro-tts"
+    image: "ghcr.io/remsky/kokoro-fastapi-cpu:latest"
+    port: 8880
+
+  # Claude Monitor Backend
+  claude_monitor_backend:
+    enabled: false  # Disabled - requires source to be present
+    name: "claude-monitor-backend"
+    source_path: "n8n/n8n-claude/claude-monitor/backend"
+    image: "claude-monitor-backend:latest"
+    port: 3150
+    build: true
+    env:
+      HOST: "0.0.0.0"
+      PORT: "3150"
+      EVENT_LOG_PATH: "/app/storage/events.jsonl"
+      LOG_LEVEL: "info"
+
+  # Claude Monitor Frontend
+  claude_monitor_frontend:
+    enabled: false  # Disabled - requires source to be present
+    name: "claude-monitor-frontend"
+    source_path: "n8n/n8n-claude/claude-monitor/frontend"
+    image: "claude-monitor-frontend:latest"
+    port: 3151
+    internal_port: 80
+    build: true
+
+  # PostgreSQL for AI Stack (separate from main postgres)
+  postgres:
+    enabled: true
+    name: "ai-stack-postgres"
+    image: "docker.io/library/postgres:16-alpine"
+    port: 5433
+    databases:
+      - litellm
+      - n8n
+    user: "aistack"
+
+# AI Stack secrets (referenced from vault.yml):
+# ai_stack_postgres_password: "<32-char-password>"
+# litellm_master_key: "sk-<random-key>"
+
+# Domain Configuration
+domain_name: "{{ vault_domain_name | default('example.com') }}"  # Override in vault.yml
+
+# External IP (auto-detected or set manually)
+external_ip: "REDACTED_IP"
+
+# Cloudflare Integration
+cloudflare:
+  enabled: true
+  # Cloudflare Tunnel Configuration
+  tunnel:
+    enabled: true
+    name: "alpine-vps-tunnel"
+    image: "cloudflare/cloudflared:latest"
+    container_name: "cloudflared"
+    metrics_port: 2000
+    protocol: "quic"
+    # Ingress rules - route traffic through Traefik (HTTPS)
+    # Must use HTTPS:443 because Traefik's port 80 redirects to HTTPS, causing a loop.
+    # noTLSVerify needed because Traefik's cert is for the public domain, not "traefik" hostname.
+    # Traefik is now in same pod (security-infra-pod) — use localhost
+    ingress:
+      - hostname: "ssh.{{ domain_name }}"
+        service: "ssh://host.containers.internal:22"
+      - hostname: "{{ domain_name }}"
+        service: "https://localhost:443"
+        no_tls_verify: true
+      - hostname: "*.{{ domain_name }}"
+        service: "https://localhost:443"
+        no_tls_verify: true
+      - service: "http_status:404"  # Catch-all (required)
+
+  # DNS API Configuration
+  dns_api:
+    enabled: true
+    ttl: 300
+    proxied: true
+    auto_root_record: true  # Auto-create root A record
+    records:
+      # Removed explicit @ A record - auto_root_record creates tunnel CNAME when tunnel enabled
+      - name: "www"
+        type: "CNAME"
+        content: "{{ domain_name }}"
+        proxied: true
+      - name: "grafana"
+        type: "CNAME"
+        content: "{{ domain_name }}"
+        proxied: true
+      - name: "portainer"
+        type: "CNAME"
+        content: "{{ domain_name }}"
+        proxied: true
+      - name: "n8n"
+        type: "CNAME"
+        content: "{{ domain_name }}"
+        proxied: true
+      - name: "chat"
+        type: "CNAME"
+        content: "{{ domain_name }}"
+        proxied: true
+      - name: "prometheus"
+        type: "CNAME"
+        content: "{{ domain_name }}"
+        proxied: true
+      - name: "auth"
+        type: "CNAME"
+        content: "{{ domain_name }}"
+        proxied: true
+      - name: "ssh"
+        type: "CNAME"
+        content: "{{ domain_name }}"
+        proxied: true
+      - name: "hooks"
+        type: "CNAME"
+        content: "{{ domain_name }}"
+        proxied: true
+      - name: "otlp"
+        type: "CNAME"
+        content: "{{ domain_name }}"
+        proxied: true
+      - name: "timeline"
+        type: "CNAME"
+        content: "{{ domain_name }}"
+        proxied: true
+
+  # Traefik ACME Integration
+  traefik_integration:
+    enabled: true
+    acme:
+      enabled: true
+      storage: "/etc/traefik/acme.json"
+      # Production: https://acme-v02.api.letsencrypt.org/directory
+      # Staging: https://acme-staging-v02.api.letsencrypt.org/directory
+      ca_server: "https://acme-v02.api.letsencrypt.org/directory"
+      dns_challenge:
+        delay_before_check: "10s"
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"
+    domains:
+      - main: "{{ domain_name }}"
+        sans:
+          - "*.{{ domain_name }}"

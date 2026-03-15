@@ -1,0 +1,39 @@
+---
+# Seed Open WebUI Database Configuration
+# Idempotent: only writes if config differs from desired state
+#
+# The config table has schema: (id, data, version, created_at, updated_at)
+# Single row (id=1), 'data' column is a JSON blob containing all settings
+
+- name: Wait for webui.db to exist
+  wait_for:
+    path: "{{ openwebui_data_dir }}/webui.db"
+    timeout: 120
+  tags: ['ai-stack', 'openwebui', 'seed-db']
+
+- name: Deploy database seed script
+  template:
+    src: seed-webui-config.py.j2
+    dest: "{{ openwebui_data_dir }}/seed-webui-config.py"
+    mode: '0755'
+  tags: ['ai-stack', 'openwebui', 'seed-db']
+
+- name: Run database seed script
+  command: >
+    podman exec {{ openwebui_container_name }}
+    python3 /app/backend/data/seed-webui-config.py
+  register: seed_result
+  changed_when: "'CHANGED' in seed_result.stdout"
+  tags: ['ai-stack', 'openwebui', 'seed-db']
+
+- name: Display seed result
+  debug:
+    msg: "{{ seed_result.stdout_lines }}"
+  when: seed_result.stdout_lines is defined
+  tags: ['ai-stack', 'openwebui', 'seed-db']
+
+- name: Clean up seed script
+  file:
+    path: "{{ openwebui_data_dir }}/seed-webui-config.py"
+    state: absent
+  tags: ['ai-stack', 'openwebui', 'seed-db']

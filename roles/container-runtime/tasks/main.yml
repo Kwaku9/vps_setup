@@ -1,4 +1,4 @@
----
+﻿---
 # Container Runtime Role - Podman Installation and Configuration
 # Sets up rootless Podman with all necessary configurations
 
@@ -70,6 +70,13 @@
   containers.podman.podman_network:
     name: "{{ podman_network_name | default('enterprise_network') }}"
     subnet: "{{ podman_network_subnet | default('REDACTED_CIDR') }}"
+    state: present
+  tags: ['container-runtime', 'network']
+
+- name: Create monitoring network (isolated OTEL/scrape traffic)
+  containers.podman.podman_network:
+    name: "{{ monitoring_network_name | default('monitoring-net') }}"
+    subnet: "{{ monitoring_network_subnet | default('REDACTED_CIDR') }}"
     state: present
   tags: ['container-runtime', 'network']
 

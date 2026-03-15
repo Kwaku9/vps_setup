@@ -1,0 +1,424 @@
+---
+# OpenWebUI Post-Deployment Setup
+# Configures LiteLLM connection, groups, and registers models with per-group access control
+
+# ============================================================
+# Step 1: Wait for OpenWebUI API
+# ============================================================
+
+- name: "[OpenWebUI Setup] Wait for OpenWebUI API health"
+  uri:
+    url: "http://127.0.0.1:{{ ai_stack.openwebui.port }}/health"
+    method: GET
+    status_code: 200
+  register: openwebui_health
+  retries: 30
+  delay: 10
+  until: openwebui_health.status == 200
+  check_mode: no
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+# ============================================================
+# Step 2: Sign up admin account (first user becomes admin)
+# ============================================================
+
+- name: "[OpenWebUI Setup] Create admin account (first user signup)"
+  uri:
+    url: "http://127.0.0.1:{{ ai_stack.openwebui.port }}/api/v1/auths/signup"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "Admin"
+      email: "{{ authentik_bootstrap_email }}"
+      password: "{{ authentik_bootstrap_password }}"
+    status_code: [200, 201]
+  register: openwebui_signup
+  check_mode: no
+  failed_when: false
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+- name: "[OpenWebUI Setup] Set admin JWT from signup"
+  set_fact:
+    openwebui_jwt: "{{ openwebui_signup.json.token }}"
+  when:
+    - openwebui_signup.status in [200, 201]
+    - openwebui_signup.json.token is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+# ============================================================
+# Step 2b: Sign in if admin already exists
+# ============================================================
+
+- name: "[OpenWebUI Setup] Authenticate as admin (existing account)"
+  uri:
+    url: "http://127.0.0.1:{{ ai_stack.openwebui.port }}/api/v1/auths/signin"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      email: "{{ authentik_bootstrap_email }}"
+      password: "{{ authentik_bootstrap_password }}"
+    status_code: 200
+  register: openwebui_auth
+  check_mode: no
+  failed_when: false
+  when: openwebui_jwt is not defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+- name: "[OpenWebUI Setup] Set admin JWT from signin"
+  set_fact:
+    openwebui_jwt: "{{ openwebui_auth.json.token }}"
+  when:
+    - openwebui_jwt is not defined
+    - openwebui_auth.status is defined
+    - openwebui_auth.status == 200
+    - openwebui_auth.json.token is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+# ============================================================
+# Step 2c: Branding — handled by WEBUI_NAME env var on container
+# ============================================================
+
+# ============================================================
+# Step 2d: Configure LiteLLM connection via API
+# ============================================================
+# Ensures the LiteLLM connection uses the master key on every deploy,
+# not just on first boot via env vars.
+
+- name: "[OpenWebUI Setup] Configure LiteLLM connection"
+  uri:
+    url: "http://127.0.0.1:{{ ai_stack.openwebui.port }}/api/openai/config/update"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ openwebui_jwt }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      ENABLE_OPENAI_API: true
+      OPENAI_API_BASE_URLS:
+        - "http://127.0.0.1:4000/v1"
+      OPENAI_API_KEYS:
+        - "{{ litellm_master_key }}"
+      OPENAI_API_CONFIGS:
+        "0":
+          enable: true
+          tags: []
+          prefix_id: ""
+          model_ids: []
+          connection_type: "external"
+          auth_type: "bearer"
+    status_code: [200, 201]
+  register: openwebui_connection_config
+  failed_when: false
+  when: openwebui_jwt is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+- name: "[OpenWebUI Setup] Connection config result"
+  debug:
+    msg: "{{ (openwebui_connection_config.status | default(0) in [200, 201]) | ternary('LiteLLM connection configured via API', 'Connection config API call failed (status=' ~ openwebui_connection_config.status | default('unknown') ~ '). Connection will use env vars instead.') }}"
+  when: openwebui_jwt is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+# Skip remaining tasks if auth failed (first run before any user exists)
+- name: "[OpenWebUI Setup] Skip setup if admin auth failed"
+  debug:
+    msg: "OpenWebUI admin auth failed (status={{ openwebui_auth.status | default('unknown') }}). Group setup will run on next deploy after initial admin is created."
+  when: openwebui_jwt is not defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+# ============================================================
+# Step 3: Load model access tiers from vars file
+# ============================================================
+# Source of truth: /model_tiers.yml (edit that file to change model visibility)
+# Tier hierarchy: free < paid < admin
+# Models with tier: none are skipped (not registered in OpenWebUI).
+
+- name: "[OpenWebUI Setup] Load model tiers from vars file"
+  include_vars:
+    file: "{{ playbook_dir }}/model_tiers.yml"
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+- name: "[OpenWebUI Setup] Filter active model tiers"
+  set_fact:
+    openwebui_model_tiers: >-
+      {{ model_tier_list | selectattr('tier', 'in', ['free', 'paid', 'admin']) | list }}
+    # Map tier names to the list of group keys that get read access
+    openwebui_tier_groups:
+      free:
+        - free_users
+        - paid_users
+        - admins
+      paid:
+        - paid_users
+        - admins
+      admin:
+        - admins
+    # Group names for group creation
+    openwebui_group_names:
+      - free_users
+      - paid_users
+      - admins
+  when: openwebui_jwt is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+# ============================================================
+# Step 4: Ensure groups exist
+# ============================================================
+
+- name: "[OpenWebUI Setup] Get existing groups"
+  uri:
+    url: "http://127.0.0.1:{{ ai_stack.openwebui.port }}/api/v1/groups/"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ openwebui_jwt }}"
+    status_code: 200
+  register: openwebui_existing_groups
+  check_mode: no
+  when: openwebui_jwt is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+- name: "[OpenWebUI Setup] Extract existing group names"
+  set_fact:
+    openwebui_existing_group_names: >-
+      {{ openwebui_existing_groups.json
+         | map(attribute='name')
+         | list }}
+    openwebui_group_id_map: >-
+      {{ dict(openwebui_existing_groups.json | map(attribute='name') | zip(openwebui_existing_groups.json | map(attribute='id'))) }}
+  when:
+    - openwebui_jwt is defined
+    - openwebui_existing_groups.json is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+- name: "[OpenWebUI Setup] Create missing groups"
+  uri:
+    url: "http://127.0.0.1:{{ ai_stack.openwebui.port }}/api/v1/groups/create"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ openwebui_jwt }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "{{ item }}"
+      description: "{{ item }} tier - auto-managed by Ansible"
+    status_code: [200, 201]
+  register: openwebui_groups_created
+  loop: "{{ openwebui_group_names }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - openwebui_jwt is defined
+    - item not in (openwebui_existing_group_names | default([]))
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+# Refresh group list after creation
+- name: "[OpenWebUI Setup] Refresh group list"
+  uri:
+    url: "http://127.0.0.1:{{ ai_stack.openwebui.port }}/api/v1/groups/"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ openwebui_jwt }}"
+    status_code: 200
+  register: openwebui_groups_refreshed
+  check_mode: no
+  when: openwebui_jwt is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+- name: "[OpenWebUI Setup] Update group ID map"
+  set_fact:
+    openwebui_group_id_map: >-
+      {{ dict(openwebui_groups_refreshed.json | map(attribute='name') | zip(openwebui_groups_refreshed.json | map(attribute='id'))) }}
+  when:
+    - openwebui_jwt is defined
+    - openwebui_groups_refreshed.json is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+# ============================================================
+# Step 5: Register models with per-group access_control
+# ============================================================
+# OpenWebUI requires models in the `model` DB table for non-admin users.
+# Each model's access_control.read.group_ids determines which groups can see it.
+#
+# IMPORTANT: Open WebUI's model update API does NOT modify access_control/grants.
+# To ensure correct permissions, we delete all managed models first, then recreate
+# them with the correct access_control on every deploy.
+
+- name: "[OpenWebUI Setup] Delete all managed models (reset permissions)"
+  uri:
+    url: "http://127.0.0.1:{{ ai_stack.openwebui.port }}/api/v1/models/model/delete"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ openwebui_jwt }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      id: "{{ item.id }}"
+    status_code: [200, 404]
+  register: openwebui_model_delete
+  loop: "{{ openwebui_model_tiers }}"
+  loop_control:
+    label: "{{ item.id }}"
+  when:
+    - openwebui_jwt is defined
+    - openwebui_group_id_map is defined
+  failed_when: false
+  changed_when: openwebui_model_delete.status == 200
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+- name: "[OpenWebUI Setup] Create models"
+  uri:
+    url: "http://127.0.0.1:{{ ai_stack.openwebui.port }}/api/v1/models/create"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ openwebui_jwt }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      id: "{{ item.id }}"
+      base_model_id: "{{ item.id }}"
+      name: "{{ item.name }}"
+      meta:
+        profile_image_url: "/static/favicon.png"
+        description: "{{ item.name }} ({{ item.tier }} tier)"
+      params: {}
+      is_active: true
+    status_code: [200, 201]
+  loop: "{{ openwebui_model_tiers }}"
+  loop_control:
+    label: "{{ item.id }} ({{ item.tier }})"
+  when:
+    - openwebui_jwt is defined
+    - openwebui_group_id_map is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+# Set access grants via the dedicated endpoint (create/update APIs ignore access_control).
+# Only principal_type, principal_id, and permission are required per grant.
+- name: "[OpenWebUI Setup] Build per-tier access grant templates"
+  set_fact:
+    openwebui_tier_grants:
+      free:
+        - { principal_type: group, principal_id: "{{ openwebui_group_id_map['free_users'] }}", permission: read }
+        - { principal_type: group, principal_id: "{{ openwebui_group_id_map['paid_users'] }}", permission: read }
+        - { principal_type: group, principal_id: "{{ openwebui_group_id_map['admins'] }}", permission: read }
+        - { principal_type: group, principal_id: "{{ openwebui_group_id_map['admins'] }}", permission: write }
+      paid:
+        - { principal_type: group, principal_id: "{{ openwebui_group_id_map['paid_users'] }}", permission: read }
+        - { principal_type: group, principal_id: "{{ openwebui_group_id_map['admins'] }}", permission: read }
+        - { principal_type: group, principal_id: "{{ openwebui_group_id_map['admins'] }}", permission: write }
+      admin:
+        - { principal_type: group, principal_id: "{{ openwebui_group_id_map['admins'] }}", permission: read }
+        - { principal_type: group, principal_id: "{{ openwebui_group_id_map['admins'] }}", permission: write }
+  when:
+    - openwebui_jwt is defined
+    - openwebui_group_id_map is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+- name: "[OpenWebUI Setup] Set model access grants"
+  uri:
+    url: "http://127.0.0.1:{{ ai_stack.openwebui.port }}/api/v1/models/model/access/update"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ openwebui_jwt }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      id: "{{ item.id }}"
+      access_grants: "{{ openwebui_tier_grants[item.tier] }}"
+    status_code: [200]
+  loop: "{{ openwebui_model_tiers }}"
+  loop_control:
+    label: "{{ item.id }} ({{ item.tier }})"
+  when:
+    - openwebui_jwt is defined
+    - openwebui_group_id_map is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+# ============================================================
+# Step 5b: Remove stale models not in model_tiers.yml
+# ============================================================
+# Any model in OpenWebUI's DB that is NOT in model_tier_list gets deleted.
+# This cleans up models that were auto-discovered by the wildcard or added manually.
+
+- name: "[OpenWebUI Setup] Get all registered models from OpenWebUI"
+  uri:
+    url: "http://127.0.0.1:{{ ai_stack.openwebui.port }}/api/v1/models/"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ openwebui_jwt }}"
+    status_code: 200
+  register: openwebui_all_models
+  check_mode: no
+  when: openwebui_jwt is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+- name: "[OpenWebUI Setup] Identify stale models"
+  set_fact:
+    openwebui_managed_ids: "{{ openwebui_model_tiers | map(attribute='id') | list }}"
+    openwebui_registered_ids: "{{ openwebui_all_models.json | map(attribute='id') | list }}"
+  when:
+    - openwebui_jwt is defined
+    - openwebui_all_models.json is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+- name: "[OpenWebUI Setup] Compute stale model IDs"
+  set_fact:
+    openwebui_stale_ids: "{{ openwebui_registered_ids | difference(openwebui_managed_ids) }}"
+  when:
+    - openwebui_jwt is defined
+    - openwebui_registered_ids is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+- name: "[OpenWebUI Setup] Delete stale models"
+  uri:
+    url: "http://127.0.0.1:{{ ai_stack.openwebui.port }}/api/v1/models/model/delete"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ openwebui_jwt }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      id: "{{ item }}"
+    status_code: [200, 404]
+  register: openwebui_stale_delete
+  loop: "{{ openwebui_stale_ids }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - openwebui_jwt is defined
+    - openwebui_stale_ids | default([]) | length > 0
+  failed_when: false
+  changed_when: openwebui_stale_delete.status == 200
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+- name: "[OpenWebUI Setup] Stale model cleanup summary"
+  debug:
+    msg: "Removed {{ openwebui_stale_ids | default([]) | length }} stale model(s): {{ openwebui_stale_ids | default([]) | join(', ') }}"
+  when: openwebui_jwt is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']
+
+# ============================================================
+# Step 6: Summary
+# ============================================================
+
+- name: "[OpenWebUI Setup] Display setup summary"
+  debug:
+    msg:
+      - "============================================"
+      - "OpenWebUI Setup Complete!"
+      - "============================================"
+      - ""
+      - "Groups:"
+      - "  free_users: {{ openwebui_group_id_map['free_users'] | default('missing') }}"
+      - "  paid_users: {{ openwebui_group_id_map['paid_users'] | default('missing') }}"
+      - "  admins:     {{ openwebui_group_id_map['admins'] | default('missing') }}"
+      - ""
+      - "Models registered with access_control:"
+      - "  free tier  ({{ openwebui_model_tiers | selectattr('tier', 'equalto', 'free') | list | length }} models): visible to free_users + paid_users + admins"
+      - "  paid tier  ({{ openwebui_model_tiers | selectattr('tier', 'equalto', 'paid') | list | length }} models): visible to paid_users + admins"
+      - "  admin tier ({{ openwebui_model_tiers | selectattr('tier', 'equalto', 'admin') | list | length }} models): visible to admins only"
+      - "============================================"
+  when: openwebui_jwt is defined
+  tags: ['ai-stack', 'openwebui', 'openwebui-setup']

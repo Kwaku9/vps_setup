@@ -1,54 +1,55 @@
 ---
-# Shared Services Role - PostgreSQL, Redis, Traefik
-# Deploys common infrastructure containers
-# NOTE: Traefik runs as STANDALONE container (not in pod) due to pod networking issues
+# Shared Services Role - Security Infrastructure, PostgreSQL, Redis
+# All containers deployed in pods (K8s-ready)
+#
+# Pods:
+#   security-infra-pod: Traefik + Cloudflared + CrowdSec (ingress + WAF)
+#   shared-db-pod: PostgreSQL (shared database)
+#   shared-cache-pod: Redis (shared cache)
 
-- name: Create shared services pod
+# ============================================================================
+# CLEANUP: Remove old standalone containers (migrating to pods)
+# ============================================================================
+
+- name: Remove old standalone containers (migrating to pods)
+  containers.podman.podman_container:
+    name: "{{ item }}"
+    state: absent
+  loop:
+    - postgres
+    - redis
+    - traefik
+  failed_when: false
+  when: deploy_shared_services | default(true)
+  tags: ['shared-services', 'cleanup']
+
+- name: Remove old shared services pod (legacy)
   containers.podman.podman_pod:
     name: shared-services-pod
-    network: "{{ podman_network_name | default('enterprise_network') }}"
+    state: absent
+  failed_when: false
+  when: deploy_shared_services | default(true)
+  tags: ['shared-services', 'cleanup']
+
+# ============================================================================
+# SECURITY-INFRA-POD: Traefik + Cloudflared + CrowdSec
+# ============================================================================
+
+- name: Create security-infra pod
+  containers.podman.podman_pod:
+    name: security-infra-pod
+    network:
+      - "{{ podman_network_name | default('enterprise_network') }}"
     state: started
     ports:
-      - "5432:5432"  # PostgreSQL
-      - "6379:6379"  # Redis
-      # Traefik ports removed - runs standalone
+      - "127.0.0.1:80:80"        # HTTP (Cloudflare Tunnel)
+      - "127.0.0.1:443:443"      # HTTPS (Cloudflare Tunnel)
+      - "127.0.0.1:8082:8080"    # Traefik Dashboard/API
+      - "127.0.0.1:2000:2000"    # Cloudflared metrics
   when: deploy_shared_services | default(true)
-  tags: ['shared-services', 'pod']
+  tags: ['shared-services', 'security-infra-pod', 'pod']
 
-- name: Deploy PostgreSQL container
-  containers.podman.podman_container:
-    name: postgres
-    image: "{{ item.image }}"
-    state: started
-    pod: shared-services-pod
-    env:
-      POSTGRES_PASSWORD: "{{ postgres_password }}"
-      POSTGRES_USER: "postgres"
-      POSTGRES_DB: "enterprise"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-  loop: "{{ shared_services }}"
-  when:
-    - deploy_shared_services | default(true)
-    - item.name == "postgres"
-    - item.enabled | default(true)
-  tags: ['shared-services', 'postgres']
-
-- name: Deploy Redis container
-  containers.podman.podman_container:
-    name: redis
-    image: "{{ item.image }}"
-    state: started
-    pod: shared-services-pod
-    command: "redis-server --appendonly yes"
-    volumes:
-      - redis-data:/data
-  loop: "{{ shared_services }}"
-  when:
-    - deploy_shared_services | default(true)
-    - item.name == "redis"
-    - item.enabled | default(true)
-  tags: ['shared-services', 'redis']
+# ── Traefik (reverse proxy + ingress router) ──
 
 - name: Create Traefik configuration
   template:
@@ -58,31 +59,242 @@
   when:
     - deploy_shared_services | default(true)
     - shared_services | selectattr('name', 'equalto', 'traefik') | selectattr('enabled', 'equalto', true) | list | length > 0
-  tags: ['shared-services', 'traefik']
+  tags: ['shared-services', 'security-infra-pod', 'traefik']
 
-- name: Deploy Traefik container (STANDALONE - not in pod)
+- name: Create Traefik dynamic config directory
+  file:
+    path: /opt/compose/traefik/dynamic
+    state: directory
+    mode: '0755'
+  when:
+    - deploy_shared_services | default(true)
+    - shared_services | selectattr('name', 'equalto', 'traefik') | selectattr('enabled', 'equalto', true) | list | length > 0
+  tags: ['shared-services', 'security-infra-pod', 'traefik']
+
+- name: Deploy Traefik dynamic routing configuration
+  template:
+    src: traefik-dynamic.yml.j2
+    dest: /opt/compose/traefik/dynamic/services.yml
+    mode: '0644'
+  when:
+    - deploy_shared_services | default(true)
+    - shared_services | selectattr('name', 'equalto', 'traefik') | selectattr('enabled', 'equalto', true) | list | length > 0
+  tags: ['shared-services', 'security-infra-pod', 'traefik']
+
+- name: Deploy Traefik container (in security-infra-pod)
   containers.podman.podman_container:
     name: traefik
-    image: "{{ item.image }}"
+    image: "{{ (shared_services | selectattr('name', 'equalto', 'traefik') | first).image }}"
     state: started
-    network: "{{ podman_network_name | default('enterprise_network') }}"
-    ports:
-      - "80:80"      # HTTP
-      - "443:443"    # HTTPS
-      - "8082:8080"  # Dashboard/API
+    pod: security-infra-pod
+    memory: "128m"
     volumes:
       - /run/podman/podman.sock:/var/run/docker.sock:ro
       - /opt/compose/traefik.yml:/etc/traefik/traefik.yml:ro
+      - /opt/compose/traefik/dynamic:/etc/traefik/dynamic
+{% if security.crowdsec.enabled | default(false) %}
+      - /opt/podman-data/crowdsec/traefik-logs:/var/log/traefik
+{% endif %}
     restart_policy: unless-stopped
-  loop: "{{ shared_services }}"
   when:
     - deploy_shared_services | default(true)
-    - item.name == "traefik"
-    - item.enabled | default(true)
-  tags: ['shared-services', 'traefik']
+    - shared_services | selectattr('name', 'equalto', 'traefik') | selectattr('enabled', 'equalto', true) | list | length > 0
+  tags: ['shared-services', 'security-infra-pod', 'traefik']
+
+# ── Cloudflared (Cloudflare Tunnel) ──
+
+- name: Create Cloudflare config directory
+  file:
+    path: "{{ cloudflared.config_dir | default('/opt/compose/cloudflare') }}"
+    state: directory
+    mode: '0755'
+  when:
+    - deploy_shared_services | default(true)
+    - cloudflared.enabled | default(true)
+  tags: ['shared-services', 'security-infra-pod', 'cloudflared']
+
+- name: Deploy Cloudflare Tunnel configuration
+  template:
+    src: "{{ playbook_dir }}/roles/cloudflared/templates/cloudflared-config.yml.j2"
+    dest: "{{ cloudflared.config_dir | default('/opt/compose/cloudflare') }}/config.yml"
+    mode: '0644'
+  when:
+    - deploy_shared_services | default(true)
+    - cloudflared.enabled | default(true)
+  tags: ['shared-services', 'security-infra-pod', 'cloudflared']
+
+- name: Deploy Cloudflared container (in security-infra-pod)
+  containers.podman.podman_container:
+    name: "{{ cloudflared.container_name | default('cloudflared') }}"
+    image: "{{ cloudflared.image | default('docker.io/cloudflare/cloudflared:latest') }}"
+    state: started
+    pod: security-infra-pod
+    memory: "128m"
+    command: "tunnel --no-autoupdate run"
+    env:
+      TUNNEL_TOKEN: "{{ cloudflared_tunnel_token }}"
+      TUNNEL_METRICS: "0.0.0.0:{{ cloudflared.metrics_port | default(2000) }}"
+      TUNNEL_TRANSPORT_PROTOCOL: "{{ cloudflared.protocol | default('quic') }}"
+    volumes:
+      - "{{ cloudflared.config_dir | default('/opt/compose/cloudflare') }}/config.yml:/etc/cloudflared/config.yml:ro"
+    restart_policy: "unless-stopped"
+  when:
+    - deploy_shared_services | default(true)
+    - cloudflared.enabled | default(true)
+  tags: ['shared-services', 'security-infra-pod', 'cloudflared']
+
+# ── CrowdSec (WAF / IDS) ──
+
+- name: Create CrowdSec directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /opt/podman-data/crowdsec/data
+    - /opt/podman-data/crowdsec/config
+    - /opt/podman-data/crowdsec/traefik-logs
+  when:
+    - deploy_shared_services | default(true)
+    - security.crowdsec.enabled | default(false)
+  tags: ['shared-services', 'security-infra-pod', 'crowdsec']
+
+- name: Deploy CrowdSec acquisition config
+  template:
+    src: "{{ playbook_dir }}/roles/security/templates/crowdsec-acquis.yaml.j2"
+    dest: /opt/podman-data/crowdsec/config/acquis.yaml
+    mode: '0644'
+  when:
+    - deploy_shared_services | default(true)
+    - security.crowdsec.enabled | default(false)
+  tags: ['shared-services', 'security-infra-pod', 'crowdsec']
+
+- name: Deploy CrowdSec container (in security-infra-pod, LAPI on 8180 to avoid Traefik 8080 conflict)
+  containers.podman.podman_container:
+    name: crowdsec
+    image: "docker.io/{{ security.crowdsec.image | default('crowdsecurity/crowdsec:v1.6.4') }}"
+    state: started
+    pod: security-infra-pod
+    memory: "128m"
+    env:
+      COLLECTIONS: "{{ security.crowdsec.collections | join(' ') }}"
+      GID: "0"
+      LOCAL_API_URL: "http://localhost:8180"
+    volumes:
+      - /opt/podman-data/crowdsec/data:/var/lib/crowdsec/data
+      - /opt/podman-data/crowdsec/config/acquis.yaml:/etc/crowdsec/acquis.yaml:ro
+      - /opt/podman-data/crowdsec/traefik-logs:/var/log/traefik:ro
+      - /var/log:/var/log/host:ro
+    restart_policy: unless-stopped
+  when:
+    - deploy_shared_services | default(true)
+    - security.crowdsec.enabled | default(false)
+  tags: ['shared-services', 'security-infra-pod', 'crowdsec']
+
+- name: Deploy CrowdSec middleware for Traefik
+  template:
+    src: "{{ playbook_dir }}/roles/security/templates/crowdsec-middleware.yml.j2"
+    dest: /opt/compose/traefik/dynamic/crowdsec.yml
+    mode: '0644'
+  when:
+    - deploy_shared_services | default(true)
+    - security.crowdsec.enabled | default(false)
+    - crowdsec_bouncer_key is defined
+    - crowdsec_bouncer_key | length > 0
+  tags: ['shared-services', 'security-infra-pod', 'crowdsec']
+
+# ============================================================================
+# SHARED-DB-POD: PostgreSQL
+# ============================================================================
+
+- name: Create shared-db pod
+  containers.podman.podman_pod:
+    name: shared-db-pod
+    network:
+      - "{{ podman_network_name | default('enterprise_network') }}"
+    state: started
+    ports:
+      - "127.0.0.1:5432:5432"    # PostgreSQL
+  when: deploy_shared_services | default(true)
+  tags: ['shared-services', 'shared-db-pod', 'pod']
+
+- name: Create PostgreSQL data directory
+  file:
+    path: /opt/podman-data/postgres
+    state: directory
+    mode: '0755'
+  when: deploy_shared_services | default(true)
+  tags: ['shared-services', 'shared-db-pod', 'postgres']
+
+- name: Deploy PostgreSQL container (in shared-db-pod)
+  containers.podman.podman_container:
+    name: postgres
+    image: "{{ (shared_services | selectattr('name', 'equalto', 'postgres') | first).image }}"
+    state: started
+    pod: shared-db-pod
+    memory: "256m"
+    env:
+      POSTGRES_PASSWORD: "{{ postgres_password }}"
+      POSTGRES_USER: "postgres"
+      POSTGRES_DB: "enterprise"
+      PGDATA: "/var/lib/postgresql/data/pgdata"
+    volumes:
+      - /opt/podman-data/postgres:/var/lib/postgresql/data:Z
+    restart_policy: unless-stopped
+  when:
+    - deploy_shared_services | default(true)
+    - shared_services | selectattr('name', 'equalto', 'postgres') | selectattr('enabled', 'equalto', true) | list | length > 0
+  tags: ['shared-services', 'shared-db-pod', 'postgres']
+
+# ============================================================================
+# SHARED-CACHE-POD: Redis
+# ============================================================================
+
+- name: Create shared-cache pod
+  containers.podman.podman_pod:
+    name: shared-cache-pod
+    network:
+      - "{{ podman_network_name | default('enterprise_network') }}"
+    state: started
+    ports:
+      - "127.0.0.1:6379:6379"    # Redis
+  when: deploy_shared_services | default(true)
+  tags: ['shared-services', 'shared-cache-pod', 'pod']
+
+- name: Create Redis data directory
+  file:
+    path: /opt/podman-data/redis
+    state: directory
+    mode: '0755'
+  when: deploy_shared_services | default(true)
+  tags: ['shared-services', 'shared-cache-pod', 'redis']
+
+- name: Deploy Redis container (in shared-cache-pod)
+  containers.podman.podman_container:
+    name: redis
+    image: "{{ (shared_services | selectattr('name', 'equalto', 'redis') | first).image }}"
+    state: started
+    pod: shared-cache-pod
+    memory: "64m"
+    command: "redis-server --appendonly yes"
+    volumes:
+      - /opt/podman-data/redis:/data:Z
+    restart_policy: unless-stopped
+  when:
+    - deploy_shared_services | default(true)
+    - shared_services | selectattr('name', 'equalto', 'redis') | selectattr('enabled', 'equalto', true) | list | length > 0
+  tags: ['shared-services', 'shared-cache-pod', 'redis']
+
+# ============================================================================
+# STATUS
+# ============================================================================
 
 - name: Display shared services status
   debug:
-    msg: "Shared services deployed in pod 'shared-services-pod'"
+    msg:
+      - "Shared services deployed in pods (K8s-ready)"
+      - "  security-infra-pod: Traefik, Cloudflared, CrowdSec"
+      - "  shared-db-pod: PostgreSQL"
+      - "  shared-cache-pod: Redis"
   when: deploy_shared_services | default(true)
   tags: ['shared-services']

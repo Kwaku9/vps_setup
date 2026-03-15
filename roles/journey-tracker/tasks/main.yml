@@ -1,0 +1,63 @@
+---
+# Journey Tracker — Static timeline served by Nginx
+# Bind-mount approach: SCP new files to data_dir, no rebuild needed
+# Routing: Traefik file provider (matches all other services)
+
+- name: Create journey-tracker data directory
+  file:
+    path: "{{ journey_tracker.data_dir }}"
+    state: directory
+    mode: '0755'
+  tags: ['journey-tracker']
+
+- name: Deploy Nginx config for journey-tracker
+  template:
+    src: nginx.conf.j2
+    dest: "{{ journey_tracker.data_dir }}/nginx.conf"
+    mode: '0644'
+  tags: ['journey-tracker']
+
+- name: Check if timeline.html exists on VPS
+  stat:
+    path: "{{ journey_tracker.data_dir }}/timeline.html"
+  register: timeline_file
+  tags: ['journey-tracker']
+
+- name: Create placeholder index if no data uploaded yet
+  copy:
+    content: |
+      <!DOCTYPE html>
+      <html><body>
+      <h1>Journey Tracker</h1>
+      <p>Upload timeline.html and journey-dataset.json via SCP to activate.</p>
+      </body></html>
+    dest: "{{ journey_tracker.data_dir }}/index.html"
+    mode: '0644'
+  when: not timeline_file.stat.exists
+  tags: ['journey-tracker']
+
+- name: Remove old standalone journey-tracker container (migrated to frontend-pod)
+  containers.podman.podman_container:
+    name: "{{ journey_tracker.container_name }}"
+    state: absent
+  failed_when: false
+  when: journey_tracker.enabled | default(true)
+  tags: ['journey-tracker', 'cleanup']
+
+- name: Deploy Traefik dynamic config for journey-tracker
+  template:
+    src: traefik-journey-tracker.yml.j2
+    dest: /opt/compose/traefik/dynamic/journey-tracker.yml
+    mode: '0644'
+  when: journey_tracker.enabled | default(true)
+  tags: ['journey-tracker', 'traefik']
+
+- name: Display journey-tracker status
+  debug:
+    msg:
+      - "Journey Tracker deployed: {{ journey_tracker.container_name }}"
+      - "URL: https://{{ journey_tracker.domain }}.{{ domain_name }}"
+      - "Data dir: {{ journey_tracker.data_dir }}"
+      - "Update data: scp timeline.html journey-dataset.json alpine-vps:{{ journey_tracker.data_dir }}/"
+  when: journey_tracker.enabled | default(true)
+  tags: ['journey-tracker']

@@ -1,0 +1,4 @@
+---
+# Base Role Variables
+
+alpine_version: "v3.20"

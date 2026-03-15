@@ -1,0 +1,176 @@
+---
+# OpenWebUI Custom Branding
+# Patches env.py, injects custom CSS, and replaces logo/favicon
+# Run with: ansible-playbook site.yml --tags branding
+#
+# IMPORTANT: Logo injection happens AFTER restart + health check because
+# Open WebUI config.py copies /app/build/static/* -> /app/backend/.../static/*
+# on every startup, overwriting any pre-injected files.
+#
+# We inject into BOTH /app/build/static/ AND /app/backend/.../static/ so that
+# even if the container restarts outside Ansible, config.py copies OUR files.
+#
+# Full documentation: docs/OPENWEBUI_BRANDING.md
+#
+# Container paths injected (12 total):
+#   Logo (8):  static/{favicon,logo,splash,splash-dark}.png
+#              build/static/{favicon,logo}.png, build/favicon.png, data/favicon.png
+#   Favicons (4): static/{favicon.ico,favicon.svg,favicon-96x96.png,apple-touch-icon.png}
+
+# ============================================================
+# Step 1: Patch env.py - Replace "(Open WebUI)" with tagline
+# ============================================================
+
+- name: "[OpenWebUI Branding] Patch WEBUI_NAME suffix in env.py"
+  command: >
+    podman exec {{ ai_stack.openwebui.name }} sed -i
+    -e 's/WEBUI_NAME += " (Open WebUI)"/WEBUI_NAME += " - Your AI Brain in the Cloud"/'
+    -e 's/^if False:.*Disabled by Ansible.*/if WEBUI_NAME != "Open WebUI":/'
+    /app/backend/open_webui/env.py
+  register: env_patch
+  changed_when: env_patch.rc == 0
+  tags: ['ai-stack', 'openwebui', 'branding']
+
+# ============================================================
+# Step 2: Stage assets to persistent data volume
+# ============================================================
+
+- name: "[OpenWebUI Branding] Copy custom CSS to host"
+  copy:
+    src: openwebui-custom.css
+    dest: "{{ ai_stack.data_dir }}/openwebui/custom.css"
+    mode: '0644'
+  tags: ['ai-stack', 'openwebui', 'branding']
+
+- name: "[OpenWebUI Branding] Download logo from S3"
+  get_url:
+    url: "{{ ai_stack.openwebui.branding.logo_url }}"
+    dest: "{{ ai_stack.data_dir }}/openwebui/logo.png"
+    mode: '0644'
+    force: yes
+  when: ai_stack.openwebui.branding.logo_url | default('') | length > 0
+  tags: ['ai-stack', 'openwebui', 'branding']
+
+- name: "[OpenWebUI Branding] Download favicon assets from S3"
+  get_url:
+    url: "{{ item.url }}"
+    dest: "{{ ai_stack.data_dir }}/openwebui/{{ item.file }}"
+    mode: '0644'
+    force: yes
+  loop:
+    - { url: "{{ ai_stack.openwebui.branding.assets_base_url }}/favicon.ico", file: "favicon.ico" }
+    - { url: "{{ ai_stack.openwebui.branding.assets_base_url }}/favicon.svg", file: "favicon.svg" }
+    - { url: "{{ ai_stack.openwebui.branding.assets_base_url }}/favicon-96x96.png", file: "favicon-96x96.png" }
+    - { url: "{{ ai_stack.openwebui.branding.assets_base_url }}/apple-touch-icon.png", file: "apple-touch-icon.png" }
+  when: ai_stack.openwebui.branding.assets_base_url | default('') | length > 0
+  tags: ['ai-stack', 'openwebui', 'branding']
+
+# ============================================================
+# Step 3: Restart OpenWebUI to apply env.py changes
+# ============================================================
+
+- name: "[OpenWebUI Branding] Restart OpenWebUI to apply branding"
+  command: podman restart {{ ai_stack.openwebui.name }}
+  tags: ['ai-stack', 'openwebui', 'branding']
+
+- name: "[OpenWebUI Branding] Wait for OpenWebUI to come back"
+  uri:
+    url: "http://127.0.0.1:{{ ai_stack.openwebui.port }}/health"
+    method: GET
+    status_code: 200
+  retries: 30
+  delay: 10
+  until: branding_health.status == 200
+  register: branding_health
+  check_mode: no
+  tags: ['ai-stack', 'openwebui', 'branding']
+
+# ============================================================
+# Step 4: Inject assets AFTER startup (so they can't be overwritten)
+# ============================================================
+
+- name: "[OpenWebUI Branding] Inject custom CSS into container"
+  command: >
+    podman cp {{ ai_stack.data_dir }}/openwebui/custom.css
+    {{ ai_stack.openwebui.name }}:/app/backend/open_webui/static/custom.css
+  tags: ['ai-stack', 'openwebui', 'branding']
+
+- name: "[OpenWebUI Branding] Inject logo into container"
+  command: "{{ item }}"
+  loop:
+    - "podman cp {{ ai_stack.data_dir }}/openwebui/logo.png {{ ai_stack.openwebui.name }}:/app/backend/open_webui/static/logo.png"
+    - "podman cp {{ ai_stack.data_dir }}/openwebui/logo.png {{ ai_stack.openwebui.name }}:/app/build/static/logo.png"
+    - "podman cp {{ ai_stack.data_dir }}/openwebui/logo.png {{ ai_stack.openwebui.name }}:/app/backend/open_webui/static/splash.png"
+    - "podman cp {{ ai_stack.data_dir }}/openwebui/logo.png {{ ai_stack.openwebui.name }}:/app/backend/open_webui/static/splash-dark.png"
+    - "podman cp {{ ai_stack.data_dir }}/openwebui/logo.png {{ ai_stack.openwebui.name }}:/app/backend/open_webui/static/favicon.png"
+    - "podman cp {{ ai_stack.data_dir }}/openwebui/logo.png {{ ai_stack.openwebui.name }}:/app/build/favicon.png"
+    - "podman cp {{ ai_stack.data_dir }}/openwebui/logo.png {{ ai_stack.openwebui.name }}:/app/build/static/favicon.png"
+    - "podman cp {{ ai_stack.data_dir }}/openwebui/logo.png {{ ai_stack.openwebui.name }}:/app/backend/data/favicon.png"
+    - "podman cp {{ ai_stack.data_dir }}/openwebui/logo.png {{ ai_stack.openwebui.name }}:/app/backend/open_webui/static/favicon-dark.png"
+    - "podman cp {{ ai_stack.data_dir }}/openwebui/logo.png {{ ai_stack.openwebui.name }}:/app/build/static/favicon-dark.png"
+  when: ai_stack.openwebui.branding.logo_url | default('') | length > 0
+  tags: ['ai-stack', 'openwebui', 'branding']
+
+- name: "[OpenWebUI Branding] Inject favicon assets into container"
+  command: "{{ item }}"
+  loop:
+    - "podman cp {{ ai_stack.data_dir }}/openwebui/favicon.ico {{ ai_stack.openwebui.name }}:/app/backend/open_webui/static/favicon.ico"
+    - "podman cp {{ ai_stack.data_dir }}/openwebui/favicon.svg {{ ai_stack.openwebui.name }}:/app/backend/open_webui/static/favicon.svg"
+    - "podman cp {{ ai_stack.data_dir }}/openwebui/favicon-96x96.png {{ ai_stack.openwebui.name }}:/app/backend/open_webui/static/favicon-96x96.png"
+    - "podman cp {{ ai_stack.data_dir }}/openwebui/apple-touch-icon.png {{ ai_stack.openwebui.name }}:/app/backend/open_webui/static/apple-touch-icon.png"
+  when: ai_stack.openwebui.branding.assets_base_url | default('') | length > 0
+  tags: ['ai-stack', 'openwebui', 'branding']
+
+# ============================================================
+# Step 5: Verify
+# ============================================================
+
+- name: "[OpenWebUI Branding] Verify branding applied"
+  uri:
+    url: "http://127.0.0.1:{{ ai_stack.openwebui.port }}/api/config"
+    method: GET
+    status_code: 200
+  register: branding_check
+  check_mode: no
+  tags: ['ai-stack', 'openwebui', 'branding']
+
+- name: "[OpenWebUI Branding] Display branding result"
+  debug:
+    msg:
+      - "============================================"
+      - "OpenWebUI Branding Applied!"
+      - "============================================"
+      - "Name: {{ branding_check.json.name }}"
+      - "Custom CSS: injected (animated gradient)"
+      - "Logo: {{ ai_stack.openwebui.branding.logo_url | default('not configured') }}"
+      - "Assets: {{ ai_stack.openwebui.branding.assets_base_url | default('not configured') }}"
+      - "============================================"
+  tags: ['ai-stack', 'openwebui', 'branding']
+
+- name: "[OpenWebUI Branding] Cache-bust all static assets in index.html"
+  shell: |
+    EPOCH=$(date +%s)
+    podman exec {{ ai_stack.openwebui.name }} sed -i \
+      -e "s|custom\.css[^\"]*\"|custom.css?v=${EPOCH}\"|" \
+      -e "s|favicon\.png[^\"]*\"|favicon.png?v=${EPOCH}\"|g" \
+      -e "s|favicon\.ico[^\"]*\"|favicon.ico?v=${EPOCH}\"|" \
+      -e "s|favicon\.svg[^\"]*\"|favicon.svg?v=${EPOCH}\"|" \
+      -e "s|favicon-96x96\.png[^\"]*\"|favicon-96x96.png?v=${EPOCH}\"|" \
+      -e "s|splash\.png[^\"]*\"|splash.png?v=${EPOCH}\"|" \
+      -e "s|splash-dark\.png[^\"]*\"|splash-dark.png?v=${EPOCH}\"|" \
+      -e "s|splash-dark\.png'|splash-dark.png?v=${EPOCH}'|"       -e "s|splash\.png'|splash.png?v=${EPOCH}'|"       /app/build/index.html
+    echo "Cache-bust applied: v=${EPOCH}"
+  register: cache_bust_html
+  changed_when: cache_bust_html.rc == 0
+  tags: ['ai-stack', 'openwebui', 'branding']
+
+- name: "[OpenWebUI Branding] Inject favicon cache-bust for JS-loaded sidebar icon"
+  shell: |
+    EPOCH=$(date +%s)
+    podman exec {{ ai_stack.openwebui.name }} sed -i \
+      "s|</head>|<style>img[src*=\"/static/favicon.png\"]{content:url(\"/static/favicon.png?v=${EPOCH}\")!important}</style></head>|" \
+      /app/build/index.html
+    echo "Sidebar icon cache-bust injected: v=${EPOCH}"
+  register: cache_bust_sidebar
+  changed_when: cache_bust_sidebar.rc == 0
+  tags: ['ai-stack', 'openwebui', 'branding']

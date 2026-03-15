@@ -1,0 +1,29 @@
+---
+# Cloudflare Tunnel Role Defaults
+# Container deployed in security-infra-pod (shared-services role)
+
+cloudflared:
+  enabled: true
+  container_name: "cloudflared"
+  image: "docker.io/cloudflare/cloudflared:latest"
+  network: "enterprise_network"
+  memory: "128m"  # Reduced from 256m — using 48MB
+  config_dir: "/opt/compose/cloudflare"
+  tunnel_name: "alpine-vps-tunnel"
+  protocol: "quic"
+  metrics_port: 2000
+  domain: "REDACTED_DOMAIN"
+
+  # Traefik is now in the same pod (security-infra-pod) — use localhost
+  ingress:
+    - hostname: "ssh.REDACTED_DOMAIN"
+      service: "ssh://host.containers.internal:22"
+    - hostname: "REDACTED_DOMAIN"
+      service: "https://localhost:443"
+      no_tls_verify: true
+    - hostname: "*.REDACTED_DOMAIN"
+      service: "https://localhost:443"
+      no_tls_verify: true
+
+# Vault overrides these
+cloudflared_tunnel_token: "VAULT_OVERRIDE"

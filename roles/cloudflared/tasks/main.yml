@@ -1,0 +1,30 @@
+---
+# Cloudflare Tunnel Configuration
+# Container deployment is handled by shared-services role (security-infra-pod)
+# This role only manages configuration files
+
+- name: Create Cloudflare config directory
+  file:
+    path: "{{ cloudflared.config_dir }}"
+    state: directory
+    mode: '0755'
+  tags: ['cloudflared', 'config']
+
+- name: Deploy Cloudflare Tunnel configuration
+  template:
+    src: cloudflared-config.yml.j2
+    dest: "{{ cloudflared.config_dir }}/config.yml"
+    mode: '0644'
+  tags: ['cloudflared', 'config']
+
+- name: Remove old standalone cloudflared container (migrated to security-infra-pod)
+  containers.podman.podman_container:
+    name: "{{ cloudflared.container_name }}"
+    state: absent
+  failed_when: false
+  tags: ['cloudflared', 'cleanup']
+
+- name: Show Cloudflare Tunnel status
+  debug:
+    msg: "Cloudflare Tunnel config deployed: {{ cloudflared.tunnel_name }} (*.{{ cloudflared.domain }}). Container in security-infra-pod."
+  tags: ['cloudflared']

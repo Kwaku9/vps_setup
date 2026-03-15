@@ -1,50 +1,81 @@
-﻿---
-# Monitoring Role - Prometheus, Grafana, Loki, Tempo, Alloy Stack
-# Deploys observability infrastructure with unified telemetry collection
+---
+# Monitoring Role - Split into 5 isolated pods for failure domain isolation
+# metrics-pod: VictoriaMetrics, Grafana, Image Renderer
+# logs-pod: Alloy, Loki
+# tempo-pod: Tempo
+# node-exporter-pod: Node Exporter
+# podman-exporter-pod: Podman Exporter
 
-- name: Create monitoring pod
+# ============================================================================
+# CLEANUP: Remove old monolithic monitoring-pod
+# ============================================================================
+
+- name: Stop old monitoring-pod (migrating to split pods)
   containers.podman.podman_pod:
     name: monitoring-pod
-    network: "{{ podman_network_name | default('enterprise_network') }}"
+    state: absent
+  failed_when: false
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'cleanup']
+
+# ============================================================================
+# METRICS-POD: VictoriaMetrics + Grafana + Image Renderer
+# ============================================================================
+
+- name: Create metrics pod
+  containers.podman.podman_pod:
+    name: metrics-pod
+    network:
+      - "{{ podman_network_name | default('enterprise_network') }}"
+      - "{{ monitoring_network_name | default('monitoring-net') }}"
     state: started
     ports:
-      - "127.0.0.1:3000:3000"    # Grafana (internal - SSH tunnel)
-      - "127.0.0.1:5000:5000"    # CheckMK (internal - SSH tunnel)
-      - "127.0.0.1:9090:9090"    # Prometheus (internal - SSH tunnel)
-      - "127.0.0.1:9100:9100"    # Node Exporter (internal)
-      - "127.0.0.1:3200:3100"    # Loki (internal)
-      - "127.0.0.1:4318:4318"    # Tempo OTLP HTTP (internal)
+      - "127.0.0.1:3000:3000"    # Grafana
+      - "127.0.0.1:8428:8428"    # VictoriaMetrics
+      - "127.0.0.1:9090:9090"    # VictoriaMetrics Prometheus-compatible alias
   when: monitoring.enabled | default(true)
-  tags: ['monitoring', 'pod']
+  tags: ['monitoring', 'metrics-pod', 'pod']
 
-- name: Create Prometheus configuration
+# ── VictoriaMetrics ──
+
+- name: Create VictoriaMetrics data directory
+  file:
+    path: /opt/podman-data/victoriametrics
+    state: directory
+    mode: '0755'
+  when: monitoring.victoriametrics.enabled | default(true)
+  tags: ['monitoring', 'metrics-pod', 'victoriametrics']
+
+- name: Create VictoriaMetrics scrape configuration
   template:
-    src: prometheus.yml.j2
-    dest: /opt/compose/prometheus.yml
+    src: vmscrape.yml.j2
+    dest: /opt/compose/vmscrape.yml
     mode: '0644'
-  when: monitoring.prometheus.enabled | default(true)
-  tags: ['monitoring', 'prometheus']
+  when: monitoring.victoriametrics.enabled | default(true)
+  tags: ['monitoring', 'metrics-pod', 'victoriametrics']
 
-- name: Deploy Prometheus container
+- name: Deploy VictoriaMetrics container
   containers.podman.podman_container:
-    name: prometheus
-    image: "docker.io/prom/prometheus:{{ monitoring.prometheus.version | default('latest') }}"
+    name: victoriametrics
+    image: "docker.io/victoriametrics/victoria-metrics:{{ monitoring.victoriametrics.version | default('v1.115.0') }}"
     state: started
-    pod: monitoring-pod
-    memory: "{{ monitoring.prometheus.memory | default('512m') }}"
+    pod: metrics-pod
+    memory: "{{ monitoring.victoriametrics.memory | default('1536m') }}"
     volumes:
-      - /opt/compose/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - /opt/compose/prometheus-rules:/etc/prometheus/rules:ro
-      - prometheus-data:/prometheus
+      - /opt/podman-data/victoriametrics:/victoria-metrics-data
+      - /opt/compose/vmscrape.yml:/etc/victoriametrics/scrape.yml:ro
     command: >
-      --config.file=/etc/prometheus/prometheus.yml
-      --storage.tsdb.path=/prometheus
-      --storage.tsdb.retention.time={{ monitoring.prometheus.retention | default('15d') }}
-      --web.enable-remote-write-receiver
+      -storageDataPath=/victoria-metrics-data
+      -retentionPeriod={{ monitoring.victoriametrics.retention | default('60') }}
+      -httpListenAddr=:8428
+      -promscrape.config=/etc/victoriametrics/scrape.yml
+      -promscrape.config.strictParse=false
   when:
     - monitoring.enabled | default(true)
-    - monitoring.prometheus.enabled | default(true)
-  tags: ['monitoring', 'prometheus']
+    - monitoring.victoriametrics.enabled | default(true)
+  tags: ['monitoring', 'metrics-pod', 'victoriametrics']
+
+# ── Grafana ──
 
 - name: Create Grafana datasources configuration
   template:
@@ -52,7 +83,7 @@
     dest: /opt/compose/grafana-datasources.yml
     mode: '0644'
   when: monitoring.grafana.enabled | default(true)
-  tags: ['monitoring', 'grafana']
+  tags: ['monitoring', 'metrics-pod', 'grafana']
 
 - name: Create Grafana dashboards configuration
   template:
@@ -60,45 +91,100 @@
     dest: /opt/compose/grafana-dashboards.yml
     mode: '0644'
   when: monitoring.grafana.enabled | default(true)
-  tags: ['monitoring', 'grafana']
+  tags: ['monitoring', 'metrics-pod', 'grafana']
+
+- name: Create Grafana dashboards directory
+  file:
+    path: /opt/compose/dashboards
+    state: directory
+    mode: '0755'
+  when: monitoring.grafana.enabled | default(true)
+  tags: ['monitoring', 'metrics-pod', 'grafana']
+
+- name: Copy Grafana dashboard JSON files
+  copy:
+    src: "{{ item }}"
+    dest: /opt/compose/dashboards/
+    mode: '0644'
+  with_fileglob:
+    - "{{ playbook_dir }}/dashboards/*.json"
+  when: monitoring.grafana.enabled | default(true)
+  tags: ['monitoring', 'metrics-pod', 'grafana']
 
 - name: Deploy Grafana container
   containers.podman.podman_container:
     name: grafana
     image: "docker.io/grafana/grafana:{{ monitoring.grafana.version | default('latest') }}"
     state: started
-    pod: monitoring-pod
+    pod: metrics-pod
+    memory: "{{ monitoring.grafana.memory | default('300m') }}"
     env:
       GF_SECURITY_ADMIN_USER: "{{ monitoring.grafana.admin_user | default('admin') }}"
       GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_password }}"
-      GF_INSTALL_PLUGINS: ""
+      GF_INSTALL_PLUGINS: "checkmk-cloud-datasource,volkovlabs-echarts-panel"
+      GF_SERVER_ROOT_URL: "https://grafana.REDACTED_DOMAIN"
+      # Image renderer (in-pod on localhost)
+      GF_RENDERING_SERVER_URL: "http://localhost:8081/render"
+      GF_RENDERING_CALLBACK_URL: "http://localhost:3000/"
+      GF_RENDERING_RENDERER_TOKEN: ""
+      # Anonymous auth (needed for image renderer callbacks)
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      # OIDC via Authentik
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: "Authentik"
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: "{{ grafana_oidc_client_id }}"
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: "{{ grafana_oidc_client_secret }}"
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: "https://auth.REDACTED_DOMAIN/application/o/authorize/"
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: "https://auth.REDACTED_DOMAIN/application/o/token/"
+      GF_AUTH_GENERIC_OAUTH_API_URL: "https://auth.REDACTED_DOMAIN/application/o/userinfo/"
+      GF_AUTH_GENERIC_OAUTH_SCOPES: "openid email profile groups"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(groups[*], 'admins') && 'Admin' || 'Viewer'"
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN: "true"
     volumes:
       - grafana-data:/var/lib/grafana
       - /opt/compose/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
       - /opt/compose/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - /opt/compose/dashboards:/var/lib/grafana/dashboards:ro
   when:
     - monitoring.enabled | default(true)
     - monitoring.grafana.enabled | default(true)
-  tags: ['monitoring', 'grafana']
+  tags: ['monitoring', 'metrics-pod', 'grafana']
 
-- name: Deploy Node Exporter container
+# ── Image Renderer (in metrics-pod) ──
+
+- name: Deploy Grafana Image Renderer container
   containers.podman.podman_container:
-    name: node-exporter
-    image: "docker.io/prom/node-exporter:{{ monitoring.node_exporter.version | default('latest') }}"
+    name: renderer
+    image: "docker.io/grafana/grafana-image-renderer:{{ monitoring.image_renderer.version | default('latest') }}"
     state: started
-    pod: monitoring-pod
-    command: >
-      --path.procfs=/host/proc
-      --path.sysfs=/host/sys
-      --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
+    pod: metrics-pod
+    memory: "{{ monitoring.image_renderer.memory | default('32m') }}"
   when:
     - monitoring.enabled | default(true)
-    - monitoring.node_exporter.enabled | default(true)
-  tags: ['monitoring', 'node-exporter']
+    - monitoring.image_renderer.enabled | default(true)
+  tags: ['monitoring', 'metrics-pod', 'image-renderer']
+
+# ============================================================================
+# LOGS-POD: Alloy + Loki
+# ============================================================================
+
+- name: Create logs pod
+  containers.podman.podman_pod:
+    name: logs-pod
+    network:
+      - "{{ podman_network_name | default('enterprise_network') }}"
+      - "{{ monitoring_network_name | default('monitoring-net') }}"
+    state: started
+    ports:
+      - "127.0.0.1:4317:4317"    # Alloy OTLP gRPC
+      - "127.0.0.1:4318:4318"    # Alloy OTLP HTTP
+      - "127.0.0.1:3200:3100"    # Loki API
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'logs-pod', 'pod']
+
+# ── Alloy ──
 
 - name: Create Grafana Alloy configuration
   template:
@@ -106,14 +192,15 @@
     dest: /opt/compose/alloy-config.alloy
     mode: '0644'
   when: monitoring.alloy.enabled | default(true)
-  tags: ['monitoring', 'alloy']
+  tags: ['monitoring', 'logs-pod', 'alloy']
 
 - name: Deploy Grafana Alloy container
   containers.podman.podman_container:
     name: alloy
     image: "docker.io/grafana/alloy:{{ monitoring.alloy.version | default('latest') }}"
     state: started
-    pod: monitoring-pod
+    pod: logs-pod
+    memory: "{{ monitoring.alloy.memory | default('640m') }}"
     command: >
       run
       --server.http.listen-addr=0.0.0.0:12345
@@ -128,31 +215,9 @@
   when:
     - monitoring.enabled | default(true)
     - monitoring.alloy.enabled | default(true)
-  tags: ['monitoring', 'alloy']
+  tags: ['monitoring', 'logs-pod', 'alloy']
 
-- name: Create Tempo configuration
-  template:
-    src: tempo-config.yml.j2
-    dest: /opt/compose/tempo-config.yml
-    mode: '0644'
-  when: monitoring.tempo.enabled | default(true)
-  tags: ['monitoring', 'tempo']
-
-- name: Deploy Grafana Tempo container
-  containers.podman.podman_container:
-    name: tempo
-    image: "docker.io/grafana/tempo:{{ monitoring.tempo.version | default('latest') }}"
-    state: started
-    pod: monitoring-pod
-    memory: "{{ monitoring.tempo.memory | default('768m') }}"
-    command: "-config.file=/etc/tempo/tempo.yml"
-    volumes:
-      - /opt/compose/tempo-config.yml:/etc/tempo/tempo.yml:ro
-      - tempo-data:/var/tempo
-  when:
-    - monitoring.enabled | default(true)
-    - monitoring.tempo.enabled | default(true)
-  tags: ['monitoring', 'tempo']
+# ── Loki ──
 
 - name: Create Loki configuration
   template:
@@ -160,14 +225,15 @@
     dest: /opt/compose/loki-config.yml
     mode: '0644'
   when: monitoring.loki.enabled | default(true)
-  tags: ['monitoring', 'loki']
+  tags: ['monitoring', 'logs-pod', 'loki']
 
 - name: Deploy Loki container
   containers.podman.podman_container:
     name: loki
     image: "docker.io/grafana/loki:{{ monitoring.loki.version | default('latest') }}"
     state: started
-    pod: monitoring-pod
+    pod: logs-pod
+    memory: "{{ monitoring.loki.memory | default('768m') }}"
     volumes:
       - /opt/compose/loki-config.yml:/etc/loki/local-config.yaml:ro
       - loki-data:/loki
@@ -175,37 +241,170 @@
   when:
     - monitoring.enabled | default(true)
     - monitoring.loki.enabled | default(true)
-  tags: ['monitoring', 'loki']
+  tags: ['monitoring', 'logs-pod', 'loki']
 
-- name: Deploy CheckMK container
-  containers.podman.podman_container:
-    name: checkmk
-    image: "{{ monitoring.checkmk.image | default('checkmk/check-mk-raw:2.3.0-daily') }}"
+# ============================================================================
+# TEMPO-POD: Tempo (isolated trace backend)
+# ============================================================================
+
+- name: Create tempo pod
+  containers.podman.podman_pod:
+    name: tempo-pod
+    network:
+      - "{{ podman_network_name | default('enterprise_network') }}"
+      - "{{ monitoring_network_name | default('monitoring-net') }}"
     state: started
-    pod: monitoring-pod
-    env:
-      CMK_SITE_ID: "{{ monitoring.checkmk.site_name | default('cmk') }}"
+    ports:
+      - "127.0.0.1:4320:4320"    # OTLP HTTP (from Alloy)
+      - "127.0.0.1:3201:3200"    # Tempo API/metrics
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'tempo-pod', 'pod']
+
+- name: Create Tempo configuration
+  template:
+    src: tempo-config.yml.j2
+    dest: /opt/compose/tempo-config.yml
+    mode: '0644'
+  when: monitoring.tempo.enabled | default(true)
+  tags: ['monitoring', 'tempo-pod', 'tempo']
+
+- name: Deploy Grafana Tempo container
+  containers.podman.podman_container:
+    name: tempo
+    image: "docker.io/grafana/tempo:{{ monitoring.tempo.version | default('latest') }}"
+    state: started
+    pod: tempo-pod
+    memory: "{{ monitoring.tempo.memory | default('384m') }}"
+    command: "-config.file=/etc/tempo/tempo.yml"
     volumes:
-      - checkmk-data:/omd/sites
-    tmpfs:
-      "/opt/omd/sites/{{ monitoring.checkmk.site_name | default('cmk') }}/tmp": "rw,noexec,nosuid,size=1g"
+      - /opt/compose/tempo-config.yml:/etc/tempo/tempo.yml:ro
+      - tempo-data:/var/tempo
   when:
     - monitoring.enabled | default(true)
-    - monitoring.checkmk.enabled | default(true)
-  tags: ['monitoring', 'checkmk']
+    - monitoring.tempo.enabled | default(true)
+  tags: ['monitoring', 'tempo-pod', 'tempo']
+
+# ============================================================================
+# NODE-EXPORTER-POD: Host metrics (isolated failure domain)
+# ============================================================================
+
+- name: Create node-exporter pod
+  containers.podman.podman_pod:
+    name: node-exporter-pod
+    network:
+      - "{{ monitoring_network_name | default('monitoring-net') }}"
+    state: started
+    ports:
+      - "127.0.0.1:9100:9100"    # Node Exporter metrics
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'node-exporter-pod', 'pod']
+
+- name: Create textfile collector directory
+  file:
+    path: /opt/compose/textfile-collector
+    state: directory
+    mode: '0755'
+  when: monitoring.node_exporter.enabled | default(true)
+  tags: ['monitoring', 'node-exporter-pod', 'node-exporter']
+
+- name: Deploy Node Exporter container
+  containers.podman.podman_container:
+    name: node-exporter
+    image: "docker.io/prom/node-exporter:{{ monitoring.node_exporter.version | default('latest') }}"
+    state: started
+    pod: node-exporter-pod
+    memory: "{{ monitoring.node_exporter.memory | default('128m') }}"
+    command: >
+      --path.procfs=/host/proc
+      --path.sysfs=/host/sys
+      --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+      --collector.textfile.directory=/textfile-collector
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      - /opt/compose/textfile-collector:/textfile-collector:ro
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.node_exporter.enabled | default(true)
+  tags: ['monitoring', 'node-exporter-pod', 'node-exporter']
+
+# ============================================================================
+# PODMAN-EXPORTER-POD: Container metrics (isolated failure domain)
+# ============================================================================
+
+- name: Create podman-exporter pod
+  containers.podman.podman_pod:
+    name: podman-exporter-pod
+    network:
+      - "{{ monitoring_network_name | default('monitoring-net') }}"
+    state: started
+    ports:
+      - "127.0.0.1:9882:9882"    # Podman Exporter metrics
+  when: monitoring.enabled | default(true)
+  tags: ['monitoring', 'podman-exporter-pod', 'pod']
+
+- name: Deploy Podman Exporter container
+  containers.podman.podman_container:
+    name: podman-exporter
+    image: "quay.io/navidys/prometheus-podman-exporter:{{ monitoring.podman_exporter.version | default('v1.14.0') }}"
+    state: started
+    pod: podman-exporter-pod
+    memory: "{{ monitoring.podman_exporter.memory | default('96m') }}"
+    volumes:
+      - /run/podman/podman.sock:/run/podman/podman.sock:ro
+  when:
+    - monitoring.enabled | default(true)
+    - monitoring.podman_exporter.enabled | default(true)
+  tags: ['monitoring', 'podman-exporter-pod', 'podman-exporter']
+
+# ============================================================================
+# DEPENDENCY HEALTH MONITOR
+# ============================================================================
+
+- name: Create monitoring scripts directory
+  file:
+    path: /opt/compose/monitoring
+    state: directory
+    mode: '0755'
+  when: monitoring.dep_health_check.enabled | default(true)
+  tags: ['monitoring', 'dep-health']
+
+- name: Deploy dependency health check script
+  template:
+    src: dep-health-check.sh.j2
+    dest: /opt/compose/monitoring/dep-health-check.sh
+    mode: '0755'
+  when: monitoring.dep_health_check.enabled | default(true)
+  tags: ['monitoring', 'dep-health']
+
+- name: Configure dep-health-check cron job
+  cron:
+    name: "dependency health check"
+    minute: "*/2"
+    job: "/opt/compose/monitoring/dep-health-check.sh > /dev/null 2>&1"
+  when: monitoring.dep_health_check.enabled | default(true)
+  tags: ['monitoring', 'dep-health']
+
+# ============================================================================
+# STATUS
+# ============================================================================
 
 - name: Display monitoring stack status
   debug:
     msg:
-      - "Monitoring stack deployed successfully"
-      - "  Components: Prometheus, Grafana, Loki, Tempo, Alloy, Node Exporter, CheckMK"
+      - "Monitoring stack deployed successfully (5 isolated pods)"
+      - "  metrics-pod: VictoriaMetrics, Grafana, Image Renderer"
+      - "  logs-pod: Alloy, Loki"
+      - "  tempo-pod: Tempo"
+      - "  node-exporter-pod: Node Exporter"
+      - "  podman-exporter-pod: Podman Exporter"
       - ""
       - "Access URLs:"
       - "  Grafana: http://{{ ansible_host }}:3000"
-      - "  Prometheus: http://{{ ansible_host }}:9090"
-      - "  Tempo (OTLP HTTP): http://{{ ansible_host }}:4318"
-      - "  CheckMK: http://{{ ansible_host }}:5000/{{ monitoring.checkmk.site_name | default('cmk') }}"
-      - ""
-      - "Note: Loki (port 3200), Alloy (internal), and Node Exporter (port 9100) are accessible within the pod"
+      - "  VictoriaMetrics: http://{{ ansible_host }}:8428"
+      - "  Loki: http://{{ ansible_host }}:3200"
+      - "  Tempo API: http://{{ ansible_host }}:3201"
+      - "  OTLP HTTP: http://{{ ansible_host }}:4318"
   when: monitoring.enabled | default(true)
   tags: ['monitoring']

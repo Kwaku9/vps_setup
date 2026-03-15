@@ -1,0 +1,177 @@
+# LiteLLM Proxy Configuration
+# Managed by Ansible — do not edit manually on the VPS
+#
+# Baseline models defined here; additional models can be added via LiteLLM UI
+# (STORE_MODEL_IN_DB=True merges DB models with config-file models).
+# Provider API keys are passed as container env vars from Ansible Vault.
+
+model_list:
+  # ── OpenAI (direct API) ──
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: o3-mini
+    litellm_params:
+      model: openai/o3-mini
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: dall-e-3
+    litellm_params:
+      model: dall-e-3
+      api_key: os.environ/OPENAI_API_KEY
+
+  # ── Vertex AI Image Generation ──
+  - model_name: imagen-3
+    litellm_params:
+      model: vertex_ai/imagen-3.0-generate-001
+      vertex_project: "aicortexi-web-search"
+      vertex_location: "us-central1"
+      vertex_credentials: "/app/vertex-ai-key.json"
+
+  # ── Image-in / Image-out (via OpenRouter) ──
+  - model_name: gemini-2.5-flash-image
+    litellm_params:
+      model: openrouter/google/gemini-2.5-flash-image
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: gemini-3-pro-image
+    litellm_params:
+      model: openrouter/google/gemini-3-pro-image-preview
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: gpt-5-image
+    litellm_params:
+      model: openrouter/openai/gpt-5-image
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: gpt-5-image-mini
+    litellm_params:
+      model: openrouter/openai/gpt-5-image-mini
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # ── Anthropic (direct API) ──
+  - model_name: claude-sonnet-4-5
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5-20250929
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: claude-haiku-4-5
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # ── Google Gemini (via OpenRouter) ──
+  - model_name: gemini-2.5-pro
+    litellm_params:
+      model: openrouter/google/gemini-2.5-pro
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: gemini-2.5-flash
+    litellm_params:
+      model: openrouter/google/gemini-2.5-flash
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: gemini-2.0-flash
+    litellm_params:
+      model: openrouter/google/gemini-2.0-flash-001
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # ── Mistral (via OpenRouter) ──
+  - model_name: mistral-large
+    litellm_params:
+      model: openrouter/mistralai/mistral-large-2512
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # ── DeepSeek (direct API) ──
+  - model_name: deepseek-r1
+    litellm_params:
+      model: deepseek/deepseek-reasoner
+      api_key: os.environ/DEEPSEEK_API_KEY
+  - model_name: deepseek-chat
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+
+  # ── Cohere (direct API) ──
+  - model_name: command-r-plus
+    litellm_params:
+      model: cohere/command-r-plus-08-2024
+      api_key: os.environ/COHERE_API_KEY
+  - model_name: command-r
+    litellm_params:
+      model: cohere/command-r-08-2024
+      api_key: os.environ/COHERE_API_KEY
+
+  # ── XAI (direct API) ──
+  - model_name: grok-3
+    litellm_params:
+      model: xai/grok-3
+      api_key: os.environ/XAI_API_KEY
+  - model_name: grok-3-mini
+    litellm_params:
+      model: xai/grok-3-mini
+      api_key: os.environ/XAI_API_KEY
+
+  # ── Groq (fast inference) ──
+  - model_name: groq-llama-3.3-70b
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+  - model_name: groq-llama-3.1-8b
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: os.environ/GROQ_API_KEY
+  - model_name: groq-qwen3-32b
+    litellm_params:
+      model: groq/qwen/qwen3-32b
+      api_key: os.environ/GROQ_API_KEY
+
+  # ── Google Gemma (via OpenRouter) ──
+  - model_name: gemma-2-27b
+    litellm_params:
+      model: openrouter/google/gemma-2-27b-it
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # ── Meta Llama (via OpenRouter) ──
+  - model_name: llama-3.3-70b
+    litellm_params:
+      model: openrouter/meta-llama/llama-3.3-70b-instruct
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # ── Image Generation (via OpenRouter) ──
+  - model_name: flux-klein
+    litellm_params:
+      model: openrouter/black-forest-labs/flux.2-klein-4b
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # ── OpenRouter Routing ──
+  - model_name: openrouter/auto
+    litellm_params:
+      model: openrouter/auto
+      api_key: os.environ/OPENROUTER_API_KEY
+  # Wildcard: proxy any OpenRouter model on demand.
+  # Model visibility is controlled by Open WebUI (is_active flag in model_tiers.yml),
+  # NOT by LiteLLM. This wildcard just makes models callable.
+  - model_name: "openrouter/*"
+    litellm_params:
+      model: "openrouter/*"
+      api_key: os.environ/OPENROUTER_API_KEY
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  store_model_in_db: true
+  # Map OpenWebUI user headers to LiteLLM end-user tracking.
+  # OpenWebUI sends X-OpenWebUI-User-Email when ENABLE_FORWARD_USER_INFO_HEADERS=true.
+  # LiteLLM auto-creates end-users and tracks per-user spend.
+  user_header_name: "x-openwebui-user-email"
+
+litellm_settings:
+  # OpenTelemetry: emit traces for every LLM call (per-model latency, tokens, cost, user)
+  callbacks: ["otel"]
+  # Prometheus: expose /metrics endpoint for scraping (RED metrics)
+  service_callbacks: ["prometheus"]
+  # Tag spend logs with OpenWebUI user metadata for filtering/reporting
+  extra_spend_tag_headers:
+    - "x-openwebui-user-id"
+    - "x-openwebui-user-email"
+    - "x-openwebui-user-name"
+    - "x-openwebui-user-role"

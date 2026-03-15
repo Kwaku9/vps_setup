@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Parse Squid JSON access log and summarize outbound traffic per container/pod."""
+
+import json
+import sys
+from collections import defaultdict
+
+# Updated for split pod architecture (2026-03-14)
+IP_MAP = {
+    "10.89.0.2": "security-pod",
+    "10.89.0.3": "frontend-pod",
+    "10.89.0.4": "ai-stack-pod",
+    "10.89.0.5": "management-pod",
+    "10.89.0.6": "authentication-pod",
+    "10.89.0.9": "google-docs-mcp",
+    "REDACTED_DNS1": "telegram-gw-pod",
+    "REDACTED_DNS3": "metrics-pod",
+    "REDACTED_DNS4": "security-infra-pod",
+    "REDACTED_DNS8": "shared-db-pod",
+    "REDACTED_DNS9": "shared-cache-pod",
+}
+
+LOG_FILE = "/var/log/squid/access-json.log"
+
+# container -> {domain: count}
+traffic = defaultdict(lambda: defaultdict(int))
+total = 0
+
+with open(LOG_FILE) as f:
+    for line in f:
+        try:
+            d = json.loads(line.strip())
+            ip = d.get("src_ip", "?")
+            name = IP_MAP.get(ip, ip)
+            sni = d.get("sni", "-")
+            domain = d.get("domain", "-")
+            dest = sni if sni and sni != "-" else domain
+            traffic[name][dest] += 1
+            total += 1
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+print(f"Squid Egress Discovery Report — {total} requests logged")
+print("=" * 70)
+
+for container in sorted(traffic.keys()):
+    domains = traffic[container]
+    print(f"\n{container} ({sum(domains.values())} requests)")
+    for domain, count in sorted(domains.items(), key=lambda x: -x[1]):
+        print(f"  {count:5d}  {domain}")
+
+print(f"\n{'=' * 70}")
+print("Containers with NO outbound traffic:")
+for name in sorted(set(IP_MAP.values()) - set(traffic.keys())):
+    print(f"  {name}")

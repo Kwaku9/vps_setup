@@ -1,0 +1,114 @@
+﻿---
+# Alpine Linux Podman Enterprise Stack Deployment
+# Main playbook for deploying containerized infrastructure
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts site.yml
+#   ansible-playbook -i inventory/hosts site.yml --tags "security"
+#   ansible-playbook -i inventory/hosts site.yml --skip-tags "monitoring"
+
+- name: Deploy Alpine Linux Podman Enterprise Stack
+  hosts: alpine_servers
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - all.yml    # Load global configuration variables
+    - vault.yml  # Load encrypted credentials (overrides all.yml)
+
+  roles:
+    - role: base
+      tags: ['base', 'always']
+
+    - role: container-runtime
+      tags: ['container-runtime', 'podman']
+
+    - role: claude-prep
+      tags: ['claude-prep', 'claude']
+      when: claude.enabled | default(true)
+
+    - role: gemini-prep
+      tags: ['gemini-prep', 'gemini']
+      when: gemini.enabled | default(true)
+
+    - role: cloudflared
+      tags: ['cloudflared', 'tunnel']
+      when: cloudflared.enabled | default(true)
+
+    - role: shared-services
+      tags: ['shared-services', 'services']
+
+    - role: management
+      tags: ['management', 'admin']
+      when: management.enabled | default(true)
+
+    - role: monitoring
+      tags: ['monitoring', 'observability']
+      
+    - role: security
+      tags: ['security', 'hardening']
+
+    - role: authentication
+      tags: ['authentication', 'sso', 'auth']
+      when: authentication.enabled | default(true)
+
+    - role: ai-stack
+      tags: ['ai-stack', 'openwebui', 'searxng']
+      when: ai_stack.enabled | default(true)
+
+    - role: journey-tracker
+      tags: ['journey-tracker', 'timeline']
+      when: journey_tracker.enabled | default(true)
+
+    - role: worldview
+      tags: ['worldview', 'geo']
+      when: worldview.enabled | default(true)
+
+    # squid-proxy merged into security role (host-level service)
+
+    - role: frontend
+      tags: ['frontend', 'web']
+      when: deploy_frontend | default(true)
+
+    - role: backend
+      tags: ['backend', 'api']
+      when: deploy_backend | default(true)
+
+  post_tasks:
+    - name: Display deployment summary
+      debug:
+        msg:
+          - "============================================"
+          - "Alpine Podman Enterprise Stack Deployed!"
+          - "============================================"
+          - ""
+          - "POD ARCHITECTURE (16 pods, 0 standalone):"
+          - "  security-infra-pod: Traefik, Cloudflared, CrowdSec"
+          - "  metrics-pod: VictoriaMetrics, Grafana, Renderer"
+          - "  logs-pod: Alloy, Loki"
+          - "  tempo-pod: Tempo"
+          - "  node-exporter-pod: Node Exporter"
+          - "  podman-exporter-pod: Podman Exporter"
+          - "  ai-stack-pod: OpenWebUI, LiteLLM, PostgreSQL, SearxNG"
+          - "  authentication-pod: Authentik Server, Worker, PostgreSQL"
+          - "  management-pod: Portainer"
+          - "  frontend-pod: Nginx, Atlas Charts, Journey Tracker"
+          - "  backend-pod: ibeam, ib-mcp-server"
+          - "  shared-db-pod: PostgreSQL"
+          - "  shared-cache-pod: Redis"
+          - "  security-pod: Trivy, Wazuh"
+          - ""
+          - "NETWORKS:"
+          - "  enterprise_network (REDACTED_CIDR) - Cross-pod routing"
+          - "  monitoring-net (REDACTED_CIDR) - OTEL/scrape isolation"
+          - ""
+          - "ACCESS (via Cloudflare Tunnel):"
+          - "  Grafana: https://grafana.REDACTED_DOMAIN"
+          - "  OpenWebUI: https://chat.REDACTED_DOMAIN"
+          - "  Portainer: https://portainer.REDACTED_DOMAIN"
+          - "  Authentik: https://auth.REDACTED_DOMAIN"
+          - ""
+          - "SECURITY: Only SSH (22) exposed to internet"
+          - "All services behind Cloudflare Tunnel -> Traefik -> Authentik OIDC"
+          - "============================================"
+      tags: ['always']

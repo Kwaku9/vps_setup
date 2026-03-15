@@ -1,0 +1,294 @@
+/* AICORTEX Custom Branding - Managed by Ansible
+ * Forces a dark, animated gradient background across all modes.
+ * Overrides both light and dark Tailwind classes for consistency.
+ * Docs: docs/OPENWEBUI_BRANDING.md
+ */
+
+/* ============================================
+   1. Animated gradient background
+   ============================================ */
+
+html, html.light, html.dark {
+  background: linear-gradient(135deg, #0a0a0a, #1a1a2e, #16213e, #0f0f23) !important;
+  background-size: 400% 400% !important;
+  animation: aicortex-gradient 15s ease infinite !important;
+  color-scheme: dark !important;
+}
+
+body {
+  background: transparent !important;
+}
+
+@keyframes aicortex-gradient {
+  0%   { background-position: 0% 50%; }
+  25%  { background-position: 100% 25%; }
+  50%  { background-position: 100% 50%; }
+  75%  { background-position: 0% 75%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ============================================
+   2. Remove ALL opaque page-level backgrounds
+   ============================================ */
+
+/* Main app wrapper - covers both light and dark mode */
+.bg-white,
+.bg-gray-50,
+.bg-gray-100,
+.bg-gray-200 {
+  background-color: transparent !important;
+}
+
+.bg-gray-800,
+.bg-gray-850,
+.bg-gray-900,
+.bg-gray-950 {
+  background-color: transparent !important;
+}
+
+/* ============================================
+   3. Force light text for readability
+   ============================================ */
+
+.text-gray-700,
+.text-gray-800,
+.text-gray-900,
+.text-black {
+  color: #d1d5db !important;
+}
+
+.text-gray-500,
+.text-gray-600 {
+  color: #9ca3af !important;
+}
+
+/* ============================================
+   4. Sidebar - frosted glass
+   ============================================ */
+
+nav,
+[class*="sidebar"] {
+  background-color: rgba(10, 10, 20, 0.5) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+nav .text-gray-700,
+nav .text-gray-500,
+[class*="sidebar"] .text-gray-700 {
+  color: #94a3b8 !important;
+}
+
+/* ============================================
+   5. Top nav gradient fade - force dark
+   ============================================ */
+
+[class*="from-white"],
+[class*="via-white"] {
+  --tw-gradient-from: rgba(10, 10, 26, 0.9) !important;
+  --tw-gradient-via: rgba(10, 10, 26, 0.5) !important;
+  --tw-gradient-to: transparent !important;
+}
+
+/* ============================================
+   6. Chat input area - frosted glass card
+   ============================================ */
+
+.shadow-lg.rounded-3xl,
+[class*="rounded-3xl"][class*="shadow"] {
+  background: rgba(15, 15, 35, 0.4) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border-color: rgba(148, 163, 184, 0.15) !important;
+}
+
+.shadow-lg.rounded-3xl textarea,
+.shadow-lg.rounded-3xl input,
+[class*="rounded-3xl"][class*="shadow"] textarea {
+  color: #e2e8f0 !important;
+}
+
+.shadow-lg.rounded-3xl textarea::placeholder,
+[class*="rounded-3xl"][class*="shadow"] textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* ============================================
+   7. Suggestion cards
+   ============================================ */
+
+ul > li[class*="cursor-pointer"] {
+  background: rgba(15, 15, 35, 0.3) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(148, 163, 184, 0.1) !important;
+  border-radius: 12px !important;
+}
+
+ul > li[class*="cursor-pointer"]:hover {
+  background: rgba(30, 30, 60, 0.5) !important;
+  border-color: rgba(148, 163, 184, 0.25) !important;
+}
+
+/* ============================================
+   8. Update notification banner
+   ============================================ */
+
+div[class*="F1F8FE"],
+div[class*="border"][class*="text-[#2B6CD4]"] {
+  background: rgba(15, 25, 50, 0.6) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+  color: #93c5fd !important;
+}
+
+div[class*="F1F8FE"] a,
+div[class*="border"][class*="text-[#2B6CD4]"] a {
+  color: #60a5fa !important;
+}
+
+/* ============================================
+   9. Login / Auth page
+   ============================================ */
+
+#auth-page,
+#auth-page > .bg-white,
+#auth-page > .bg-black {
+  background-color: transparent !important;
+}
+
+#auth-container {
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* ============================================
+   10. Splash / loading screen
+   ============================================ */
+
+#splash-screen {
+  background: transparent !important;
+}
+
+/* ============================================
+   11. Scrollbar styling
+   ============================================ */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
+}
+
+/* ============================================
+   12. Buttons and interactive elements
+   ============================================ */
+
+button.bg-black {
+  background-color: rgba(30, 30, 50, 0.8) !important;
+  border: 1px solid rgba(148, 163, 184, 0.2) !important;
+}
+
+.hover\:bg-gray-100:hover,
+.hover\:bg-gray-200:hover,
+.dark\:hover\:bg-gray-850:hover,
+.hover\:bg-gray-850:hover {
+  background-color: rgba(148, 163, 184, 0.1) !important;
+}
+
+/* ============================================
+   13. Modals and dialogs - frosted glass
+   ============================================ */
+
+.modal .bg-white,
+.modal .bg-gray-900,
+[role="dialog"] .bg-white,
+[role="dialog"] .bg-gray-900,
+[role="dialog"] .bg-gray-950 {
+  background: rgba(15, 15, 35, 0.85) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(148, 163, 184, 0.1) !important;
+  color: #e2e8f0 !important;
+}
+
+.modal {
+  background: rgba(0, 0, 0, 0.5) !important;
+}
+
+/* ============================================
+   14. Dropdown menus
+   ============================================ */
+
+[class*="dropdown"],
+[role="menu"],
+[role="listbox"] {
+  background: rgba(15, 15, 35, 0.9) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(148, 163, 184, 0.15) !important;
+  color: #e2e8f0 !important;
+}
+
+/* ============================================
+   15. Chat messages area
+   ============================================ */
+
+.bg-gray-50,
+[class*="bg-gray-50"] {
+  background-color: rgba(15, 15, 35, 0.3) !important;
+}
+
+pre, code {
+  background-color: rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ============================================
+   16. Markdown prose - fix bold/heading/body text for dark theme
+   ============================================ */
+
+.markdown-prose,
+.markdown-prose-sm,
+.markdown-prose-xs {
+  --tw-prose-bold: #ffffff !important;
+  --tw-prose-headings: #ffffff !important;
+  --tw-prose-body: #d1d5db !important;
+  --tw-prose-code: #e2e8f0 !important;
+  --tw-prose-quotes: #cbd5e1 !important;
+  --tw-prose-counters: #94a3b8 !important;
+  --tw-prose-bullets: #94a3b8 !important;
+}
+
+/* ============================================
+   17. Links and accents
+   ============================================ */
+
+.text-blue-500,
+.text-blue-600,
+button[class*="text-blue"] {
+  color: #60a5fa !important;
+}
+
+/* ============================================
+   18. Loading/streaming spinner - visible on dark bg
+   ============================================ */
+
+svg path[class*="spinner"] {
+  fill: #94a3b8 !important;
+}
+
+svg:has(path[class*="spinner"]) {
+  color: #94a3b8 !important;
+}

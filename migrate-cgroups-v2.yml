@@ -1,0 +1,259 @@
+---
+# Migrate Alpine Linux to cgroups v2 Unified Mode
+# This playbook configures the system to use cgroups v2 exclusively
+#
+# Requirements:
+#   - Kernel 4.5+ (you have 6.12.38 ✓)
+#   - Alpine Linux 3.12+ (you have 3.22.1 ✓)
+#   - OpenRC cgroups support
+#
+# What this does:
+#   1. Backs up current /etc/rc.conf
+#   2. Configures unified cgroups v2 mode
+#   3. Enables cgroups service at boot
+#   4. Starts cgroups service
+#   5. Verifies configuration
+#   6. Requires reboot for full effect
+
+- name: Migrate to cgroups v2 Unified Mode
+  hosts: alpine_servers
+  become: true
+  gather_facts: true
+
+  vars:
+    backup_dir: /opt/backups/cgroups-migration
+    backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+  tasks:
+    - name: Display current system information
+      debug:
+        msg:
+          - "=========================================="
+          - "cgroups v2 Migration - Pre-flight Check"
+          - "=========================================="
+          - "Kernel: {{ ansible_kernel }}"
+          - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Hostname: {{ ansible_hostname }}"
+          - "=========================================="
+
+    - name: Check kernel version (must be 4.5+)
+      assert:
+        that:
+          - ansible_kernel is version('4.5', '>=')
+        fail_msg: "Kernel {{ ansible_kernel }} does not support cgroups v2 (requires 4.5+)"
+        success_msg: "Kernel {{ ansible_kernel }} supports cgroups v2 ✓"
+
+    - name: Check if cgroups v2 is supported in kernel
+      shell: grep -q cgroup2 /proc/filesystems
+      register: cgroup2_support
+      changed_when: false
+      failed_when: false
+
+    - name: Verify cgroups v2 kernel support
+      assert:
+        that:
+          - cgroup2_support.rc == 0
+        fail_msg: "Kernel does not have cgroups v2 support compiled in"
+        success_msg: "Kernel has cgroups v2 support ✓"
+
+    - name: Create backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Backup current rc.conf
+      copy:
+        src: /etc/rc.conf
+        dest: "{{ backup_dir }}/rc.conf.{{ backup_timestamp }}"
+        remote_src: yes
+        mode: '0644'
+      register: backup_result
+
+    - name: Display backup location
+      debug:
+        msg: "✓ Backed up /etc/rc.conf to {{ backup_result.dest }}"
+
+    - name: Check current cgroup mode
+      shell: grep -E '^rc_cgroup_mode=' /etc/rc.conf || echo "not-set"
+      register: current_cgroup_mode
+      changed_when: false
+
+    - name: Display current cgroup mode
+      debug:
+        msg: "Current setting: {{ current_cgroup_mode.stdout }}"
+
+    - name: Enable cgroups v2 unified mode in rc.conf
+      lineinfile:
+        path: /etc/rc.conf
+        regexp: '^#?rc_cgroup_mode='
+        line: 'rc_cgroup_mode="unified"'
+        state: present
+      register: cgroup_mode_set
+
+    - name: Enable cgroup controllers (optional, for better container support)
+      lineinfile:
+        path: /etc/rc.conf
+        regexp: '^#?rc_cgroup_controllers='
+        line: 'rc_cgroup_controllers=""'
+        state: present
+      register: cgroup_controllers_set
+
+    - name: Check if cgroups service exists
+      stat:
+        path: /etc/init.d/cgroups
+      register: cgroups_service
+
+    - name: Verify cgroups service exists
+      assert:
+        that:
+          - cgroups_service.stat.exists
+        fail_msg: "cgroups init.d service not found - OpenRC package may be incomplete"
+        success_msg: "cgroups service found ✓"
+
+    - name: Enable cgroups service at boot
+      service:
+        name: cgroups
+        enabled: yes
+      register: cgroups_enabled
+
+    - name: Start cgroups service
+      service:
+        name: cgroups
+        state: started
+      register: cgroups_started
+      failed_when: false
+
+    - name: Check cgroups service status
+      command: rc-service cgroups status
+      register: cgroups_status
+      changed_when: false
+      failed_when: false
+
+    - name: Display cgroups service status
+      debug:
+        msg: "{{ cgroups_status.stdout_lines }}"
+
+    - name: Wait for cgroup filesystem to mount
+      wait_for:
+        path: /sys/fs/cgroup/cgroup.controllers
+        timeout: 10
+      failed_when: false
+      register: cgroup_mount_wait
+
+    - name: Check if cgroups v2 is mounted
+      shell: stat -fc %T /sys/fs/cgroup/ 2>/dev/null || echo "not-mounted"
+      register: cgroup_fstype
+      changed_when: false
+
+    - name: Verify cgroup mount type
+      debug:
+        msg:
+          - "Filesystem type: {{ cgroup_fstype.stdout }}"
+          - "Expected: cgroup2fs (after reboot)"
+          - "Note: May show 'sysfs' until reboot"
+
+    - name: Check if unified cgroup hierarchy is available
+      stat:
+        path: /sys/fs/cgroup/cgroup.controllers
+      register: unified_cgroup
+      failed_when: false
+
+    - name: Display migration summary
+      debug:
+        msg:
+          - "============================================"
+          - "cgroups v2 Migration Configuration Complete!"
+          - "============================================"
+          - "✓ Backed up: {{ backup_result.dest }}"
+          - "✓ Mode set: unified (cgroups v2 only)"
+          - "✓ Service enabled: {{ 'yes' if cgroups_enabled.changed or cgroups_enabled.enabled else 'already enabled' }}"
+          - "✓ Service started: {{ 'yes' if cgroups_started.changed else 'already running' }}"
+          - ""
+          - "⚠️  REBOOT REQUIRED"
+          - "============================================"
+          - "The cgroups v2 filesystem will be properly"
+          - "mounted on next boot. Current session may"
+          - "still show v1 behavior."
+          - "============================================"
+
+    - name: Create reboot verification script
+      copy:
+        dest: /root/verify-cgroups-v2.sh
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          echo "=========================================="
+          echo "cgroups v2 Verification Script"
+          echo "=========================================="
+          echo ""
+
+          echo "1. Checking cgroup filesystem type:"
+          FSTYPE=$(stat -fc %T /sys/fs/cgroup/)
+          echo "   Type: $FSTYPE"
+          if [ "$FSTYPE" = "cgroup2fs" ]; then
+              echo "   ✓ cgroups v2 is mounted correctly"
+          else
+              echo "   ✗ Expected cgroup2fs, got $FSTYPE"
+              exit 1
+          fi
+          echo ""
+
+          echo "2. Checking cgroup controllers:"
+          if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+              echo "   Available controllers:"
+              cat /sys/fs/cgroup/cgroup.controllers | tr ' ' '\n' | sed 's/^/     - /'
+              echo "   ✓ Controllers available"
+          else
+              echo "   ✗ cgroup.controllers not found"
+              exit 1
+          fi
+          echo ""
+
+          echo "3. Checking Podman cgroups support:"
+          if command -v podman >/dev/null 2>&1; then
+              podman info --format '{{.Host.CgroupsVersion}}' 2>/dev/null | grep -q "v2" && \
+                  echo "   ✓ Podman is using cgroups v2" || \
+                  echo "   ⚠ Podman may still be using v1"
+          else
+              echo "   - Podman not installed"
+          fi
+          echo ""
+
+          echo "4. Checking for cgroups v1 warning:"
+          if podman info 2>&1 | grep -q "cgroups-v1"; then
+              echo "   ✗ Still seeing cgroups v1 warnings"
+          else
+              echo "   ✓ No cgroups v1 warnings"
+          fi
+          echo ""
+
+          echo "=========================================="
+          echo "Verification Complete!"
+          echo "=========================================="
+
+  post_tasks:
+    - name: Final instructions
+      debug:
+        msg:
+          - ""
+          - "╔════════════════════════════════════════╗"
+          - "║  NEXT STEPS - REBOOT REQUIRED         ║"
+          - "╚════════════════════════════════════════╝"
+          - ""
+          - "1. Reboot your VPS:"
+          - "   ansible alpine_servers -i hosts -m reboot"
+          - "   (or manually: ssh root@REDACTED_IP reboot)"
+          - ""
+          - "2. Wait 2-3 minutes for reboot to complete"
+          - ""
+          - "3. Verify cgroups v2 after reboot:"
+          - "   ssh root@REDACTED_IP /root/verify-cgroups-v2.sh"
+          - ""
+          - "4. Test Podman (should have no v1 warnings):"
+          - "   ssh root@REDACTED_IP podman info"
+          - ""
+          - "If issues occur, restore backup:"
+          - "   cp {{ backup_result.dest }} /etc/rc.conf"
+          - "   rc-service cgroups restart"
+          - ""

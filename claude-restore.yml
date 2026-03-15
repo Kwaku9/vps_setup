@@ -1,0 +1,387 @@
+﻿---
+# Claude Code Backup Restoration Playbook
+# Restores Claude configuration from Windows backup to Alpine Linux VPS
+#
+# Prerequisites:
+#   1. site.yml has been run successfully
+#   2. Backup archive exists at specified path
+#   3. GPG encryption password available
+#
+# Usage:
+#   ansible-playbook -i hosts claude-restore.yml
+#   ansible-playbook -i hosts claude-restore.yml --tags "transfer,restore"
+#   ansible-playbook -i hosts claude-restore.yml --extra-vars "backup_path=/path/to/backup.tar.gz"
+
+- name: Restore Claude Code Configuration to Alpine VPS
+  hosts: alpine_servers
+  become: true
+  gather_facts: true
+
+  vars:
+    # Backup configuration
+    claude_backup_archive: "{{ backup_path | default('claude-config-backup-latest.tar.gz') }}"
+    claude_backup_extract_path: "/tmp/claude-config-restore"
+    claude_user: "root"
+    workspace_base: "/workspace"
+
+    # Decryption
+    prompt_for_decryption_password: true
+
+  tasks:
+    - name: Display restoration banner
+      debug:
+        msg:
+          - "============================================"
+          - "Claude Code Configuration Restoration"
+          - "============================================"
+          - "Source: {{ claude_backup_archive }}"
+          - "Target VPS: {{ ansible_host }}"
+          - "Workspace: {{ workspace_base }}"
+          - "Container Runtime: Podman"
+          - "============================================"
+      tags: ['always']
+
+    # ========================================
+    # PHASE 1: Verify Prerequisites
+    # ========================================
+
+    - name: Verify Claude CLI is installed
+      command: claude --version
+      register: claude_version
+      changed_when: false
+      failed_when: claude_version.rc != 0
+      tags: ['verify', 'always']
+
+    - name: Display Claude CLI version
+      debug:
+        msg: "Γ£ô Claude CLI installed: {{ claude_version.stdout }}"
+      tags: ['verify', 'always']
+
+    - name: Verify Podman is running
+      command: podman --version
+      register: podman_version
+      changed_when: false
+      failed_when: podman_version.rc != 0
+      tags: ['verify', 'always']
+
+    - name: Display Podman version
+      debug:
+        msg: "Γ£ô Podman installed: {{ podman_version.stdout }}"
+      tags: ['verify', 'always']
+
+    - name: Verify workspace directory exists
+      stat:
+        path: "{{ workspace_base }}"
+      register: workspace_stat
+      failed_when: not workspace_stat.stat.exists
+      tags: ['verify', 'always']
+
+    - name: Display workspace status
+      debug:
+        msg: "Γ£ô Workspace exists: {{ workspace_base }}"
+      tags: ['verify', 'always']
+
+    # ========================================
+    # PHASE 2: Transfer and Extract Backup
+    # ========================================
+
+    - name: Create temporary restore directory
+      file:
+        path: "{{ claude_backup_extract_path }}"
+        state: directory
+        mode: '0700'
+      tags: ['transfer']
+
+    - name: Transfer backup archive to VPS
+      copy:
+        src: "{{ claude_backup_archive }}"
+        dest: "/tmp/claude-config-backup.tar.gz"
+        mode: '0600'
+      tags: ['transfer']
+
+    - name: Extract backup archive
+      unarchive:
+        src: "/tmp/claude-config-backup.tar.gz"
+        dest: "{{ claude_backup_extract_path }}"
+        remote_src: yes
+        owner: "{{ claude_user }}"
+        group: "{{ claude_user }}"
+      tags: ['transfer']
+
+    - name: Verify manifest.json exists
+      stat:
+        path: "{{ claude_backup_extract_path }}/manifest.json"
+      register: manifest_stat
+      failed_when: not manifest_stat.stat.exists
+      tags: ['transfer']
+
+    - name: Read backup manifest
+      slurp:
+        src: "{{ claude_backup_extract_path }}/manifest.json"
+      register: manifest_content
+      tags: ['transfer']
+
+    - name: Parse manifest
+      set_fact:
+        manifest: "{{ manifest_content.content | b64decode | from_json }}"
+      tags: ['transfer']
+
+    - name: Display backup metadata
+      debug:
+        msg:
+          - "Backup Timestamp: {{ manifest.backup_metadata.timestamp }}"
+          - "Source Platform: {{ manifest.backup_metadata.source_platform }}"
+          - "Backup Mode: {{ manifest.backup_metadata.backup_mode }}"
+          - "Total Files: {{ manifest.statistics.total_files }}"
+          - "Total Size: {{ manifest.statistics.total_size_mb }} MB"
+      tags: ['transfer']
+
+    # ========================================
+    # PHASE 3: Restore User Configuration
+    # ========================================
+
+    - name: Restore user config directory
+      copy:
+        src: "{{ claude_backup_extract_path }}/user-config/"
+        dest: "/root/.claude/"
+        remote_src: yes
+        mode: preserve
+        owner: "{{ claude_user }}"
+        group: "{{ claude_user }}"
+      tags: ['restore', 'user-config']
+
+    - name: Set proper permissions on user config files
+      file:
+        path: "/root/.claude/{{ item }}"
+        mode: '0600'
+        owner: "{{ claude_user }}"
+        group: "{{ claude_user }}"
+      loop:
+        - settings.json
+        - settings.local.json
+        - mcp_settings.json
+      ignore_errors: yes
+      tags: ['restore', 'user-config']
+
+    # ========================================
+    # PHASE 4: Restore Workspace Configuration
+    # ========================================
+
+    - name: Create workspace .claude directory
+      file:
+        path: "{{ workspace_base }}/.claude"
+        state: directory
+        mode: '0755'
+        owner: "{{ claude_user }}"
+        group: "{{ claude_user }}"
+      tags: ['restore', 'workspace-config']
+
+    - name: Restore workspace config
+      copy:
+        src: "{{ claude_backup_extract_path }}/workspace-config/"
+        dest: "{{ workspace_base }}/.claude/"
+        remote_src: yes
+        mode: preserve
+        owner: "{{ claude_user }}"
+        group: "{{ claude_user }}"
+      tags: ['restore', 'workspace-config']
+
+    - name: Restore project MCP config
+      copy:
+        src: "{{ claude_backup_extract_path }}/.mcp.json"
+        dest: "{{ workspace_base }}/.mcp.json"
+        remote_src: yes
+        mode: '0644'
+        owner: "{{ claude_user }}"
+        group: "{{ claude_user }}"
+      when: manifest.mcp_servers | length > 0
+      ignore_errors: yes
+      tags: ['restore', 'workspace-config']
+
+    # ========================================
+    # PHASE 5: Decrypt Credentials
+    # ========================================
+
+    - name: Check if encrypted credentials exist
+      stat:
+        path: "{{ claude_backup_extract_path }}/credentials"
+      register: credentials_dir
+      tags: ['decrypt']
+
+    - name: Decrypt credentials
+      block:
+        - name: Prompt for decryption password
+          pause:
+            prompt: "Enter backup decryption password"
+            echo: no
+          register: decrypt_password
+          when: prompt_for_decryption_password | default(true)
+          tags: ['decrypt']
+
+        - name: Find encrypted files
+          find:
+            paths: "{{ claude_backup_extract_path }}/credentials"
+            patterns: "*.gpg"
+          register: encrypted_files
+          tags: ['decrypt']
+
+        - name: Decrypt each credential file
+          shell: >
+            echo "{{ decrypt_password.user_input }}" |
+            gpg --batch --yes --passphrase-fd 0
+            --decrypt "{{ item.path }}"
+            > "{{ item.path | regex_replace('\\.gpg$', '') }}"
+          loop: "{{ encrypted_files.files }}"
+          no_log: true
+          tags: ['decrypt']
+
+        - name: Restore decrypted .credentials.json
+          copy:
+            src: "{{ claude_backup_extract_path }}/credentials/.credentials.json"
+            dest: "/root/.claude/.credentials.json"
+            remote_src: yes
+            mode: '0600'
+            owner: "{{ claude_user }}"
+            group: "{{ claude_user }}"
+          when: encrypted_files.matched > 0
+          ignore_errors: yes
+          tags: ['decrypt']
+
+      when: credentials_dir.stat.exists
+      tags: ['decrypt']
+
+    # ========================================
+    # PHASE 6: Restore MCP Server Projects
+    # ========================================
+
+    - name: Restore MCP server source code
+      copy:
+        src: "{{ claude_backup_extract_path }}/mcp-servers/{{ item.name }}/"
+        dest: "{{ workspace_base }}/{{ item.dest }}/"
+        remote_src: yes
+        mode: preserve
+        owner: "{{ claude_user }}"
+        group: "{{ claude_user }}"
+      loop:
+        - { name: "google-docs-drive", dest: "mcp-googledocs-server" }
+        - { name: "ibkr-trading", dest: "IB_MCP" }
+        - { name: "trade-replay", dest: "trade_replay_mcp" }
+        - { name: "whisper-mcp", dest: "whisper-mcp" }
+        - { name: "voice-hooks", dest: "mcp-voice-hooks" }
+        - { name: "n8n-mcp", dest: "n8n-mcp" }
+        - { name: "n8n-claude", dest: "n8n-claude" }
+      ignore_errors: yes
+      tags: ['restore', 'mcp-servers']
+
+    # ========================================
+    # PHASE 7: Build and Start MCP Containers
+    # ========================================
+
+    - name: Build Google Docs MCP container
+      containers.podman.podman_image:
+        name: google-docs-mcp
+        path: "{{ workspace_base }}/mcp-googledocs-server"
+        tag: latest
+        build:
+          file: Dockerfile
+      when: claude.mcp_servers.google_docs.enabled | default(true)
+      tags: ['containers', 'build']
+
+    - name: Start Google Docs MCP container
+      containers.podman.podman_container:
+        name: Google-Drive-Docs-mcp
+        image: google-docs-mcp:latest
+        state: started
+        restart_policy: always
+        network: "{{ podman_network_name | default('enterprise_network') }}"
+        volumes:
+          - "{{ workspace_base }}/mcp-googledocs-server:/app"
+      when: claude.mcp_servers.google_docs.enabled | default(true)
+      tags: ['containers', 'start']
+
+    - name: Build n8n-Claude container
+      containers.podman.podman_image:
+        name: n8n-claude
+        path: "{{ workspace_base }}/n8n-claude"
+        tag: latest
+        build:
+          file: Dockerfile
+      when: claude.mcp_servers.n8n_claude.enabled | default(true)
+      tags: ['containers', 'build']
+
+    - name: Start n8n-Claude stack with podman-compose
+      shell: |
+        cd {{ workspace_base }}/n8n-claude
+        podman-compose up -d
+      args:
+        executable: /bin/bash
+      when: claude.mcp_servers.n8n_claude.enabled | default(true)
+      tags: ['containers', 'start']
+
+    # Add similar blocks for other MCP containers as needed
+
+    # ========================================
+    # PHASE 8: Verification
+    # ========================================
+
+    - name: Verify Claude config restored
+      stat:
+        path: "/root/.claude/mcp_settings.json"
+      register: claude_config_check
+      tags: ['verify']
+
+    - name: Verify MCP containers running
+      command: podman ps --format "table {{.Names}}\t{{.Status}}"
+      register: container_status
+      changed_when: false
+      tags: ['verify']
+
+    - name: Display container status
+      debug:
+        var: container_status.stdout_lines
+      tags: ['verify']
+
+    - name: Cleanup temporary files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/tmp/claude-config-backup.tar.gz"
+        - "{{ claude_backup_extract_path }}"
+      tags: ['cleanup']
+
+    # ========================================
+    # FINAL SUMMARY
+    # ========================================
+
+  post_tasks:
+    - name: Display restoration summary
+      debug:
+        msg:
+          - "============================================"
+          - "Claude Code Restoration Complete!"
+          - "============================================"
+          - "Γ£ô User config restored to /root/.claude/"
+          - "Γ£ô Workspace config restored to {{ workspace_base }}/.claude/"
+          - "Γ£ô MCP server projects restored"
+          - "Γ£ô Containers started"
+          - ""
+          - "Next Steps:"
+          - "1. Test Claude CLI: claude --version"
+          - "2. Verify MCP servers: podman ps"
+          - "3. Check logs: podman logs <container-name>"
+          - "4. Start Claude session: cd {{ workspace_base }} && claude"
+          - ""
+          - "MCP Containers Status:"
+      tags: ['always']
+
+    - name: Show final container list
+      command: podman ps --format "  - {{.Names}} ({{.Status}})"
+      register: final_containers
+      changed_when: false
+      tags: ['always']
+
+    - name: Display final container list
+      debug:
+        var: final_containers.stdout_lines
+      tags: ['always']

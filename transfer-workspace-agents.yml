@@ -1,0 +1,76 @@
+---
+# ============================================================
+# Workspace-Level Configuration Transfer Playbook
+# ============================================================
+# Transfers entire .claude directory from Windows to VPS
+# at the workspace level (/workspace/.claude/)
+#
+# This includes:
+#   - Custom agents (real estate pipeline, n8n, etc.)
+#   - Workflows
+#   - Documentation (COMMANDS.md, PROJECT_STATUS.md, SCRIPTS.md, etc.)
+#   - Workspace settings (settings.local.json)
+#
+# All content will be available to ALL projects under /workspace
+#
+# Usage:
+#   ansible-playbook -i hosts transfer-workspace-agents.yml
+# ============================================================
+
+- name: Transfer Workspace-Level Claude Code Configuration to VPS
+  hosts: alpine_servers
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    - name: Display transfer information
+      debug:
+        msg:
+          - "============================================"
+          - "Workspace Configuration Transfer"
+          - "============================================"
+          - "Source: C:\\Users\\swirl\\VScdeProjects\\.claude"
+          - "Destination: /workspace/.claude/"
+          - ""
+          - "Transferring:"
+          - "  - agents/ (8 custom agents)"
+          - "  - workflows/ (workflow definitions)"
+          - "  - COMMANDS.md (20 KB)"
+          - "  - PROJECT_STATUS.md (23 KB)"
+          - "  - SCRIPTS.md (12 KB)"
+          - "  - SUBAGENTS-REFERENCE.md (20 KB)"
+          - "  - RealEstateListings_Workflow_FilePaths.md (10 KB)"
+          - "  - settings.local.json"
+          - "============================================"
+      tags: ['always']
+
+    - name: Include workspace configuration transfer tasks
+      include_role:
+        name: claude-prep
+        tasks_from: transfer-workspace-agents
+      tags: ['workspace-config']
+
+    - name: Display post-transfer instructions
+      debug:
+        msg:
+          - "============================================"
+          - "Workspace Configuration Transfer Complete!"
+          - "============================================"
+          - ""
+          - "Your workspace configuration is now at:"
+          - "  /workspace/.claude/"
+          - ""
+          - "Available to ALL projects under /workspace:"
+          - "  - vscode-projects/vps_setup"
+          - "  - pycharm-projects/*"
+          - "  - n8n-claude"
+          - "  - IB_MCP"
+          - "  - And any other project"
+          - ""
+          - "To verify, SSH to VPS and run:"
+          - "  ls -la /workspace/.claude/"
+          - "  ls -la /workspace/.claude/agents/"
+          - "  ls -la /workspace/.claude/workflows/"
+          - ""
+          - "============================================"
+      tags: ['always']

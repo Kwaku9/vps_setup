@@ -1,0 +1,117 @@
+---
+# AI Stack Role Defaults
+# n8n-claude + OpenWebUI + LiteLLM + Fabric
+
+ai_stack:
+  enabled: true
+  pod_name: "ai-stack-pod"
+  network: "enterprise_network"
+  data_dir: "/opt/podman-data/ai-stack"
+  compose_dir: "/workspace/vscode-projects"
+
+  # n8n with Claude Code CLI
+  n8n_claude:
+    enabled: true
+    name: "n8n-claude"
+    source_path: "n8n/n8n-claude"
+    image: "n8n-claude:latest"
+    port: 5678
+    build: true
+    env:
+      DB_TYPE: "postgresdb"
+      DB_POSTGRESDB_HOST: "127.0.0.1"
+      DB_POSTGRESDB_PORT: "5432"
+      DB_POSTGRESDB_DATABASE: "n8n"
+      DB_POSTGRESDB_USER: "aistack"
+      N8N_PROTOCOL: "http"
+      N8N_HOST: "localhost"
+      N8N_PORT: "5678"
+      NODE_ENV: "production"
+      WEBHOOK_URL: "http://localhost:5678/"
+      CLAUDE_TELEMETRY: "false"
+      NODE_FUNCTION_ALLOW_BUILTIN: "child_process"
+      N8N_RUNNERS_HEARTBEAT_INTERVAL: "60"
+
+  # OpenWebUI
+  openwebui:
+    enabled: true
+    name: "open-webui"
+    image: "ghcr.io/open-webui/open-webui:latest"
+    port: 3100
+    internal_port: 8080
+    env:
+      WEBUI_AUTH: "True"
+      OLLAMA_BASE_URL: "http://127.0.0.1:11434"
+    branding:
+      logo_url: "https://REDACTED_BUCKET.s3.amazonaws.com/logo4.png"
+      assets_base_url: "https://REDACTED_BUCKET.s3.amazonaws.com"
+
+  # LiteLLM Proxy
+  litellm:
+    enabled: true
+    name: "litellm"
+    image: "ghcr.io/berriai/litellm-database:main-latest"
+    port: 4000
+    config_file: "config.yml"
+    env:
+      STORE_MODEL_IN_DB: "True"
+
+  # Fabric API
+  fabric_api:
+    enabled: true
+    name: "fabric-api"
+    source_path: "fabric"
+    image: "fabric-api:latest"
+    port: 8088  # Changed from 8081 to avoid nginx conflict
+    internal_port: 8080
+    build: true
+
+  # Kokoro TTS
+  kokoro_tts:
+    enabled: false
+    name: "kokoro-tts"
+    image: "ghcr.io/remsky/kokoro-fastapi-cpu:latest"
+    port: 8880
+
+  # Claude Monitor Backend
+  claude_monitor_backend:
+    enabled: false
+    name: "claude-monitor-backend"
+    source_path: "n8n/n8n-claude/claude-monitor/backend"
+    image: "claude-monitor-backend:latest"
+    port: 3150
+    build: true
+    env:
+      HOST: "0.0.0.0"
+      PORT: "3150"
+      EVENT_LOG_PATH: "/app/storage/events.jsonl"
+      LOG_LEVEL: "info"
+
+  # Claude Monitor Frontend
+  claude_monitor_frontend:
+    enabled: false
+    name: "claude-monitor-frontend"
+    source_path: "n8n/n8n-claude/claude-monitor/frontend"
+    image: "claude-monitor-frontend:latest"
+    port: 3151
+    internal_port: 80
+    build: true
+
+  # SearxNG (AI search)
+  searxng:
+    enabled: false
+    name: "searxng"
+    image: "docker.io/searxng/searxng:latest"
+    port: 8889
+    internal_port: 8888  # Avoid 8080 conflict with OpenWebUI in same pod
+
+  # PostgreSQL for AI Stack (separate from main postgres)
+  postgres:
+    enabled: true
+    name: "ai-stack-postgres"
+    image: "docker.io/library/postgres:16-alpine"
+    port: 5433  # Different port to avoid conflict with main postgres
+    databases:
+      - litellm
+      - n8n
+    user: "aistack"

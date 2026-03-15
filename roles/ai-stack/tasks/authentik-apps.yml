@@ -1,0 +1,291 @@
+---
+# Authentik Application Configuration
+# Configures the Authentik "My Applications" page:
+#   - Corrects misspelled application display names
+#   - Downloads and assigns app icons from S3
+#   - Sets up group-based visibility (free/paid/admin tiers)
+#
+# Run with: ansible-playbook site.yml --tags authentik-apps
+#
+# Uses a hybrid approach:
+#   - REST API (/api/v3/) for application names and policy bindings
+#   - Django ORM for icon assignment (meta_icon is an ImageField)
+#
+# Icons stored in S3: s3://REDACTED_BUCKET/app-icons/
+# Media volume: /var/lib/containers/storage/volumes/authentik-media/_data/
+#   -> Accessible inside container at /media/
+#
+# Visibility tiers:
+#   - Free:  Open WebUI only
+#   - Paid:  Open WebUI + Grafana
+#   - Admin: All applications
+
+# ============================================================
+# Step 1: Download app icons from S3 to Authentik media volume
+# ============================================================
+
+- name: "[Authentik Apps] Ensure application-icons directory exists"
+  file:
+    path: /var/lib/containers/storage/volumes/authentik-media/_data/public/application-icons
+    state: directory
+    mode: '0755'
+  tags: ['ai-stack', 'authentik', 'authentik-apps']
+
+- name: "[Authentik Apps] Download app icons from S3"
+  get_url:
+    url: "https://REDACTED_BUCKET.s3.amazonaws.com/app-icons/{{ item.file }}"
+    dest: "/var/lib/containers/storage/volumes/authentik-media/_data/public/application-icons/{{ item.file }}"
+    mode: '0644'
+    force: yes
+  loop:
+    - { file: 'checkmk.webp' }
+    - { file: 'cloudflare.webp' }
+    - { file: 'grafana.webp' }
+    - { file: 'litellm.webp' }
+    - { file: 'n8n-color.webp' }
+    - { file: 'openwebui.webp' }
+    - { file: 'portainer.webp' }
+    - { file: 'portal.webp' }
+    - { file: 'promethieus.webp' }
+    - { file: 'sst.webp' }
+    - { file: 'Traefik.webp' }
+  loop_control:
+    label: "{{ item.file }}"
+  tags: ['ai-stack', 'authentik', 'authentik-apps']
+
+# ============================================================
+# Step 2: Set API token for REST API calls
+# ============================================================
+
+- name: "[Authentik Apps] Set API token"
+  set_fact:
+    authentik_token: "{{ authentik_bootstrap_token }}"
+    authentik_api_port: "{{ authentication.authentik.port | default(9000) }}"
+  tags: ['ai-stack', 'authentik', 'authentik-apps']
+
+# ============================================================
+# Step 3: Fix application display names via REST API
+# ============================================================
+
+- name: "[Authentik Apps] Get current applications"
+  uri:
+    url: "http://127.0.0.1:{{ authentik_api_port }}/api/v3/core/applications/?page_size=50"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: authentik_apps_list
+  tags: ['ai-stack', 'authentik', 'authentik-apps']
+
+- name: "[Authentik Apps] Correct application display names"
+  uri:
+    url: "http://127.0.0.1:{{ authentik_api_port }}/api/v3/core/applications/{{ item.slug }}/"
+    method: PATCH
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "{{ item.name }}"
+    status_code: 200
+  loop:
+    - { slug: 'grafana', name: 'Grafana' }
+    - { slug: 'portainer', name: 'Portainer' }
+    - { slug: 'openwebui', name: 'Open WebUI' }
+    - { slug: 'n8n', name: 'n8n' }
+    - { slug: 'litellm', name: 'LiteLLM' }
+    - { slug: 'kokoro-tts', name: 'Kokoro TTS' }
+    - { slug: 'traefik-dashboard', name: 'Traefik Dashboard' }
+  loop_control:
+    label: "{{ item.slug }} -> {{ item.name }}"
+  tags: ['ai-stack', 'authentik', 'authentik-apps']
+
+# ============================================================
+# Step 4: Assign icons via Django ORM
+# ============================================================
+# meta_icon is a Django ImageField — setting the path directly via ORM
+# is the most reliable approach. The REST API requires multipart upload.
+
+- name: "[Authentik Apps] Assign icons to applications"
+  shell: |
+    podman exec authentik-server python << 'PYTHON_EOF'
+    import os, django
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'authentik.root.settings')
+    django.setup()
+    from authentik.core.models import Application
+
+    icon_map = {
+        'checkmk': 'checkmk.webp',
+        'cloudflare-access': 'cloudflare.webp',
+        'grafana': 'grafana.webp',
+        'kokoro-tts': 'sst.webp',
+        'litellm': 'litellm.webp',
+        'n8n': 'n8n-color.webp',
+        'openwebui': 'openwebui.webp',
+        'portainer': 'portainer.webp',
+        'portal': 'portal.webp',
+        'prometheus': 'promethieus.webp',
+        'traefik-dashboard': 'Traefik.webp',
+    }
+
+    changed = 0
+    for app in Application.objects.filter(slug__in=icon_map.keys()):
+        icon_path = f'application-icons/{icon_map[app.slug]}'
+        if app.meta_icon.name != icon_path:
+            app.meta_icon = icon_path
+            app.save()
+            print(f'  Icon set: {app.name} -> {icon_path}')
+            changed += 1
+
+    if changed:
+        print(f'Icons updated: {changed}')
+    else:
+        print('Icons already correct')
+    PYTHON_EOF
+  register: authentik_icons
+  changed_when: "'Icons updated' in authentik_icons.stdout"
+  tags: ['ai-stack', 'authentik', 'authentik-apps']
+
+# ============================================================
+# Step 5: Configure group-based application visibility
+# ============================================================
+# Visibility tiers:
+#   free_users  -> Open WebUI
+#   paid_users  -> Open WebUI, Grafana
+#   admins      -> All applications
+#
+# When an application has policy bindings, only users in a bound
+# group can see/access the app. Superuser groups (authentik Admins)
+# bypass all policies automatically.
+
+- name: "[Authentik Apps] Get all groups"
+  uri:
+    url: "http://127.0.0.1:{{ authentik_api_port }}/api/v3/core/groups/?page_size=50"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: authentik_groups
+  tags: ['ai-stack', 'authentik', 'authentik-apps']
+
+- name: "[Authentik Apps] Extract group PKs"
+  set_fact:
+    group_admins_pk: "{{ (authentik_groups.json.results | selectattr('name', 'equalto', 'admins') | first).pk }}"
+    group_paid_pk: "{{ (authentik_groups.json.results | selectattr('name', 'equalto', 'paid_users') | first).pk }}"
+    group_free_pk: "{{ (authentik_groups.json.results | selectattr('name', 'equalto', 'free_users') | first).pk }}"
+  tags: ['ai-stack', 'authentik', 'authentik-apps']
+
+- name: "[Authentik Apps] Get existing policy bindings"
+  uri:
+    url: "http://127.0.0.1:{{ authentik_api_port }}/api/v3/policies/bindings/?page_size=200"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: authentik_bindings
+  tags: ['ai-stack', 'authentik', 'authentik-apps']
+
+- name: "[Authentik Apps] Delete existing application policy bindings"
+  uri:
+    url: "http://127.0.0.1:{{ authentik_api_port }}/api/v3/policies/bindings/{{ item.pk }}/"
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+    status_code: [204, 404]
+  loop: "{{ authentik_bindings.json.results | default([]) }}"
+  loop_control:
+    label: "{{ item.pk }}"
+  when: item.target is defined
+  tags: ['ai-stack', 'authentik', 'authentik-apps']
+
+- name: "[Authentik Apps] Build visibility map"
+  set_fact:
+    app_visibility: >-
+      {{
+        authentik_apps_list.json.results | map(attribute='pk') | zip(
+          authentik_apps_list.json.results | map(attribute='slug')
+        ) | map('join', ':') | list
+      }}
+  tags: ['ai-stack', 'authentik', 'authentik-apps']
+
+- name: "[Authentik Apps] Create policy bindings for each application"
+  shell: |
+    podman exec authentik-server python << 'PYTHON_EOF'
+    import os, django
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'authentik.root.settings')
+    django.setup()
+    from authentik.policies.models import PolicyBinding
+    from authentik.core.models import Application, Group
+
+    admins = Group.objects.get(name='admins')
+    paid = Group.objects.get(name='paid_users')
+    free = Group.objects.get(name='free_users')
+
+    # Clear all existing app bindings
+    existing = PolicyBinding.objects.filter(target__in=Application.objects.all())
+    deleted = existing.count()
+    if deleted:
+        existing.delete()
+        print(f'  Cleared {deleted} old bindings')
+
+    # Define visibility: slug -> groups
+    created = 0
+    for app in Application.objects.all():
+        if app.slug == 'openwebui':
+            groups = [free, paid, admins]
+        elif app.slug == 'grafana':
+            groups = [paid, admins]
+        else:
+            groups = [admins]
+
+        for i, g in enumerate(groups):
+            PolicyBinding.objects.create(
+                target=app,
+                group=g,
+                order=i,
+                enabled=True,
+                negate=False,
+                timeout=30
+            )
+            created += 1
+        group_names = [g.name for g in groups]
+        print(f'  {app.name}: {group_names}')
+
+    print(f'Policy bindings created: {created}')
+    PYTHON_EOF
+  register: authentik_policies
+  changed_when: "'Policy bindings created' in authentik_policies.stdout"
+  tags: ['ai-stack', 'authentik', 'authentik-apps']
+
+# ============================================================
+# Step 6: Verify all changes
+# ============================================================
+
+- name: "[Authentik Apps] Verify application configuration"
+  uri:
+    url: "http://127.0.0.1:{{ authentik_api_port }}/api/v3/core/applications/?page_size=50"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: authentik_apps_verify
+  tags: ['ai-stack', 'authentik', 'authentik-apps']
+
+- name: "[Authentik Apps] Display results"
+  debug:
+    msg:
+      - "============================================"
+      - "Authentik Applications Configured!"
+      - "============================================"
+      - "{% for app in authentik_apps_verify.json.results | sort(attribute='name') %}{{ app.name }}: icon={{ app.meta_icon | default('none') | basename }}  {% endfor %}"
+      - "============================================"
+      - "Visibility Tiers:"
+      - "  Free:  Open WebUI"
+      - "  Paid:  Open WebUI, Grafana"
+      - "  Admin: All {{ authentik_apps_verify.json.results | length }} applications"
+      - "============================================"
+  tags: ['ai-stack', 'authentik', 'authentik-apps']

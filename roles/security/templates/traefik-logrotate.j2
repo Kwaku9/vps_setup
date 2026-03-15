@@ -1,0 +1,11 @@
+/opt/podman-data/crowdsec/traefik-logs/access.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    postrotate
+        podman kill --signal=USR1 traefik 2>/dev/null || true
+    endscript
+}

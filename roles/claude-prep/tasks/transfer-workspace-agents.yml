@@ -1,4 +1,4 @@
----
+﻿---
 # Transfer Workspace-Level Claude Code Configuration to VPS
 # Transfers entire .claude directory from C:\Users\swirl\VScdeProjects\.claude
 # to /workspace/.claude on the VPS so all projects can use shared configuration

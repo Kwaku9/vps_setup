@@ -1,0 +1,488 @@
+// Grafana Alloy Configuration
+// Unified observability agent for metrics, logs, and traces
+// Central OTLP gateway — all services send telemetry here
+//
+// Pod: logs-pod (with Loki)
+// Cross-pod targets: metrics-pod (VM, Grafana), tempo-pod, node-exporter-pod, podman-exporter-pod
+
+// ============================================================================
+// Metrics Collection - Podman Container Metrics (replaces cAdvisor)
+// ============================================================================
+
+// Discover Podman containers via Docker API (Podman socket)
+// Used for log collection (loki.source.docker) — NOT for metrics scraping
+discovery.docker "podman_containers" {
+  host = "unix:///var/run/docker.sock"
+  refresh_interval = "30s"
+}
+
+// Scrape Alloy's own metrics for self-monitoring
+prometheus.scrape "alloy_metrics" {
+  targets = [{
+    __address__ = "localhost:12345",
+    job         = "alloy",
+  }]
+  forward_to      = [prometheus.remote_write.metrics_service.receiver]
+  scrape_interval = "60s"
+}
+
+// Forward metrics to VictoriaMetrics (cross-pod via monitoring-net)
+prometheus.remote_write "metrics_service" {
+  endpoint {
+    url = "http://metrics-pod:8428/api/v1/write"
+  }
+}
+
+// ============================================================================
+// Logs Collection - System and Container Logs (replaces Promtail)
+// ============================================================================
+
+// Match system log files by glob (loki.source.file needs literal paths)
+local.file_match "system_logs" {
+  path_targets = [
+    {
+      __path__ = "/var/log/*.log",
+      job      = "system_logs",
+      host     = "{{ ansible_hostname }}",
+    },
+    {
+      __path__ = "/var/log/messages",
+      job      = "syslog",
+      host     = "{{ ansible_hostname }}",
+    },
+  ]
+}
+
+// Collect system logs from /var/log — route through OOM label extractor first
+loki.source.file "system_logs" {
+  targets    = local.file_match.system_logs.targets
+  forward_to = [loki.process.oom_label_extract.receiver]
+}
+
+// Extract process name from kernel OOM kill log lines into a label.
+// Matches lines like: oom-kill:...,task=node,pid=1842,...
+// For non-OOM lines the regex won't match and no label is added.
+loki.process "oom_label_extract" {
+  forward_to = [loki.write.logs_service.receiver]
+
+  stage.regex {
+    expression = "task=(?P<oom_process>[a-zA-Z0-9_.\\-]+)"
+  }
+
+  stage.labels {
+    values = {
+      oom_process = "oom_process",
+    }
+  }
+}
+
+// Collect Tetragon eBPF security events
+loki.source.file "tetragon_events" {
+  targets = [
+    {
+      __path__ = "/var/log/tetragon/events.json",
+      job      = "tetragon",
+      host     = "{{ ansible_hostname }}",
+    },
+  ]
+  forward_to = [loki.process.tetragon_parse.receiver]
+}
+
+// Parse Tetragon JSON events and extract structured labels
+// Supports process_exec, process_kprobe (FIM, network, privesc), and process_exit
+loki.process "tetragon_parse" {
+  forward_to = [loki.write.logs_service.receiver]
+
+  // --- Process execution events ---
+  stage.json {
+    expressions = {
+      // process_exec fields
+      exec_binary    = "process_exec.process.binary",
+      exec_args      = "process_exec.process.arguments",
+      exec_parent    = "process_exec.parent.binary",
+      exec_uid       = "process_exec.process.uid",
+      // process_kprobe fields (FIM, tcp_connect, commit_creds)
+      kprobe_func    = "process_kprobe.function_name",
+      kprobe_binary  = "process_kprobe.process.binary",
+      kprobe_parent  = "process_kprobe.parent.binary",
+      kprobe_policy  = "process_kprobe.policy_name",
+      kprobe_action  = "process_kprobe.action",
+      // process_exit fields
+      exit_binary    = "process_exit.process.binary",
+    }
+  }
+
+  // Derive a unified event_type label from which top-level key is present
+  stage.template {
+    source   = "event_type"
+    // Raw Alloy template — Jinja2 must not interpret these
+    template = "{% raw %}{{ if .kprobe_func }}kprobe{{ else if .exec_binary }}exec{{ else if .exit_binary }}exit{{ else }}unknown{{ end }}{% endraw %}"
+  }
+
+  // Derive unified process_binary from whichever event type matched
+  stage.template {
+    source   = "process_binary"
+    template = "{% raw %}{{ if .kprobe_binary }}{{ .kprobe_binary }}{{ else if .exec_binary }}{{ .exec_binary }}{{ else if .exit_binary }}{{ .exit_binary }}{{ else }}unknown{{ end }}{% endraw %}"
+  }
+
+  // Derive parent_binary
+  stage.template {
+    source   = "parent_binary"
+    template = "{% raw %}{{ if .kprobe_parent }}{{ .kprobe_parent }}{{ else if .exec_parent }}{{ .exec_parent }}{{ else }}{{ end }}{% endraw %}"
+  }
+
+  stage.labels {
+    values = {
+      event_type     = "",
+      process_binary = "",
+      parent_binary  = "",
+      kprobe_func    = "",
+      kprobe_policy  = "",
+    }
+  }
+}
+
+// Relabel Docker discovery metadata into real stream labels
+// __meta_docker_* labels are internal and get stripped before sending to Loki
+discovery.relabel "podman_containers" {
+  targets = discovery.docker.podman_containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    target_label  = "container_name"
+    regex         = "/(.*)"
+    replacement   = "$1"
+  }
+}
+
+// Collect Podman container logs
+loki.source.docker "podman_logs" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.podman_containers.output
+  forward_to = [loki.process.container_labels.receiver]
+  refresh_interval = "30s"
+}
+
+// Process and label container logs with trace ID extraction
+loki.process "container_labels" {
+  forward_to = [loki.write.logs_service.receiver]
+
+  stage.docker {}
+
+  // --- Traefik access log parsing (JSON with DownstreamStatus field) ---
+  stage.match {
+    selector = "{container_name=\"traefik\"}"
+
+    stage.json {
+      expressions = {
+        downstream_status = "DownstreamStatus",
+        request_method    = "RequestMethod",
+        request_host      = "RequestHost",
+        request_path      = "RequestPath",
+        router_name       = "RouterName",
+        service_url       = "ServiceURL",
+        duration_ns       = "Duration",
+        origin_status     = "OriginStatus",
+        client_addr       = "ClientAddr",
+        request_protocol  = "RequestProtocol",
+        tls_version       = "TLSVersion",
+        entry_point       = "entryPointName",
+        cf_user_email     = "request_Cf-Access-Authenticated-User-Email",
+        cf_ray            = "request_Cf-Ray",
+      }
+    }
+
+    // Promote low-cardinality fields to labels for fast filtering
+    stage.labels {
+      values = {
+        downstream_status = "",
+        request_method    = "",
+        request_host      = "",
+        router_name       = "",
+      }
+    }
+  }
+
+  // --- Generic enrichment for all container logs ---
+
+  // Extract trace IDs for log-to-trace correlation (Tempo)
+  stage.regex {
+    expression = "(?:trace_id|traceID|traceid)[=: \"]+(?P<trace_id>[a-f0-9]{32})"
+  }
+
+  // Extract user emails from LiteLLM/OpenWebUI logs
+  stage.regex {
+    expression = "(?:user|email)[=: \"]+(?P<user>[\\w@.\\-]+@[\\w.\\-]+)"
+  }
+
+  stage.labels {
+    values = {
+      trace_id = "",
+      user     = "",
+    }
+  }
+}
+
+// Forward logs to Loki (same pod — localhost)
+loki.write "logs_service" {
+  endpoint {
+    url = "http://localhost:3100/loki/api/v1/push"
+    headers = {
+      "X-Scope-OrgID" = "enterprise",
+    }
+  }
+}
+
+// ============================================================================
+// Wazuh SIEM Alert Collection (file-based — syslog framing incompatible)
+// ============================================================================
+
+loki.source.file "wazuh_alerts" {
+  targets = [{
+    __path__ = "/var/log/wazuh-alerts/alerts.json",
+    job      = "wazuh",
+    host     = "{{ ansible_hostname }}",
+  }]
+  forward_to = [loki.process.wazuh_json.receiver]
+}
+
+// Parse Wazuh JSON alerts and extract labels
+loki.process "wazuh_json" {
+  forward_to = [loki.write.logs_service.receiver]
+
+  stage.json {
+    expressions = {
+      rule_level       = "rule.level",
+      rule_id          = "rule.id",
+      rule_group       = "rule.groups[0]",
+      agent_name       = "agent.name",
+      rule_description = "rule.description",
+    }
+  }
+
+  stage.labels {
+    values = {
+      rule_level = "",
+      rule_id    = "",
+      rule_group = "",
+      agent_name = "",
+    }
+  }
+}
+
+// ============================================================================
+// OTLP Gateway - Receives traces/metrics/logs from all services
+// ============================================================================
+
+// Receive OTLP telemetry over HTTP (primary — used by OpenWebUI, LiteLLM, Traefik, etc.)
+otelcol.receiver.otlp "otlp_receiver" {
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  output {
+    metrics = [otelcol.processor.attributes.add_env_attrs.input]
+    logs    = [otelcol.processor.attributes.add_env_attrs.input]
+    traces  = [otelcol.processor.attributes.add_env_attrs.input]
+  }
+}
+
+// Enrich all OTLP data with deployment-level resource attributes
+otelcol.processor.attributes "add_env_attrs" {
+  action {
+    key    = "deployment.environment"
+    value  = "production"
+    action = "upsert"
+  }
+
+  action {
+    key    = "cluster"
+    value  = "alpine-podman"
+    action = "upsert"
+  }
+
+  action {
+    key    = "host.name"
+    value  = "{{ ansible_hostname }}"
+    action = "upsert"
+  }
+
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+  }
+}
+
+// Batch telemetry data for efficiency (increased timeout to reduce CPU pressure)
+otelcol.processor.batch "default" {
+  timeout = "15s"
+
+  output {
+    metrics = [otelcol.exporter.prometheus.default.input]
+    logs    = [otelcol.exporter.loki.default.input]
+    traces  = [otelcol.exporter.otlphttp.tempo.input]
+  }
+}
+
+// Export OTEL metrics to VictoriaMetrics via remote write (cross-pod)
+otelcol.exporter.prometheus "default" {
+  forward_to = [prometheus.remote_write.metrics_service.receiver]
+}
+
+// Export OTEL logs to Loki via existing loki.write (same pod)
+otelcol.exporter.loki "default" {
+  forward_to = [loki.write.logs_service.receiver]
+}
+
+// Export traces to Tempo via OTLP HTTP (cross-pod via monitoring-net)
+otelcol.exporter.otlphttp "tempo" {
+  client {
+    endpoint = "http://tempo-pod:4320"
+    tls {
+      insecure = true
+    }
+    headers = {
+      "X-Scope-OrgID" = "enterprise",
+    }
+  }
+}
+
+// ============================================================================
+// Prometheus Scrape Targets - Infrastructure & Services
+// (Updated intervals for CPU optimization on 2-core VPS)
+// ============================================================================
+
+// Monitoring stack self-monitoring (Loki is same pod — localhost)
+prometheus.scrape "loki_metrics" {
+  targets = [{
+    __address__ = "localhost:3100",
+    job         = "loki",
+  }]
+  forward_to      = [prometheus.remote_write.metrics_service.receiver]
+  scrape_interval = "60s"
+}
+
+// Tempo (cross-pod via monitoring-net)
+prometheus.scrape "tempo_metrics" {
+  targets = [{
+    __address__ = "tempo-pod:3200",
+    job         = "tempo",
+  }]
+  forward_to      = [prometheus.remote_write.metrics_service.receiver]
+  scrape_interval = "60s"
+}
+
+// Grafana (cross-pod via monitoring-net)
+prometheus.scrape "grafana_metrics" {
+  targets = [{
+    __address__ = "metrics-pod:3000",
+    job         = "grafana",
+  }]
+  forward_to      = [prometheus.remote_write.metrics_service.receiver]
+  scrape_interval = "60s"
+}
+
+// VictoriaMetrics (cross-pod via monitoring-net)
+prometheus.scrape "vm_metrics" {
+  targets = [{
+    __address__ = "metrics-pod:8428",
+    job         = "victoriametrics",
+  }]
+  forward_to      = [prometheus.remote_write.metrics_service.receiver]
+  scrape_interval = "60s"
+}
+
+// Node Exporter (cross-network via monitoring-net)
+prometheus.scrape "node_metrics" {
+  targets = [{
+    __address__ = "node-exporter-pod:9100",
+    job         = "node-exporter",
+  }]
+  forward_to      = [prometheus.remote_write.metrics_service.receiver]
+  scrape_interval = "30s"
+}
+
+// Podman Exporter (cross-network via monitoring-net)
+prometheus.scrape "podman_metrics" {
+  targets = [{
+    __address__ = "podman-exporter-pod:9882",
+    job         = "podman-exporter",
+  }]
+  forward_to      = [prometheus.remote_write.metrics_service.receiver]
+  scrape_interval = "60s"
+}
+
+// AI Stack metrics
+prometheus.scrape "litellm_metrics" {
+  targets = [{
+    __address__ = "ai-stack-pod:4000",
+    job         = "litellm",
+  }]
+  forward_to      = [prometheus.remote_write.metrics_service.receiver]
+  scrape_interval = "60s"
+}
+
+prometheus.scrape "openwebui_metrics" {
+  targets = [{
+    __address__ = "ai-stack-pod:8080",
+    job         = "openwebui",
+  }]
+  forward_to      = [prometheus.remote_write.metrics_service.receiver]
+  scrape_interval = "60s"
+}
+
+// Ingress metrics (Traefik is now in security-infra-pod)
+prometheus.scrape "traefik_metrics" {
+  targets = [{
+    __address__ = "security-infra-pod:8080",
+    job         = "traefik",
+  }]
+  forward_to      = [prometheus.remote_write.metrics_service.receiver]
+  scrape_interval = "30s"
+}
+
+// Cloudflare Tunnel metrics (now in security-infra-pod)
+prometheus.scrape "cloudflared_metrics" {
+  targets = [{
+    __address__ = "security-infra-pod:2000",
+    job         = "cloudflared",
+  }]
+  forward_to      = [prometheus.remote_write.metrics_service.receiver]
+  scrape_interval = "60s"
+}
+
+// CrowdSec WAF metrics (now in security-infra-pod, Prometheus exporter on port 6060)
+prometheus.scrape "crowdsec_metrics" {
+  targets = [{
+    __address__ = "security-infra-pod:6060",
+    job         = "crowdsec",
+  }]
+  forward_to      = [prometheus.remote_write.metrics_service.receiver]
+  scrape_interval = "60s"
+}
+
+// Authentication metrics (Authentik Prometheus metrics on port 9300)
+prometheus.scrape "authentik_metrics" {
+  targets = [{
+    __address__ = "authentication-pod:9300",
+    job         = "authentik",
+  }]
+  forward_to      = [prometheus.remote_write.metrics_service.receiver]
+  scrape_interval = "60s"
+  metrics_path    = "/metrics"
+}
+
+// Tetragon eBPF security metrics (process, file, network event counters)
+prometheus.scrape "tetragon_metrics" {
+  targets = [{
+    __address__ = "tetragon:2112",
+    job         = "tetragon",
+  }]
+  forward_to      = [prometheus.remote_write.metrics_service.receiver]
+  scrape_interval = "30s"
+}

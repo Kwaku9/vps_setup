@@ -1,0 +1,61 @@
+---
+# Upgrade Podman to latest version from Alpine Edge
+# This playbook enables Edge repository and upgrades Podman
+
+- name: Upgrade Podman to 5.7.1
+  hosts: alpine_servers
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Display current Podman version
+      shell: podman --version
+      register: podman_version_before
+      changed_when: false
+
+    - name: Show current version
+      debug:
+        msg: "Current Podman version: {{ podman_version_before.stdout }}"
+
+    - name: Enable Alpine Edge repository for Podman
+      lineinfile:
+        path: /etc/apk/repositories
+        line: "https://dl-cdn.alpinelinux.org/alpine/edge/community"
+        state: present
+      register: repo_added
+
+    - name: Update APK package index
+      apk:
+        update_cache: yes
+      when: repo_added.changed
+
+    - name: Upgrade Podman to latest Edge version
+      apk:
+        name: podman
+        state: latest
+        update_cache: yes
+
+    - name: Verify new Podman version
+      shell: podman --version
+      register: podman_version_after
+      changed_when: false
+
+    - name: Display upgrade result
+      debug:
+        msg:
+          - "============================================"
+          - "Podman Upgrade Complete!"
+          - "============================================"
+          - "Before: {{ podman_version_before.stdout }}"
+          - "After:  {{ podman_version_after.stdout }}"
+          - "============================================"
+
+    - name: Test Podman functionality
+      command: podman info
+      register: podman_info
+      changed_when: false
+      failed_when: podman_info.rc != 0
+
+    - name: Confirm Podman is working
+      debug:
+        msg: "✓ Podman is operational and responding to commands"

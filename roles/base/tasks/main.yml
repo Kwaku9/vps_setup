@@ -1,4 +1,4 @@
----
+﻿---
 # Base Role - Alpine Linux Foundation
 # Installs minimal essential packages and configures system basics
 
@@ -30,8 +30,11 @@
   tags: ['base', 'packages']
 
 - name: Set system timezone
-  community.general.timezone:
-    name: "{{ timezone | default('America/New_York') }}"
+  file:
+    src: "/usr/share/zoneinfo/{{ timezone | default('America/New_York') }}"
+    dest: /etc/localtime
+    state: link
+    force: yes
   tags: ['base', 'system']
 
 - name: Configure Git global settings

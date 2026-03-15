@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+# SearXNG settings - JSON format enabled for Open WebUI integration
+
+use_default_settings: true
+
+server:
+  secret_key: "{{ searxng_secret_key }}"
+  bind_address: "0.0.0.0"
+
+search:
+  formats:
+    - html
+    - json

@@ -1,4 +1,4 @@
----
+﻿---
 # Management Role - Container Management GUIs
 # Deploys Portainer and Dockge for infrastructure administration
 
@@ -8,8 +8,8 @@
     network: "{{ podman_network_name | default('enterprise_network') }}"
     state: started
     ports:
-      - "9443:9443"  # Portainer HTTPS
-      - "5001:5001"  # Dockge HTTP
+      - "127.0.0.1:{{ management.portainer.port | default(9444) }}:9443"  # Portainer (internal - SSH tunnel)
+      - "127.0.0.1:{{ management.dockge.port | default(5001) }}:5001"  # Dockge (internal - SSH tunnel)
   when: management.enabled | default(true)
   tags: ['management', 'pod']
 
@@ -19,6 +19,7 @@
     image: "{{ management.portainer.image | default('portainer/portainer-ce:latest') }}"
     state: started
     pod: management-pod
+    memory: "200m"
     volumes:
       - "{{ management.portainer.data_volume | default('portainer-data') }}:/data"
       - /run/podman/podman.sock:/var/run/docker.sock:ro
@@ -28,6 +29,24 @@
     - management.enabled | default(true)
     - management.portainer.enabled | default(true)
   tags: ['management', 'portainer']
+
+# ── Ansible Deployment Container ──
+
+- name: Deploy ansible-deployment container
+  containers.podman.podman_container:
+    name: ansible-deployment
+    image: "{{ management.ansible_deployment.image | default('alpine:latest') }}"
+    state: started
+    pod: management-pod
+    memory: "128m"
+    command: "sleep infinity"
+    volumes:
+      - /opt/compose:/opt/compose:ro
+    restart_policy: unless-stopped
+  when:
+    - management.enabled | default(true)
+    - management.ansible_deployment.enabled | default(false)
+  tags: ['management', 'ansible-deployment']
 
 - name: Create Dockge stacks directory
   file:
@@ -59,7 +78,7 @@
 - name: Wait for Portainer to be ready
   wait_for:
     host: localhost
-    port: 9443
+    port: "{{ management.portainer.port | default(9444) }}"
     delay: 5
     timeout: 60
   when:
@@ -69,7 +88,7 @@
 
 - name: Initialize Portainer admin account
   uri:
-    url: "https://{{ ansible_host }}:9443/api/users/admin/init"
+    url: "https://{{ ansible_host }}:{{ management.portainer.port | default(9444) }}/api/users/admin/init"
     method: POST
     body_format: json
     body:
@@ -91,16 +110,17 @@
     - management.enabled | default(true)
     - management.portainer.enabled | default(true)
     - portainer_init is defined
+    - portainer_init.status is defined
   tags: ['management', 'portainer']
 
 - name: Display management tools status
   debug:
     msg:
       - "Management tools deployed successfully"
-      - "Portainer: https://{{ ansible_host }}:9443"
+      - "Portainer: https://{{ ansible_host }}:{{ management.portainer.port | default(9444) }}"
       - "  - First login: create admin account"
       - "  - Connect to local Podman environment"
-      - "Dockge: http://{{ ansible_host }}:5001"
+      - "Dockge: http://{{ ansible_host }}:{{ management.dockge.port | default(5001) }}"
       - "  - Manage compose stacks in {{ management.dockge.stacks_dir | default('/opt/compose') }}"
   when: management.enabled | default(true)
   tags: ['management']

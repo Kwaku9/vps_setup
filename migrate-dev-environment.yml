@@ -1,4 +1,4 @@
----
+﻿---
 # Development Environment Migration Playbook
 # Migrates local Windows development environment to Alpine Linux VPS
 #
@@ -103,8 +103,8 @@
         - name: Display versions
           debug:
             msg:
-              - "✓ Claude CLI: {{ claude_check.stdout }}"
-              - "✓ Podman: {{ podman_check.stdout }}"
+              - "Γ£ô Claude CLI: {{ claude_check.stdout }}"
+              - "Γ£ô Podman: {{ podman_check.stdout }}"
       tags: ['verify', 'always']
 
   tasks:
@@ -147,7 +147,7 @@
 
         - name: Display VSCode sync status
           debug:
-            msg: "✓ Synced {{ essential_vscode_projects | length }} VSCode projects to {{ vscode_projects_dest }}"
+            msg: "Γ£ô Synced {{ essential_vscode_projects | length }} VSCode projects to {{ vscode_projects_dest }}"
           tags: ['sync-projects', 'sync-vscode']
       tags: ['sync-projects']
 
@@ -169,7 +169,7 @@
 
         - name: Display PyCharm sync status
           debug:
-            msg: "✓ Synced {{ essential_pycharm_projects | length }} PyCharm projects to {{ pycharm_projects_dest }}"
+            msg: "Γ£ô Synced {{ essential_pycharm_projects | length }} PyCharm projects to {{ pycharm_projects_dest }}"
           tags: ['sync-projects', 'sync-pycharm']
       tags: ['sync-projects']
 
@@ -235,7 +235,7 @@
 
         - name: Display Claude config status
           debug:
-            msg: "✓ Claude configuration synced to /root/.claude/"
+            msg: "Γ£ô Claude configuration synced to /root/.claude/"
           tags: ['claude-config']
       tags: ['claude-config']
 
@@ -295,8 +295,8 @@
         - name: Display MCP settings update note
           debug:
             msg:
-              - "⚠ MCP settings may need manual path updates:"
-              - "  Windows paths (C:\\Users\\swirl\\...) → Linux paths (/workspace/...)"
+              - "ΓÜá MCP settings may need manual path updates:"
+              - "  Windows paths (C:\\Users\\swirl\\...) ΓåÆ Linux paths (/workspace/...)"
               - "  Edit: /root/.claude/mcp_settings.json"
               - "  Backup saved: /root/.claude/mcp_settings.json.backup"
           when: mcp_settings_stat.stat.exists
@@ -309,9 +309,9 @@
           - "============================================"
           - "Migration Complete!"
           - "============================================"
-          - "✓ Projects synced to {{ workspace_base }}"
-          - "✓ Claude config restored to /root/.claude/"
-          - "✓ Podman network created: enterprise_network"
+          - "Γ£ô Projects synced to {{ workspace_base }}"
+          - "Γ£ô Claude config restored to /root/.claude/"
+          - "Γ£ô Podman network created: enterprise_network"
           - ""
           - "Next Steps:"
           - "1. Update MCP settings paths (if needed):"

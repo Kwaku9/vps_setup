@@ -1,16 +1,62 @@
 ---
-# Backend Role - Custom API Services
-# Deploy your custom backend containers here
+# Backend Role - IB Gateway Services + Custom API Services
+# Deploys backend-pod with ibeam (IB Gateway) and ib-mcp-server
+
+# ============================================================================
+# BACKEND-POD: ibeam + ib-mcp-server
+# ============================================================================
 
 - name: Create backend pod
   containers.podman.podman_pod:
     name: backend-pod
-    network: "{{ podman_network_name | default('enterprise_network') }}"
+    network:
+      - "{{ podman_network_name | default('enterprise_network') }}"
     state: started
+    ports:
+      - "127.0.0.1:5055:5000"    # ibeam (IB Gateway API)
+      - "127.0.0.1:5002:5002"    # ib-mcp-server
   when:
     - deploy_backend | default(true)
-    - backend.api_services | length > 0
+    - backend.ibeam.enabled | default(false) or backend.ib_mcp.enabled | default(false)
   tags: ['backend', 'pod']
+
+# ── ibeam (IB Gateway REST API) ──
+
+- name: Deploy ibeam container
+  containers.podman.podman_container:
+    name: ibeam
+    image: "{{ backend.ibeam.image | default('voyz/ibeam:latest') }}"
+    state: started
+    pod: backend-pod
+    memory: "384m"
+    env: "{{ backend.ibeam.env | default({}) }}"
+    volumes: "{{ backend.ibeam.volumes | default([]) }}"
+    restart_policy: unless-stopped
+  when:
+    - deploy_backend | default(true)
+    - backend.ibeam.enabled | default(false)
+  tags: ['backend', 'ibeam']
+
+# ── ib-mcp-server (MCP server for IB) ──
+
+- name: Deploy ib-mcp-server container
+  containers.podman.podman_container:
+    name: ib-mcp-server
+    image: "{{ backend.ib_mcp.image | default('ib-mcp-server:latest') }}"
+    state: started
+    pod: backend-pod
+    memory: "128m"
+    env: "{{ backend.ib_mcp.env | default({}) }}"
+    volumes: "{{ backend.ib_mcp.volumes | default([]) }}"
+    restart_policy: unless-stopped
+  when:
+    - deploy_backend | default(true)
+    - backend.ib_mcp.enabled | default(false)
+  tags: ['backend', 'ib-mcp']
+
+# ============================================================================
+# CUSTOM API SERVICES (legacy support)
+# ============================================================================
 
 - name: Deploy custom API services
   containers.podman.podman_container:
@@ -20,24 +66,28 @@
     pod: backend-pod
     env: "{{ item.env | default({}) }}"
     volumes: "{{ item.volumes | default([]) }}"
-  loop: "{{ backend.api_services }}"
+  loop: "{{ backend.api_services | default([]) }}"
   when:
     - deploy_backend | default(true)
-    - backend.api_services | length > 0
+    - backend.api_services | default([]) | length > 0
   tags: ['backend', 'api']
 
 - name: Display backend status
   debug:
-    msg: "Backend services: {{ backend.api_services | map(attribute='name') | list }}"
+    msg:
+      - "Backend pod deployed:"
+      - "  ibeam: http://{{ ansible_host }}:5055"
+      - "  ib-mcp-server: http://{{ ansible_host }}:5002"
   when:
     - deploy_backend | default(true)
-    - backend.api_services | length > 0
+    - backend.ibeam.enabled | default(false)
   tags: ['backend']
 
 - name: No backend services configured
   debug:
-    msg: "No custom backend services configured - add them in all.yml"
+    msg: "No backend services enabled - configure in all.yml"
   when:
     - deploy_backend | default(true)
-    - backend.api_services | length == 0
+    - not (backend.ibeam.enabled | default(false))
+    - backend.api_services | default([]) | length == 0
   tags: ['backend']

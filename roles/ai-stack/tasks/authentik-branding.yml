@@ -1,0 +1,293 @@
+---
+# Authentik Custom Branding
+# Configures the Authentik login page with AICORSEC branding:
+#   - Custom logo (AICORSEC metallic text, transparent background)
+#   - Custom background image (dark tech/circuit board)
+#   - Custom CSS (dark glassmorphism theme matching Open WebUI)
+#   - "Powered by AICORSEC" footer (replaces "Powered by authentik")
+#   - White form labels for readability
+#
+# Run with: ansible-playbook site.yml --tags branding
+#
+# Uses the Authentik REST API (/api/v3/core/brands/) instead of Django ORM
+# to avoid kubernetes module import errors in Authentik 2025.10+.
+
+# ============================================================
+# Step 1: Stage branding assets to Authentik media volume
+# ============================================================
+
+- name: "[Authentik Branding] Ensure media public directory exists"
+  file:
+    path: /var/lib/containers/storage/volumes/authentik-media/_data/public
+    state: directory
+    mode: '0755'
+  tags: ['ai-stack', 'authentik', 'branding']
+
+- name: "[Authentik Branding] Download AICORSEC logo from S3"
+  get_url:
+    url: "{{ ai_stack.authentik.branding.logo_url | default('https://REDACTED_BUCKET.s3.amazonaws.com/aicorsec-logo-transparent.png') }}"
+    dest: /var/lib/containers/storage/volumes/authentik-media/_data/public/aicorsec-logo.png
+    mode: '0644'
+    force: yes
+  tags: ['ai-stack', 'authentik', 'branding']
+
+- name: "[Authentik Branding] Download background image from S3"
+  get_url:
+    url: "{{ ai_stack.authentik.branding.bg_url | default('https://REDACTED_BUCKET.s3.amazonaws.com/auth-bg.png') }}"
+    dest: /var/lib/containers/storage/volumes/authentik-media/_data/public/auth-bg.png
+    mode: '0644'
+    force: yes
+  tags: ['ai-stack', 'authentik', 'branding']
+
+# ============================================================
+# Step 2: Get default brand via Authentik REST API
+# ============================================================
+
+- name: "[Authentik Branding] Set API token"
+  set_fact:
+    authentik_token: "{{ authentik_bootstrap_token }}"
+    authentik_api_port: "{{ authentication.authentik.port | default(9000) }}"
+  tags: ['ai-stack', 'authentik', 'branding']
+
+- name: "[Authentik Branding] Get brands list"
+  uri:
+    url: "http://127.0.0.1:{{ authentik_api_port }}/api/v3/core/brands/"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: authentik_brands
+  tags: ['ai-stack', 'authentik', 'branding']
+
+- name: "[Authentik Branding] Identify default brand"
+  set_fact:
+    authentik_brand_id: "{{ (authentik_brands.json.results | selectattr('default', 'equalto', true) | first).brand_uuid }}"
+  tags: ['ai-stack', 'authentik', 'branding']
+
+# ============================================================
+# Step 3: Update brand assets and CSS via API
+# ============================================================
+# NOTE: Authentik injects brand CSS into Shadow DOM via adoptedStyleSheets.
+# The !important flag is STRIPPED by this mechanism, so all rules must use
+# CSS specificity (doubled selectors, parent context) instead.
+
+- name: "[Authentik Branding] Update brand assets and CSS"
+  uri:
+    url: "http://127.0.0.1:{{ authentik_api_port }}/api/v3/core/brands/{{ authentik_brand_id }}/"
+    method: PATCH
+    headers:
+      Authorization: "Bearer {{ authentik_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      branding_logo: "/media/public/aicorsec-logo.png"
+      branding_favicon: "/media/public/aicorsec-logo.png"
+      branding_default_flow_background: "/media/public/auth-bg.png"
+      branding_custom_css: >-
+        /* AICORTEX / AICORSEC Brand Theme */
+        :root {
+            --ak-accent: #6366f1;
+            --ak-accent-hover: #818cf8;
+        }
+        /* Dark gradient background overlay */
+        .pf-c-login.pf-c-login {
+            background: linear-gradient(135deg, rgba(15,23,42,0.88) 0%, rgba(30,27,75,0.82) 50%, rgba(15,23,42,0.88) 100%);
+        }
+        /* Card styling - glassmorphism */
+        .pf-c-login .pf-c-login__main {
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            border-radius: 16px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 100px rgba(99, 102, 241, 0.12);
+            overflow: visible;
+        }
+        /* Mobile responsive */
+        @media (max-height: 700px), (max-width: 480px) {
+            .pf-c-login.pf-c-login {
+                min-height: 100vh;
+                height: auto;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+                align-items: flex-start;
+                padding: 1rem 0;
+            }
+            .pf-c-login .pf-c-login__main {
+                max-height: none;
+                overflow: visible;
+                margin: 1rem auto;
+            }
+            .ak-login-container.ak-login-container {
+                min-height: auto;
+                height: auto;
+                overflow: visible;
+            }
+            .pf-c-login__main-header.pf-c-brand.ak-brand,
+            .pf-c-login .pf-c-login__main-header {
+                padding: 1rem 1rem 0.5rem;
+            }
+            .ak-brand img,
+            .pf-c-login .pf-c-brand img {
+                max-height: 50px;
+            }
+        }
+        /* Title text */
+        .pf-c-login .pf-c-login__main-header .pf-c-title,
+        .pf-c-login__header .pf-c-title,
+        .pf-c-login__main-header .pf-c-title {
+            color: #e2e8f0;
+            font-weight: 600;
+            font-size: 1.5rem;
+        }
+        /* Primary button */
+        .pf-c-login .pf-c-button.pf-m-primary,
+        .pf-c-button.pf-m-primary.pf-m-primary {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            letter-spacing: 0.025em;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+            color: #fff;
+        }
+        .pf-c-login .pf-c-button.pf-m-primary:hover {
+            background: linear-gradient(135deg, #818cf8, #a78bfa);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+            transform: translateY(-1px);
+        }
+        /* Input fields */
+        .pf-c-login .pf-c-form-control,
+        .pf-c-form-control.pf-c-form-control {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 8px;
+            color: #e2e8f0;
+        }
+        .pf-c-login .pf-c-form-control:focus,
+        .pf-c-form-control.pf-c-form-control:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+        }
+        .pf-c-login .pf-c-form-control::placeholder {
+            color: #94a3b8;
+        }
+        /* Links */
+        .pf-c-login a,
+        .pf-c-login .pf-c-button.pf-m-link {
+            color: #818cf8;
+            font-weight: 500;
+        }
+        .pf-c-login a:hover,
+        .pf-c-login .pf-c-button.pf-m-link:hover {
+            color: #a78bfa;
+        }
+        /* Footer sign-up area */
+        .pf-c-login .pf-c-login__main-footer,
+        .pf-c-login .pf-c-login__main-footer-band {
+            background: rgba(30, 41, 59, 0.6);
+            border-top: 1px solid rgba(99, 102, 241, 0.2);
+            padding: 1rem;
+            text-align: center;
+        }
+        .pf-c-login .pf-c-login__main-footer a,
+        .pf-c-login .pf-c-login__main-body a {
+            color: #a78bfa;
+            font-weight: 600;
+        }
+        /* Labels - white for readability */
+        .pf-c-login .pf-c-form__label-text,
+        .pf-c-form__label-text,
+        .pf-c-form__label {
+            color: #ffffff;
+            font-weight: 500;
+        }
+        /* Hide Powered by authentik */
+        ak-brand-links[part="brand-links"],
+        ak-brand-links.pf-c-login__footer,
+        .pf-c-login ak-brand-links {
+            display: none;
+            height: 0;
+            overflow: hidden;
+            padding: 0;
+            margin: 0;
+            border: 0;
+            font-size: 0;
+            line-height: 0;
+        }
+        /* Replace with Powered by AICORSEC */
+        .ak-login-container::after {
+            content: "Powered by AICORSEC";
+            display: block;
+            text-align: center;
+            padding: 1.5rem 0;
+            color: #94a3b8;
+            font-size: 0.875rem;
+            font-weight: 400;
+            letter-spacing: 0.02em;
+        }
+        /* Subtle glow animation */
+        @keyframes subtle-glow {
+            0%, 100% { box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 80px rgba(99, 102, 241, 0.08); }
+            50% { box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 120px rgba(99, 102, 241, 0.18); }
+        }
+        .pf-c-login .pf-c-login__main {
+            animation: subtle-glow 4s ease-in-out infinite;
+        }
+        /* Logo container - CENTER */
+        .pf-c-login__main-header.pf-c-brand.ak-brand,
+        .pf-c-login .pf-c-login__main-header {
+            text-align: center;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem 2rem 1rem;
+            background: transparent;
+        }
+        /* Logo image */
+        .ak-brand img,
+        .pf-c-login__main-header.pf-c-brand img,
+        .pf-c-login .pf-c-brand img {
+            max-height: 80px;
+            max-width: 340px;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            background: transparent;
+            filter: brightness(1.3) contrast(1.1);
+        }
+        /* Body/paragraph text in form stages (e.g. email verification) */
+        .pf-c-form__group p,
+        .pf-c-form p {
+            color: #e2e8f0;
+        }
+        /* User info area */
+        .pf-c-login .form-control-static {
+            color: #e2e8f0;
+        }
+        .pf-c-login .form-control-static a {
+            color: #818cf8;
+        }
+    status_code: 200
+  register: authentik_brand_update
+  tags: ['ai-stack', 'authentik', 'branding']
+
+# ============================================================
+# Step 4: Verify via API
+# ============================================================
+
+- name: "[Authentik Branding] Display results"
+  debug:
+    msg:
+      - "============================================"
+      - "Authentik Branding Applied!"
+      - "============================================"
+      - "Brand: {{ authentik_brand_update.json.branding_title | default('unknown') }}"
+      - "Logo: {{ authentik_brand_update.json.branding_logo | default('not set') }}"
+      - "Favicon: {{ authentik_brand_update.json.branding_favicon | default('not set') }}"
+      - "Background: {{ authentik_brand_update.json.branding_default_flow_background | default('not set') }}"
+      - "CSS: {{ (authentik_brand_update.json.branding_custom_css | default('') | length) }} chars"
+      - "============================================"
+  tags: ['ai-stack', 'authentik', 'branding']
