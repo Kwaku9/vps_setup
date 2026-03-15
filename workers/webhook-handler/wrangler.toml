@@ -1,0 +1,14 @@
+name = "webhook-handler"
+main = "src/index.ts"
+compatibility_date = "2025-12-01"
+
+[vars]
+AUTHENTIK_URL = "https://auth.REDACTED_DOMAIN"
+
+[[routes]]
+pattern = "hooks.REDACTED_DOMAIN/*"
+zone_name = "REDACTED_DOMAIN"
+
+# Secrets (set via `wrangler secret put`):
+#   AUTHENTIK_TOKEN  - Authentik bootstrap API token
+#   ADMIN_API_KEY    - Shared secret for /admin/* endpoints

@@ -1,0 +1,104 @@
+---
+# n8n-mcp Server Deployment
+# Workflow automation MCP server with node database
+
+- name: Set n8n-mcp variables
+  set_fact:
+    _mcp: "{{ mcp_servers.servers.n8n_mcp }}"
+  tags: ['mcp', 'mcp-n8n']
+
+- name: Check if n8n-mcp source exists
+  stat:
+    path: "{{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}"
+  register: n8n_mcp_source
+  tags: ['mcp', 'mcp-n8n']
+
+- name: Create n8n-mcp source directory if missing
+  file:
+    path: "{{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}"
+    state: directory
+    mode: '0755'
+  when: not n8n_mcp_source.stat.exists
+  tags: ['mcp', 'mcp-n8n']
+
+- name: Create n8n-mcp data directory
+  file:
+    path: "{{ mcp_servers.data_dir }}/n8n-mcp"
+    state: directory
+    mode: '0755'
+  tags: ['mcp', 'mcp-n8n']
+
+- name: Remove existing n8n-mcp container if rebuilding
+  containers.podman.podman_container:
+    name: "{{ _mcp.container_name }}"
+    state: absent
+  when: mcp_build.force_rebuild | default(false)
+  tags: ['mcp', 'mcp-n8n']
+
+- name: Check if n8n-mcp image exists
+  command: podman image exists {{ _mcp.image }}
+  register: n8n_image_exists
+  failed_when: false
+  changed_when: false
+  when:
+    - _mcp.build | default(true)
+    - n8n_mcp_source.stat.exists
+  tags: ['mcp', 'mcp-n8n', 'mcp-build']
+
+- name: Build n8n-mcp container image
+  command: >
+    podman build
+    -t {{ _mcp.image }}
+    -f Dockerfile
+    {{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}
+  when:
+    - _mcp.build | default(true)
+    - n8n_mcp_source.stat.exists
+    - n8n_image_exists.rc != 0 or mcp_build.force_rebuild | default(false)
+  register: n8n_mcp_build
+  tags: ['mcp', 'mcp-n8n', 'mcp-build']
+
+- name: Deploy n8n-mcp container
+  containers.podman.podman_container:
+    name: "{{ _mcp.container_name }}"
+    image: "{{ _mcp.image }}"
+    pull: never
+    state: started
+    network: "{{ mcp_servers.network }}"
+    memory: 128m
+    ports:
+      - "127.0.0.1:{{ _mcp.port }}:{{ _mcp.internal_port | default(_mcp.port) }}"
+    env: "{{ _mcp.env | default({}) }}"
+    volumes:
+      - "{{ mcp_servers.data_dir }}/n8n-mcp:/app/data:Z"
+    restart_policy: "{{ mcp_runtime.restart_policy | default('unless-stopped') }}"
+  when: n8n_mcp_source.stat.exists
+  notify: verify mcp containers
+  tags: ['mcp', 'mcp-n8n']
+
+# n8n-mcp requires nodes.db in data volume (volume mount overrides built-in copy)
+- name: Check if nodes.db exists in data volume
+  stat:
+    path: "{{ mcp_servers.data_dir }}/n8n-mcp/nodes.db"
+  register: n8n_mcp_db
+  tags: ['mcp', 'mcp-n8n']
+
+- name: Copy nodes.db to data volume if missing
+  copy:
+    src: "{{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}/data/nodes.db"
+    dest: "{{ mcp_servers.data_dir }}/n8n-mcp/nodes.db"
+    remote_src: true
+    mode: '0644'
+  when:
+    - n8n_mcp_source.stat.exists
+    - not n8n_mcp_db.stat.exists | default(false)
+  notify: restart n8n-mcp
+  tags: ['mcp', 'mcp-n8n']
+
+- name: Display n8n-mcp status
+  debug:
+    msg:
+      - "n8n-mcp deployed at http://127.0.0.1:{{ _mcp.port }}{{ _mcp.endpoint | default('/mcp') }}"
+      - "Health: http://127.0.0.1:{{ _mcp.port }}/health"
+      - "Auth required: {{ _mcp.requires_auth | default(false) }}"
+  tags: ['mcp', 'mcp-n8n']

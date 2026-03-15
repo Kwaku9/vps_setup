@@ -1,0 +1,79 @@
+---
+# Context7 MCP Server Deployment
+# Context protocol implementation for enhanced context handling
+
+- name: Set context7-mcp variables
+  set_fact:
+    _mcp: "{{ mcp_servers.servers.context7 }}"
+  tags: ['mcp', 'mcp-context7']
+
+- name: Check if context7-mcp source exists
+  stat:
+    path: "{{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}"
+  register: context7_mcp_source
+  tags: ['mcp', 'mcp-context7']
+
+- name: Create context7-mcp data directory
+  file:
+    path: "{{ mcp_servers.data_dir }}/context7"
+    state: directory
+    mode: '0755'
+  tags: ['mcp', 'mcp-context7']
+
+- name: Remove existing context7-mcp container if rebuilding
+  containers.podman.podman_container:
+    name: "{{ _mcp.container_name }}"
+    state: absent
+  when: mcp_build.force_rebuild | default(false)
+  tags: ['mcp', 'mcp-context7']
+
+- name: Check if context7-mcp image exists
+  command: podman image exists {{ _mcp.image }}
+  register: context7_image_exists
+  failed_when: false
+  changed_when: false
+  when:
+    - _mcp.build | default(true)
+    - context7_mcp_source.stat.exists
+  tags: ['mcp', 'mcp-context7', 'mcp-build']
+
+- name: Build context7-mcp container image
+  command: >
+    podman build
+    -t {{ _mcp.image }}
+    -f Dockerfile
+    {{ mcp_servers.workspace_base }}/{{ _mcp.source_path }}
+  when:
+    - _mcp.build | default(true)
+    - context7_mcp_source.stat.exists
+    - context7_image_exists.rc != 0 or mcp_build.force_rebuild | default(false)
+  register: context7_mcp_build
+  tags: ['mcp', 'mcp-context7', 'mcp-build']
+
+- name: Deploy context7-mcp container
+  containers.podman.podman_container:
+    name: "{{ _mcp.container_name }}"
+    image: "{{ _mcp.image }}"
+    pull: never
+    state: started
+    network: "{{ mcp_servers.network }}"
+    memory: 128m
+    ports:
+      - "127.0.0.1:{{ _mcp.port }}:{{ _mcp.internal_port | default(_mcp.port) }}"
+    env: "{{ _mcp.env | default({}) }}"
+    volumes:
+      - "{{ mcp_servers.data_dir }}/context7:/app/data:Z"
+    restart_policy: "{{ mcp_runtime.restart_policy | default('unless-stopped') }}"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:{{ _mcp.internal_port }}/health"]
+      interval: "30s"
+      timeout: "10s"
+      retries: 3
+  when: context7_mcp_source.stat.exists
+  notify: verify mcp containers
+  tags: ['mcp', 'mcp-context7']
+
+- name: Display context7-mcp status
+  debug:
+    msg: "context7-mcp deployed at http://127.0.0.1:{{ _mcp.port }}"
+  tags: ['mcp', 'mcp-context7']
