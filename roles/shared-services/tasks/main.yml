@@ -266,6 +266,124 @@
 # Redis moved to authentication-pod (Authentik is the sole consumer)
 
 # ============================================================================
+# MCP-POD: MCP servers + Telegram Gateway
+# ============================================================================
+
+- name: Create mcp pod
+  containers.podman.podman_pod:
+    name: mcp-pod
+    network:
+      - "{{ podman_network_name | default('enterprise_network') }}"
+    state: started
+    ports:
+      - "127.0.0.1:7555:7555"    # Telegram Gateway
+      - "127.0.0.1:3001:3001"    # Context7 MCP
+      - "127.0.0.1:9091:9091"    # Google Docs MCP
+      - "127.0.0.1:8888:8888"    # Scrapy MCP (when enabled)
+  when: deploy_shared_services | default(true)
+  tags: ['shared-services', 'mcp-pod', 'pod']
+
+# ── Telegram Gateway ──
+
+- name: Deploy Telegram Gateway container (in mcp-pod)
+  containers.podman.podman_container:
+    name: telegram-gateway
+    image: "localhost/telegram-gateway:latest"
+    state: started
+    pod: mcp-pod
+    memory: "256m"
+    env:
+      TELEGRAM_BOT_TOKEN: "{{ telegram_bot_token }}"
+      TELEGRAM_WEBHOOK_SECRET: "{{ telegram_webhook_secret }}"
+      TELEGRAM_ALLOWED_USER_IDS: "{{ telegram_allowed_user_ids | default('8520366373') }}"
+      APPROVER_ALLOW_LIST: "{{ telegram_allowed_user_ids | default('8520366373') }}"
+      APPROVAL_TIMEOUT_MINUTES: "10"
+      MCP_SERVER_PORT: "7555"
+      MCP_TRANSPORT_PROTOCOL: "streamable-http"
+      RATE_LIMIT_PER_MINUTE: "20"
+      CLAUDE_CLI_TIMEOUT: "900"
+      DB_HOST: "postgres"
+      DB_PORT: "5432"
+      DB_NAME: "enterprise"
+      DB_USER: "postgres"
+      DB_PASSWORD: "{{ postgres_password }}"
+      LITELLM_BASE_URL: "http://ai-stack-pod:4000"
+      LITELLM_API_KEY: "{{ litellm_master_key }}"
+      LITELLM_DEFAULT_MODEL: "claude-sonnet-4-20250514"
+      GRAFANA_URL: "http://metrics-pod:3000"
+      GRAFANA_USER: "admin"
+      GRAFANA_PASSWORD: "{{ grafana_password }}"
+      AUTH_TOKEN: "{{ telegram_auth_token | default('') }}"
+      OTEL_SERVICE_NAME: "telegram-gateway"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://logs-pod:4318"
+      PYTHONPATH: "/app"
+    volumes:
+      - /root/.claude:/root/.claude
+      - /root/.claude.json:/root/.claude.json
+      - /usr/local/bin/claude:/usr/local/bin/claude
+      - /usr/local/lib/node_modules:/usr/local/lib/node_modules
+      - /workspace:/workspace
+    restart_policy: unless-stopped
+  when: deploy_shared_services | default(true)
+  tags: ['shared-services', 'mcp-pod', 'telegram-gateway']
+
+# ── Context7 MCP ──
+
+- name: Deploy Context7 MCP container (in mcp-pod)
+  containers.podman.podman_container:
+    name: context7-mcp
+    image: "localhost/context7-mcp:latest"
+    state: started
+    pod: mcp-pod
+    memory: "128m"
+    env:
+      PORT: "3001"
+    volumes:
+      - /opt/podman-data/mcp/context7:/app/data
+    restart_policy: unless-stopped
+  when: deploy_shared_services | default(true)
+  tags: ['shared-services', 'mcp-pod', 'context7-mcp']
+
+# ── Google Docs MCP ──
+
+- name: Deploy Google Docs MCP container (in mcp-pod)
+  containers.podman.podman_container:
+    name: google-docs-mcp
+    image: "localhost/google-docs-mcp:latest"
+    state: started
+    pod: mcp-pod
+    memory: "128m"
+    env:
+      MCP_TRANSPORT: "httpStream"
+      PORT: "9091"
+    volumes:
+      - /opt/podman-data/mcp/google-docs:/app/data
+      - /workspace/vscode-projects/mcp-googledocs-server/credentials.json:/app/credentials.json
+    restart_policy: unless-stopped
+  when: deploy_shared_services | default(true)
+  tags: ['shared-services', 'mcp-pod', 'google-docs-mcp']
+
+# ── Scrapy MCP (disabled by default — enable when built) ──
+
+- name: Deploy Scrapy MCP container (in mcp-pod)
+  containers.podman.podman_container:
+    name: scrapy-mcp
+    image: "localhost/scrapy-mcp:latest"
+    state: started
+    pod: mcp-pod
+    memory: "256m"
+    env:
+      PORT: "8888"
+      SCRAPY_PROJECT_PATH: "/workspace"
+    volumes:
+      - /opt/podman-data/mcp/scrapy:/app/data
+    restart_policy: unless-stopped
+  when:
+    - deploy_shared_services | default(true)
+    - mcp_servers.servers.scrapy.enabled | default(false)
+  tags: ['shared-services', 'mcp-pod', 'scrapy-mcp']
+
+# ============================================================================
 # STATUS
 # ============================================================================
 
@@ -275,6 +393,6 @@
       - "Shared services deployed in pods (K8s-ready)"
       - "  security-infra-pod: Traefik, Cloudflared, CrowdSec"
       - "  shared-db-pod: PostgreSQL"
-      - "  shared-cache-pod: Redis"
+      - "  mcp-pod: Telegram Gateway, Context7 MCP, Google Docs MCP"
   when: deploy_shared_services | default(true)
   tags: ['shared-services']

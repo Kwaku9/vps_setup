@@ -30,22 +30,35 @@
     - management.portainer.enabled | default(true)
   tags: ['management', 'portainer']
 
-# ── Ansible Deployment Container ──
+# ── Ansible Deployment Container (STANDALONE — requires host networking) ──
 
-- name: Deploy ansible-deployment container
+- name: Deploy ansible-deployment container (standalone, host network)
   containers.podman.podman_container:
     name: ansible-deployment
-    image: "{{ management.ansible_deployment.image | default('alpine:latest') }}"
+    image: "{{ management.ansible_deployment.image | default('localhost/ansible-vps:latest') }}"
     state: started
-    pod: management-pod
-    memory: "128m"
-    command: "sleep infinity"
+    network: host
+    env:
+      ANSIBLE_HOST_KEY_CHECKING: "False"
+      ANSIBLE_CALLBACK_RESULT_FORMAT: "yaml"
+      ANSIBLE_FORCE_COLOR: "true"
+      ANSIBLE_RETRY_FILES_ENABLED: "False"
+      ANSIBLE_STDOUT_CALLBACK: "default"
+      PYTHONUNBUFFERED: "1"
+      TERM: "xterm"
     volumes:
-      - /opt/compose:/opt/compose:ro
+      - /opt/backups:/opt/backups
+      - /root/.claude:/root/.claude
+      - /run/podman/podman.sock:/run/podman/podman.sock
+      - /root/.ssh:/tmp/host-ssh
+      - /workspace/vscode-projects/vps_setup:/ansible
+      - /workspace:/workspace
+      - /opt/podman-data:/opt/podman-data
+      - /opt/compose:/opt/compose
     restart_policy: unless-stopped
   when:
     - management.enabled | default(true)
-    - management.ansible_deployment.enabled | default(false)
+    - management.ansible_deployment.enabled | default(true)
   tags: ['management', 'ansible-deployment']
 
 - name: Create Dockge stacks directory
