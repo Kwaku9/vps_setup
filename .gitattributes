@@ -1,0 +1,88 @@
+# ══════════════════════════════════════════════════════════
+# git-crypt encryption rules
+# Files matching these patterns are encrypted at rest.
+# Decryption requires: git-crypt unlock (with authorized GPG key)
+# ══════════════════════════════════════════════════════════
+
+# ── Global Configuration (tuned values, enterprise topology) ──
+all.yml filter=git-crypt diff=git-crypt
+model_tiers.yml filter=git-crypt diff=git-crypt
+
+# ── Architecture Diagrams ──
+*.drawio filter=git-crypt diff=git-crypt
+
+# ── Detailed Documentation ──
+docs/**/*.md filter=git-crypt diff=git-crypt
+
+# ── Grafana Dashboards (full panel JSON) ──
+dashboards/**/*.json filter=git-crypt diff=git-crypt
+roles/monitoring/files/dashboards/*.json filter=git-crypt diff=git-crypt
+
+# ── ALL Task Files (deployment orchestration logic) ──
+roles/*/tasks/*.yml filter=git-crypt diff=git-crypt
+
+# ── ALL Templates (service wiring configuration) ──
+roles/*/templates/*.j2 filter=git-crypt diff=git-crypt
+roles/*/templates/*.yml filter=git-crypt diff=git-crypt
+roles/*/templates/*.conf filter=git-crypt diff=git-crypt
+roles/*/templates/*.py filter=git-crypt diff=git-crypt
+roles/*/templates/*.sh filter=git-crypt diff=git-crypt
+roles/*/templates/*.toml filter=git-crypt diff=git-crypt
+roles/*/templates/*.alloy filter=git-crypt diff=git-crypt
+
+# ── Security Policies (Tetragon BPF) ──
+roles/security/files/tetragon/*.yaml filter=git-crypt diff=git-crypt
+
+# ── Monitoring Scripts & Files ──
+roles/monitoring/files/*.py filter=git-crypt diff=git-crypt
+roles/monitoring/files/*.sh filter=git-crypt diff=git-crypt
+
+# ── Trading Strategies & Data Pipeline ──
+roles/trading/files/*.py filter=git-crypt diff=git-crypt
+roles/trading/files/*.html filter=git-crypt diff=git-crypt
+roles/trading/files/backtrader/runner.py filter=git-crypt diff=git-crypt
+roles/trading/files/lightweight-charts/app.js filter=git-crypt diff=git-crypt
+roles/trading/files/lightweight-charts/index.html filter=git-crypt diff=git-crypt
+roles/trading/files/lightweight-charts/style.css filter=git-crypt diff=git-crypt
+roles/trading/files/lightweight-charts/nginx.conf filter=git-crypt diff=git-crypt
+
+# ── AI Stack Custom Files ──
+roles/ai-stack/files/*.css filter=git-crypt diff=git-crypt
+
+# ── Utility Playbooks (advanced integration) ──
+hardening.yml filter=git-crypt diff=git-crypt
+main.yml filter=git-crypt diff=git-crypt
+claude-restore.yml filter=git-crypt diff=git-crypt
+claude-transfer.yml filter=git-crypt diff=git-crypt
+migrate-cgroups-v2.yml filter=git-crypt diff=git-crypt
+migrate-dev-environment.yml filter=git-crypt diff=git-crypt
+transfer-workspace-agents.yml filter=git-crypt diff=git-crypt
+backend-info.txt.j2 filter=git-crypt diff=git-crypt
+services-info.txt.j2 filter=git-crypt diff=git-crypt
+
+# ── Tools (integration utilities) ──
+tools/*.py filter=git-crypt diff=git-crypt
+tools/*.js filter=git-crypt diff=git-crypt
+tools/yt-transcript-worker/*.js filter=git-crypt diff=git-crypt
+tools/yt-transcript-worker/*.toml filter=git-crypt diff=git-crypt
+tools/yt-transcript-worker/.wrangler/**/* filter=git-crypt diff=git-crypt
+
+# ── Workers (auth/integration logic) ──
+workers/webhook-handler/src/lib/authentik.ts filter=git-crypt diff=git-crypt
+workers/webhook-handler/src/routes/*.ts filter=git-crypt diff=git-crypt
+
+# ══════════════════════════════════════════════════════════
+# NEVER ENCRYPT (explicit overrides for files inside encrypted dirs)
+# ══════════════════════════════════════════════════════════
+
+# Defaults are always public (config schemas, no secrets)
+roles/*/defaults/main.yml !filter !diff
+
+# Handlers are always public (just restart triggers)
+roles/*/handlers/main.yml !filter !diff
+
+# Dockerfiles and package manifests stay public
+roles/trading/files/backtrader/Dockerfile !filter !diff
+roles/trading/files/backtrader/requirements.txt !filter !diff
+roles/trading/files/lightweight-charts/Dockerfile !filter !diff
+roles/trading/files/lightweight-charts/package.json !filter !diff
