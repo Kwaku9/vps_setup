@@ -6,10 +6,10 @@
 
 # ── Global Configuration (tuned values, enterprise topology) ──
 all.yml filter=git-crypt diff=git-crypt
-model_tiers.yml filter=git-crypt diff=git-crypt
+docs/model_tiers.yml filter=git-crypt diff=git-crypt
 
 # ── Architecture Diagrams ──
-*.drawio filter=git-crypt diff=git-crypt
+docs/*.drawio filter=git-crypt diff=git-crypt
 
 # ── Detailed Documentation ──
 docs/**/*.md filter=git-crypt diff=git-crypt
@@ -50,15 +50,18 @@ roles/trading/files/lightweight-charts/nginx.conf filter=git-crypt diff=git-cryp
 roles/ai-stack/files/*.css filter=git-crypt diff=git-crypt
 
 # ── Utility Playbooks (advanced integration) ──
-hardening.yml filter=git-crypt diff=git-crypt
-main.yml filter=git-crypt diff=git-crypt
-claude-restore.yml filter=git-crypt diff=git-crypt
-claude-transfer.yml filter=git-crypt diff=git-crypt
-migrate-cgroups-v2.yml filter=git-crypt diff=git-crypt
-migrate-dev-environment.yml filter=git-crypt diff=git-crypt
-transfer-workspace-agents.yml filter=git-crypt diff=git-crypt
-backend-info.txt.j2 filter=git-crypt diff=git-crypt
-services-info.txt.j2 filter=git-crypt diff=git-crypt
+playbooks/*.yml filter=git-crypt diff=git-crypt
+
+# ── Root-level Templates ──
+templates/*.j2 filter=git-crypt diff=git-crypt
+
+# ── Docker Build Files ──
+docker/Dockerfile filter=git-crypt diff=git-crypt
+docker/docker-compose.yml filter=git-crypt diff=git-crypt
+docker/docker-compose-openwebui.yml filter=git-crypt diff=git-crypt
+
+# ── Encryption Map (public documentation) ──
+docs/ENCRYPTION_MAP.md !filter !diff
 
 # ── Tools (integration utilities) ──
 tools/*.py filter=git-crypt diff=git-crypt
