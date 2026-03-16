@@ -1,0 +1,1606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AICortex Cloud — Learning Journey</title>
+    <style>
+        /* ── CSS Custom Properties ─────────────────────────── */
+        :root {
+            --bg-primary: #f0f0f8;
+            --bg-surface: rgba(255, 255, 255, 0.95);
+            --bg-surface-hover: rgba(255, 255, 255, 1);
+            --bg-glass: rgba(255, 255, 255, 0.12);
+            --bg-glass-strong: rgba(255, 255, 255, 0.18);
+            --bg-item: #f4f4fa;
+
+            --text-primary: #1a1a2e;
+            --text-secondary: #555;
+            --text-muted: #888;
+            --text-on-dark: #ffffff;
+
+            --accent-1: #667eea;
+            --accent-2: #764ba2;
+            --accent-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --accent-glow: rgba(102, 126, 234, 0.35);
+            --accent-glow-strong: rgba(102, 126, 234, 0.55);
+
+            --card-bg: rgba(255, 255, 255, 0.92);
+            --card-border: 1px solid rgba(255, 255, 255, 0.25);
+            --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            --card-shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.16), 0 0 30px var(--accent-glow);
+
+            --glass-blur: 20px;
+            --dot-glow: 0 0 10px var(--accent-glow), 0 0 20px rgba(102, 126, 234, 0.12);
+            --badge-glow: 0 0 8px rgba(102, 126, 234, 0.25);
+
+            --border-subtle: rgba(0, 0, 0, 0.06);
+            --timeline-line: rgba(255, 255, 255, 0.3);
+            --body-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --detail-border: #eee;
+            --heatmap-outline: #333;
+            --tooltip-bg: #24292e;
+
+            --git-green-0: #ebedf0;
+            --git-green-1: #9be9a8;
+            --git-green-2: #40c463;
+            --git-green-3: #30a14e;
+            --git-green-4: #216e39;
+        }
+
+        [data-theme="dark"] {
+            --bg-primary: #0a0a14;
+            --bg-surface: rgba(22, 22, 40, 0.92);
+            --bg-surface-hover: rgba(28, 28, 50, 1);
+            --bg-glass: rgba(255, 255, 255, 0.04);
+            --bg-glass-strong: rgba(255, 255, 255, 0.07);
+            --bg-item: rgba(255, 255, 255, 0.05);
+
+            --text-primary: #e0e0f0;
+            --text-secondary: #a0a0b8;
+            --text-muted: #6a6a80;
+
+            --accent-1: #7b93ff;
+            --accent-2: #9b6fd0;
+            --accent-gradient: linear-gradient(135deg, #7b93ff 0%, #9b6fd0 100%);
+            --accent-glow: rgba(123, 147, 255, 0.45);
+            --accent-glow-strong: rgba(123, 147, 255, 0.65);
+
+            --card-bg: rgba(16, 16, 32, 0.82);
+            --card-border: 1px solid rgba(255, 255, 255, 0.07);
+            --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            --card-shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.5), 0 0 40px var(--accent-glow);
+
+            --dot-glow: 0 0 14px var(--accent-glow), 0 0 28px rgba(123, 147, 255, 0.18);
+            --badge-glow: 0 0 10px rgba(123, 147, 255, 0.35);
+
+            --border-subtle: rgba(255, 255, 255, 0.06);
+            --timeline-line: rgba(123, 147, 255, 0.2);
+            --body-gradient: linear-gradient(135deg, #0a0a14 0%, #1a1030 50%, #0a0a14 100%);
+            --detail-border: rgba(255, 255, 255, 0.06);
+            --heatmap-outline: #aaa;
+            --tooltip-bg: #1a1a30;
+
+            --git-green-0: #161b22;
+            --git-green-1: #0e4429;
+            --git-green-2: #006d32;
+            --git-green-3: #26a641;
+            --git-green-4: #39d353;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: var(--body-gradient);
+            min-height: 100vh;
+            color: var(--text-primary);
+            transition: background 0.6s ease, color 0.3s ease;
+        }
+
+        /* Dark mode ambient glow overlay */
+        [data-theme="dark"] body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(ellipse at 20% 40%, rgba(123, 147, 255, 0.05) 0%, transparent 50%),
+                radial-gradient(ellipse at 75% 25%, rgba(155, 111, 208, 0.04) 0%, transparent 45%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        body > * { position: relative; z-index: 1; }
+
+        /* ── Theme Toggle ──────────────────────────────────── */
+        .theme-toggle {
+            position: fixed; top: 20px; right: 20px; z-index: 1000;
+            width: 46px; height: 46px; border-radius: 50%;
+            border: var(--card-border);
+            background: var(--card-bg);
+            backdrop-filter: blur(var(--glass-blur));
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: var(--card-shadow), var(--dot-glow);
+            transition: transform 0.3s, box-shadow 0.3s;
+            font-size: 1.3em;
+        }
+        .theme-toggle:hover {
+            transform: scale(1.12);
+            box-shadow: var(--card-shadow-hover);
+        }
+        .theme-toggle-icon { transition: transform 0.5s; display: inline-block; }
+        [data-theme="dark"] .theme-toggle-icon { transform: rotate(180deg); }
+
+        /* ── Header ──────────────────────────────────────── */
+        .header {
+            position: relative;
+            overflow: hidden;
+            padding: 60px 20px 40px;
+            text-align: center;
+            color: white;
+            perspective: 800px;
+        }
+        .header-canvas {
+            position: absolute; inset: 0;
+            width: 100%; height: 100%;
+            z-index: 0;
+        }
+        .header-content {
+            position: relative; z-index: 2;
+            animation: headerFloat 6s ease-in-out infinite;
+        }
+        @keyframes headerFloat {
+            0%, 100% { transform: translateY(0) rotateX(0deg); }
+            50% { transform: translateY(-6px) rotateX(1deg); }
+        }
+        .header h1 {
+            font-size: 2.8em; margin-bottom: 8px; font-weight: 800;
+            background: linear-gradient(135deg, #fff 0%, #c7d2fe 40%, #a78bfa 70%, #fff 100%);
+            background-size: 200% 200%;
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: shimmer 4s ease-in-out infinite;
+            filter: drop-shadow(0 4px 12px rgba(102, 126, 234, 0.5));
+        }
+        @keyframes shimmer {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        .header .subtitle {
+            font-size: 1.15em; opacity: 0.9; margin-bottom: 28px;
+            text-shadow: 0 2px 16px rgba(0,0,0,0.3);
+            letter-spacing: 0.5px;
+        }
+        .header-glow {
+            position: absolute; z-index: 1;
+            width: 340px; height: 340px;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: radial-gradient(circle, var(--accent-glow-strong) 0%, transparent 70%);
+            border-radius: 50%;
+            animation: pulseOrb 5s ease-in-out infinite;
+            pointer-events: none;
+        }
+        @keyframes pulseOrb {
+            0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
+            50% { opacity: 0.8; transform: translate(-50%, -50%) scale(1.15); }
+        }
+        [data-theme="dark"] .header-glow {
+            width: 420px; height: 420px;
+            background: radial-gradient(circle, rgba(123,147,255,0.25) 0%, rgba(155,111,208,0.1) 40%, transparent 70%);
+        }
+
+        .stats-row {
+            display: flex; justify-content: center; gap: 24px; flex-wrap: wrap;
+        }
+        .stat-card {
+            background: var(--bg-glass-strong);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px; padding: 14px 20px;
+            text-align: center; min-width: 100px;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+        .stat-card .value { font-size: 1.8em; font-weight: 700; }
+        .stat-card .label { font-size: 0.8em; opacity: 0.85; margin-top: 4px; }
+
+        /* ── Heatmap Section ─────────────────────────────── */
+        .heatmap-section {
+            max-width: 1200px; margin: 0 auto; padding: 24px 20px 0;
+        }
+        .heatmap-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(var(--glass-blur));
+            border: var(--card-border);
+            border-radius: 16px; padding: 24px;
+            box-shadow: var(--card-shadow);
+        }
+        .heatmap-card h3 {
+            color: var(--text-primary); font-size: 1.1em; margin-bottom: 16px;
+            padding-bottom: 8px; border-bottom: 2px solid var(--accent-1);
+        }
+        .heatmap-grid {
+            display: flex; flex-wrap: wrap; gap: 4px;
+            align-items: flex-start;
+        }
+        .heatmap-cell {
+            width: 24px; height: 24px; border-radius: 3px;
+            cursor: pointer; position: relative;
+            transition: transform 0.15s;
+        }
+        .heatmap-cell:hover {
+            outline: 2px solid var(--heatmap-outline); outline-offset: 1px;
+            transform: scale(1.2);
+        }
+        .heatmap-tooltip {
+            display: none; position: absolute; bottom: 32px; left: 50%;
+            transform: translateX(-50%); background: var(--tooltip-bg); color: white;
+            padding: 6px 10px; border-radius: 6px; font-size: 0.75em;
+            white-space: nowrap; z-index: 10; pointer-events: none;
+        }
+        .heatmap-tooltip::after {
+            content: ''; position: absolute; top: 100%; left: 50%;
+            transform: translateX(-50%); border: 5px solid transparent;
+            border-top-color: var(--tooltip-bg);
+        }
+        .heatmap-cell:hover .heatmap-tooltip { display: block; }
+        .heatmap-legend {
+            display: flex; align-items: center; gap: 4px;
+            margin-top: 12px; font-size: 0.8em; color: var(--text-muted);
+        }
+        .heatmap-legend-cell { width: 14px; height: 14px; border-radius: 2px; }
+        .heatmap-legend-cell.level-0 { background: #ebedf0; }
+        .heatmap-legend-cell.level-1 { background: #c6b8e8; }
+        .heatmap-legend-cell.level-2 { background: #9b82d6; }
+        .heatmap-legend-cell.level-3 { background: #7353c4; }
+        .heatmap-legend-cell.level-4 { background: #4c3d99; }
+        [data-theme="dark"] .heatmap-legend-cell.level-0 { background: #1a1a2e; }
+        [data-theme="dark"] .heatmap-legend-cell.level-1 { background: #2a2450; }
+        [data-theme="dark"] .heatmap-legend-cell.level-2 { background: #3d3570; }
+        [data-theme="dark"] .heatmap-legend-cell.level-3 { background: #5545a0; }
+        [data-theme="dark"] .heatmap-legend-cell.level-4 { background: #7b5fd0; }
+
+        /* ── Git Activity Section ───────────────────────────── */
+        .git-section {
+            max-width: 1200px; margin: 0 auto; padding: 24px 20px 0;
+        }
+        .git-section .heatmap-card {
+            margin-bottom: 0;
+        }
+        .git-section .heatmap-card h3 {
+            display: flex; align-items: center; gap: 8px;
+        }
+        .git-section .heatmap-card h3 .git-icon {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 24px; height: 24px; border-radius: 6px;
+            background: var(--accent-gradient); color: white; font-size: 0.8em;
+        }
+        .git-heatmap-wrapper {
+            overflow-x: auto; padding-bottom: 8px;
+        }
+        .git-heatmap-outer {
+            display: flex; align-items: flex-start; gap: 4px;
+        }
+        .git-heatmap-labels {
+            display: grid; grid-template-rows: repeat(7, 13px); gap: 2px;
+            font-size: 0.65em; color: var(--text-muted);
+            padding-top: 0; line-height: 13px; flex-shrink: 0;
+            text-align: right; padding-right: 4px;
+        }
+        .git-heatmap-grid {
+            display: grid;
+            grid-template-rows: repeat(7, 13px);
+            grid-auto-flow: column;
+            grid-auto-columns: 13px;
+            gap: 2px;
+        }
+        .git-heatmap-cell {
+            width: 13px; height: 13px; border-radius: 2px;
+            cursor: pointer; position: relative;
+            transition: transform 0.1s;
+        }
+        .git-heatmap-cell:hover {
+            outline: 2px solid var(--heatmap-outline); outline-offset: 1px;
+            transform: scale(1.3);
+        }
+        .git-heatmap-cell .heatmap-tooltip {
+            bottom: 22px;
+        }
+        .git-heatmap-months {
+            display: flex; gap: 0; font-size: 0.65em; color: var(--text-muted);
+            margin-top: 4px; padding-left: 28px;
+        }
+        .git-heatmap-months span {
+            flex-shrink: 0;
+        }
+        .git-heatmap-legend {
+            display: flex; align-items: center; gap: 3px;
+            margin-top: 8px; font-size: 0.75em; color: var(--text-muted);
+        }
+        .git-heatmap-legend .git-legend-cell {
+            width: 13px; height: 13px; border-radius: 2px;
+        }
+        .git-stats-summary {
+            display: flex; gap: 20px; flex-wrap: wrap; margin-top: 16px;
+            padding-top: 12px; border-top: 1px solid var(--border-subtle);
+            font-size: 0.85em; color: var(--text-secondary);
+        }
+        .git-stats-summary .git-stat {
+            display: flex; align-items: center; gap: 6px;
+        }
+        .git-stats-summary .git-stat .git-stat-value {
+            font-weight: 700; color: var(--text-primary); font-size: 1.1em;
+        }
+        .git-stats-summary .git-stat .git-stat-added {
+            color: #26a641; font-weight: 600;
+        }
+        .git-stats-summary .git-stat .git-stat-deleted {
+            color: #f85149; font-weight: 600;
+        }
+
+        /* ── Major Commits Timeline ─────────────────────────── */
+        .major-commits-section {
+            max-width: 1200px; margin: 0 auto; padding: 24px 20px 0;
+        }
+        .commits-grid {
+            display: grid; gap: 12px;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        }
+        .commit-card {
+            display: flex; gap: 12px; align-items: flex-start;
+            padding: 14px 16px; border-radius: 12px;
+            background: var(--bg-item);
+            border-left: 3px solid var(--accent-1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .commit-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+        }
+        .commit-card-icon {
+            width: 36px; height: 36px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0; font-size: 0.9em;
+            background: var(--accent-gradient); color: white;
+        }
+        .commit-card-body {
+            flex: 1; min-width: 0;
+        }
+        .commit-card-header {
+            display: flex; align-items: center; gap: 8px;
+            margin-bottom: 4px; flex-wrap: wrap;
+        }
+        .commit-hash {
+            display: inline-block; padding: 1px 8px; border-radius: 6px;
+            font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+            font-size: 0.75em; font-weight: 600;
+            background: var(--bg-glass-strong);
+            border: 1px solid var(--border-subtle);
+            color: var(--accent-1);
+        }
+        .commit-repo {
+            font-size: 0.75em; color: var(--text-muted);
+            font-weight: 500;
+        }
+        .commit-ai-badge {
+            display: inline-flex; align-items: center; gap: 3px;
+            padding: 1px 7px; border-radius: 10px;
+            font-size: 0.65em; font-weight: 600;
+            background: rgba(102, 126, 234, 0.15);
+            color: var(--accent-1);
+            border: 1px solid rgba(102, 126, 234, 0.25);
+        }
+        [data-theme="dark"] .commit-ai-badge {
+            background: rgba(123, 147, 255, 0.15);
+            color: var(--accent-1);
+            border-color: rgba(123, 147, 255, 0.3);
+        }
+        .commit-message {
+            font-size: 0.85em; color: var(--text-primary);
+            line-height: 1.4; margin-bottom: 4px;
+            overflow: hidden; text-overflow: ellipsis;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        }
+        .commit-meta {
+            display: flex; align-items: center; gap: 10px;
+            font-size: 0.72em; color: var(--text-muted);
+        }
+        .commit-files-badge {
+            display: inline-flex; align-items: center; gap: 3px;
+            padding: 1px 6px; border-radius: 6px;
+            background: var(--bg-glass); font-size: 0.9em;
+        }
+
+        /* ── Recent Commits (Sidebar) ───────────────────────── */
+        .recent-commits {
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .recent-commit-item {
+            display: flex; gap: 10px; align-items: flex-start;
+            padding: 8px 10px; border-radius: 8px;
+            background: var(--bg-item); font-size: 0.82em;
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: default;
+        }
+        .recent-commit-item:hover {
+            transform: translateX(3px);
+            box-shadow: 0 0 8px var(--accent-glow);
+        }
+        .recent-commit-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--accent-1); flex-shrink: 0;
+            margin-top: 5px;
+        }
+        .recent-commit-dot.ai-assisted {
+            background: #26a641;
+            box-shadow: 0 0 6px rgba(38, 166, 65, 0.4);
+        }
+        .recent-commit-info { flex: 1; min-width: 0; }
+        .recent-commit-msg {
+            color: var(--text-primary); line-height: 1.35;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .recent-commit-detail {
+            display: flex; align-items: center; gap: 6px;
+            margin-top: 2px; font-size: 0.85em; color: var(--text-muted);
+        }
+        .recent-commit-hash {
+            font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+            font-size: 0.9em; color: var(--accent-1);
+        }
+
+        /* ── Main Layout ─────────────────────────────────── */
+        .main-layout {
+            max-width: 1200px; margin: 0 auto; padding: 40px 20px;
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            gap: 40px;
+        }
+        @media (max-width: 900px) {
+            .main-layout { grid-template-columns: 1fr; }
+        }
+
+        /* ── Timeline ────────────────────────────────────── */
+        .timeline { position: relative; }
+        .timeline::before {
+            content: ''; position: absolute; left: 20px; top: 0; bottom: 0;
+            width: 3px; background: var(--timeline-line); border-radius: 2px;
+            box-shadow: 0 0 8px var(--accent-glow);
+        }
+
+        .milestone-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(var(--glass-blur));
+            border: var(--card-border);
+            border-radius: 16px; padding: 24px; margin-bottom: 24px;
+            margin-left: 48px; position: relative;
+            box-shadow: var(--card-shadow);
+            border-left: 4px solid var(--accent-1);
+
+            /* 3D + scroll entrance */
+            opacity: 0;
+            transform: perspective(1000px) translateY(50px) rotateX(3deg) scale(0.97);
+            transition: opacity 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                        transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                        box-shadow 0.35s ease;
+        }
+        .milestone-card.visible {
+            opacity: 1;
+            transform: perspective(1000px) translateY(0) rotateX(0) scale(1);
+        }
+        .milestone-card:hover {
+            transform: perspective(1000px) translateY(-5px) rotateX(0.5deg) translateZ(8px) scale(1);
+            box-shadow: var(--card-shadow-hover);
+        }
+
+        .milestone-card::before {
+            content: ''; position: absolute; left: -36px; top: 28px;
+            width: 14px; height: 14px; border-radius: 50%;
+            border: 3px solid white;
+            transition: box-shadow 0.35s;
+            box-shadow: var(--dot-glow);
+        }
+        .milestone-card:hover::before {
+            box-shadow: var(--dot-glow), 0 0 20px var(--accent-glow-strong);
+        }
+
+        .milestone-header {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            margin-bottom: 8px; cursor: pointer;
+        }
+        .milestone-date {
+            font-size: 0.8em; color: var(--accent-2); font-weight: 600;
+            white-space: nowrap; margin-left: 12px;
+        }
+
+        .pillar-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 3px 12px; border-radius: 10px;
+            font-size: 0.75em; font-weight: 600; margin-bottom: 8px;
+            color: white;
+            box-shadow: var(--badge-glow);
+            transition: box-shadow 0.3s, transform 0.2s;
+        }
+        .pillar-badge:hover {
+            box-shadow: var(--badge-glow), 0 0 16px var(--accent-glow-strong);
+            transform: translateY(-1px);
+        }
+
+        .milestone-stats {
+            display: flex; gap: 16px; margin-bottom: 10px;
+            font-size: 0.8em; color: var(--text-muted);
+        }
+        .milestone-stats span { display: flex; align-items: center; gap: 4px; }
+
+        .difficulty-badge {
+            display: inline-block; padding: 2px 10px; border-radius: 10px;
+            font-size: 0.7em; font-weight: 600; margin-left: 8px;
+        }
+        .difficulty-beginner { background: #d4edda; color: #155724; }
+        .difficulty-intermediate { background: #fff3cd; color: #856404; }
+        .difficulty-advanced { background: #f8d7da; color: #721c24; }
+        [data-theme="dark"] .difficulty-beginner { background: rgba(21, 87, 36, 0.3); color: #66bb6a; }
+        [data-theme="dark"] .difficulty-intermediate { background: rgba(133, 100, 4, 0.3); color: #fdd835; }
+        [data-theme="dark"] .difficulty-advanced { background: rgba(114, 28, 36, 0.3); color: #ef5350; }
+
+        .milestone-narrative {
+            color: var(--text-secondary); font-size: 0.92em; line-height: 1.65;
+            margin-bottom: 14px; font-style: italic;
+            border-left: 3px solid var(--border-subtle); padding-left: 12px;
+        }
+
+        .tech-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+        .tech-badge {
+            display: inline-block; padding: 3px 10px; border-radius: 12px;
+            font-size: 0.75em; font-weight: 500;
+            transition: box-shadow 0.2s, transform 0.2s;
+        }
+        .tech-badge:hover {
+            box-shadow: 0 0 10px var(--accent-glow);
+            transform: translateY(-2px);
+        }
+        .tech-badge.cat-container { background: #e3f2fd; color: #1565c0; }
+        .tech-badge.cat-infrastructure { background: #f3e5f5; color: #7b1fa2; }
+        .tech-badge.cat-security { background: #fce4ec; color: #c62828; }
+        .tech-badge.cat-observability { background: #e8f5e9; color: #2e7d32; }
+        .tech-badge.cat-ai { background: #fff8e1; color: #f57f17; }
+        .tech-badge.cat-development { background: #e0f2f1; color: #00695c; }
+        .tech-badge.cat-other { background: #f5f5f5; color: #616161; }
+        [data-theme="dark"] .tech-badge.cat-container { background: rgba(30, 60, 120, 0.35); color: #82b1ff; }
+        [data-theme="dark"] .tech-badge.cat-infrastructure { background: rgba(80, 30, 100, 0.35); color: #ce93d8; }
+        [data-theme="dark"] .tech-badge.cat-security { background: rgba(120, 30, 40, 0.35); color: #ef9a9a; }
+        [data-theme="dark"] .tech-badge.cat-observability { background: rgba(30, 80, 40, 0.35); color: #a5d6a7; }
+        [data-theme="dark"] .tech-badge.cat-ai { background: rgba(120, 100, 20, 0.35); color: #fff59d; }
+        [data-theme="dark"] .tech-badge.cat-development { background: rgba(20, 80, 70, 0.35); color: #80cbc4; }
+        [data-theme="dark"] .tech-badge.cat-other { background: rgba(60, 60, 60, 0.35); color: #bdbdbd; }
+
+        details summary {
+            cursor: pointer; color: var(--accent-1); font-size: 0.85em; font-weight: 600;
+            margin-top: 8px; list-style: none;
+            transition: color 0.2s;
+        }
+        details summary::before { content: '+ '; }
+        details[open] summary::before { content: '- '; }
+        details summary::-webkit-details-marker { display: none; }
+        details summary:hover { color: var(--accent-2); }
+
+        .detail-section {
+            margin-top: 12px; padding-top: 12px;
+            border-top: 1px solid var(--detail-border);
+            animation: scaleIn 0.3s ease;
+        }
+        .detail-section h4 { font-size: 0.85em; color: var(--accent-2); margin-bottom: 8px; }
+        .detail-section ul { padding-left: 20px; font-size: 0.85em; color: var(--text-secondary); }
+        .detail-section li { margin-bottom: 4px; }
+
+        .session-list { font-size: 0.8em; color: var(--text-muted); margin-top: 8px; }
+        .session-chip {
+            display: inline-block; background: var(--bg-item); padding: 2px 8px;
+            border-radius: 8px; margin: 2px; cursor: pointer;
+            transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.15s;
+        }
+        .session-chip:hover {
+            background: var(--accent-1); color: white;
+            box-shadow: 0 0 12px var(--accent-glow);
+            transform: translateY(-1px);
+        }
+        .session-chip a { text-decoration: none; color: inherit; }
+
+        /* ── Sidebar ─────────────────────────────────────── */
+        .sidebar { display: flex; flex-direction: column; gap: 24px; }
+
+        .sidebar-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(var(--glass-blur));
+            border: var(--card-border);
+            border-radius: 16px; padding: 24px;
+            box-shadow: var(--card-shadow);
+            transition: transform 0.35s ease, box-shadow 0.35s ease, opacity 0.5s ease;
+
+            /* Scroll entrance */
+            opacity: 0;
+            transform: translateX(30px);
+        }
+        .sidebar-card.visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+        .sidebar-card:hover {
+            transform: translateY(-3px);
+            box-shadow: var(--card-shadow-hover);
+        }
+        .sidebar-card h3 {
+            color: var(--text-primary); font-size: 1.1em; margin-bottom: 16px;
+            padding-bottom: 8px; border-bottom: 2px solid var(--accent-1);
+        }
+
+        .radar-container { display: flex; justify-content: center; padding: 10px 0; }
+
+        .pattern-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+        .pattern-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 8px 12px; background: var(--bg-item); border-radius: 8px;
+            font-size: 0.85em; color: var(--text-primary);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .pattern-item:hover {
+            transform: translateX(4px);
+            box-shadow: 0 0 10px var(--accent-glow);
+        }
+        .pattern-icon {
+            width: 32px; height: 32px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.8em; font-weight: 700; color: white; flex-shrink: 0;
+        }
+
+        .tech-group { margin-bottom: 12px; }
+        .tech-group-label {
+            font-size: 0.8em; font-weight: 600; color: var(--accent-2);
+            margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .tech-group .tech-badges { margin-bottom: 0; }
+
+        .weekly-chart-container { display: flex; justify-content: center; padding: 10px 0; }
+
+        /* Pillar overview */
+        .pillar-list { display: flex; flex-direction: column; gap: 6px; }
+        .pillar-row {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 10px; border-radius: 8px; font-size: 0.82em;
+            background: var(--bg-item); cursor: pointer;
+            transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+            color: var(--text-primary);
+        }
+        .pillar-row:hover {
+            background: var(--bg-glass-strong);
+            transform: translateX(4px);
+            box-shadow: 0 0 8px var(--accent-glow);
+        }
+        .pillar-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .pillar-name { flex: 1; }
+        .pillar-count { font-weight: 600; color: var(--accent-1); }
+        .pillar-bar {
+            width: 60px; height: 6px; border-radius: 3px;
+            background: var(--border-subtle); overflow: hidden;
+        }
+        .pillar-bar-fill { height: 100%; border-radius: 3px; }
+
+        /* ── Footer ──────────────────────────────────────── */
+        .footer {
+            text-align: center; padding: 40px 20px; color: rgba(255,255,255,0.7);
+            font-size: 0.85em;
+        }
+
+        .loading {
+            text-align: center; padding: 60px; color: white; font-size: 1.2em;
+        }
+
+        /* ── Animations ──────────────────────────────────── */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes scaleIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes pulseGlow {
+            0%, 100% { box-shadow: var(--dot-glow); }
+            50% { box-shadow: var(--dot-glow), 0 0 20px var(--accent-glow-strong); }
+        }
+
+        /* ── Responsive ──────────────────────────────────── */
+        @media (max-width: 900px) {
+            .header h1 { font-size: 1.9em; }
+            .header { padding: 40px 16px 30px; }
+            .header-glow { width: 220px; height: 220px; }
+            .theme-toggle { top: 12px; right: 12px; width: 40px; height: 40px; font-size: 1.1em; }
+            .commits-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark/light mode">
+        <span class="theme-toggle-icon" id="theme-icon">&#9790;</span>
+    </button>
+
+    <div class="header">
+        <canvas class="header-canvas" id="header-canvas"></canvas>
+        <div class="header-glow"></div>
+        <div class="header-content">
+            <h1>AICortex Cloud</h1>
+            <p class="subtitle">A Learning Journey in Production Cloud Engineering</p>
+            <div class="stats-row" id="stats-row"></div>
+        </div>
+    </div>
+
+    <div class="heatmap-section" id="heatmap-section" style="display:none">
+        <div class="heatmap-card">
+            <h3>Weekly Activity</h3>
+            <div class="heatmap-grid" id="heatmap-grid"></div>
+            <div class="heatmap-legend">
+                <span>Less</span>
+                <div class="heatmap-legend-cell level-0"></div>
+                <div class="heatmap-legend-cell level-1"></div>
+                <div class="heatmap-legend-cell level-2"></div>
+                <div class="heatmap-legend-cell level-3"></div>
+                <div class="heatmap-legend-cell level-4"></div>
+                <span>More</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Git Activity Section -->
+    <div class="git-section" id="git-section" style="display:none">
+        <div class="heatmap-card">
+            <h3><span class="git-icon">G</span> Git Commit Activity</h3>
+            <div class="git-heatmap-wrapper">
+                <div class="git-heatmap-outer">
+                    <div class="git-heatmap-labels" id="git-heatmap-labels"></div>
+                    <div class="git-heatmap-grid" id="git-heatmap-grid"></div>
+                </div>
+            </div>
+            <div class="git-heatmap-months" id="git-heatmap-months"></div>
+            <div class="git-heatmap-legend" id="git-heatmap-legend">
+                <span>Less</span>
+                <div class="git-legend-cell" style="background: var(--git-green-0)"></div>
+                <div class="git-legend-cell" style="background: var(--git-green-1)"></div>
+                <div class="git-legend-cell" style="background: var(--git-green-2)"></div>
+                <div class="git-legend-cell" style="background: var(--git-green-3)"></div>
+                <div class="git-legend-cell" style="background: var(--git-green-4)"></div>
+                <span>More</span>
+            </div>
+            <div class="git-stats-summary" id="git-stats-summary"></div>
+        </div>
+    </div>
+
+    <!-- Major Commits Section -->
+    <div class="major-commits-section" id="major-commits-section" style="display:none">
+        <div class="heatmap-card">
+            <h3><span class="git-icon">*</span> Notable Commits</h3>
+            <div class="commits-grid" id="commits-grid"></div>
+        </div>
+    </div>
+
+    <div class="main-layout">
+        <div class="timeline" id="timeline">
+            <div class="loading">Loading journey data...</div>
+        </div>
+        <div class="sidebar" id="sidebar"></div>
+    </div>
+
+    <div class="footer">
+        <p>Generated from <span id="footer-sessions">0</span> Claude Code sessions spanning <span id="footer-days">0</span> days</p>
+        <p style="margin-top:4px">Built with vanilla HTML/CSS/JS — no frameworks, no build step</p>
+    </div>
+
+    <script>
+    (async function() {
+        // ── Theme toggle ──────────────────────────────────
+        const toggle = document.getElementById('theme-toggle');
+        const themeIcon = document.getElementById('theme-icon');
+        const saved = localStorage.getItem('jt-theme') ||
+            (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', saved);
+        themeIcon.textContent = saved === 'dark' ? '\u2600' : '\u263E';
+
+        function isDark() {
+            return document.documentElement.getAttribute('data-theme') === 'dark';
+        }
+
+        toggle.addEventListener('click', () => {
+            const next = isDark() ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('jt-theme', next);
+            themeIcon.textContent = next === 'dark' ? '\u2600' : '\u263E';
+            // Redraw heatmap + charts
+            if (window.__weeklyData) renderHeatmap(window.__weeklyData);
+            if (window.__globalSkills) { clearCanvas('radar', 280, 280); drawRadar('radar', window.__globalSkills); }
+            if (window.__weeklyData) { clearCanvas('weekly-chart', 290, 180); drawWeeklyChart('weekly-chart', window.__weeklyData); }
+            // Redraw git heatmap on theme change
+            if (window.__gitActivity) renderGitHeatmap(window.__gitActivity);
+        });
+
+        // ── Load data ─────────────────────────────────────
+        let data;
+        try {
+            const resp = await fetch('journey-dataset.json');
+            data = await resp.json();
+        } catch(e) {
+            document.getElementById('timeline').innerHTML =
+                '<div class="loading">Failed to load journey-dataset.json. Run extract-sessions.js first.</div>';
+            return;
+        }
+
+        const { meta, milestones, globalSkills, technologyStack, enterprisePatterns, weeklyData } = data;
+        const gitActivity = data.gitActivity || null;
+        window.__globalSkills = globalSkills;
+        window.__weeklyData = weeklyData;
+        window.__gitActivity = gitActivity;
+
+        // ── Stats row ───────────────────────────────────────
+        const statsItems = [
+            { value: meta.totalDays, label: 'Days' },
+            { value: meta.totalSessions, label: 'Sessions' },
+            { value: meta.weeksActive || '-', label: 'Weeks Active' },
+            { value: meta.totalHours || '-', label: 'Total Hours' },
+            { value: milestones.length, label: 'Pillars' },
+            { value: meta.totalTechnologies, label: 'Technologies' },
+            { value: meta.totalEnterprisePatterns, label: 'Patterns' }
+        ];
+
+        // Add git stats if available
+        if (meta.totalCommits) {
+            statsItems.push({ value: meta.totalCommits, label: 'Commits' });
+        }
+        if (meta.totalLinesAdded) {
+            statsItems.push({ value: formatK(meta.totalLinesAdded), label: 'Lines Added' });
+        }
+        if (meta.totalRepos) {
+            statsItems.push({ value: meta.totalRepos, label: 'Repos' });
+        }
+
+        document.getElementById('stats-row').innerHTML = statsItems.map(s => `
+            <div class="stat-card">
+                <div class="value">${s.value}</div>
+                <div class="label">${s.label}</div>
+            </div>
+        `).join('');
+
+        document.getElementById('footer-sessions').textContent = meta.totalSessions;
+        document.getElementById('footer-days').textContent = meta.totalDays;
+
+        // ── Heatmap ─────────────────────────────────────────
+        function renderHeatmap(wData) {
+            const grid = document.getElementById('heatmap-grid');
+            const dark = isDark();
+            const intensityColors = dark
+                ? ['#1a1a2e', '#2a2450', '#3d3570', '#5545a0', '#7b5fd0']
+                : ['#ebedf0', '#c6b8e8', '#9b82d6', '#7353c4', '#4c3d99'];
+
+            grid.innerHTML = wData.map(w => {
+                const level = w.intensity <= 0 ? 0
+                    : w.intensity < 0.2 ? 1
+                    : w.intensity < 0.45 ? 2
+                    : w.intensity < 0.7 ? 3
+                    : 4;
+                const bg = intensityColors[level];
+                const weekLabel = formatWeekDate(w.weekStart);
+                const hours = Math.round((w.totalDuration || 0) / 3600 * 10) / 10;
+
+                // Build commit tooltip suffix if commit data exists for this week
+                let commitInfo = '';
+                if (w.commitCount !== undefined && w.commitCount > 0) {
+                    const added = w.linesAdded !== undefined ? w.linesAdded : 0;
+                    const deleted = w.linesDeleted !== undefined ? w.linesDeleted : 0;
+                    commitInfo = `<br><span style="color:#9be9a8">${w.commitCount} commits, +${formatK(added)}/-${formatK(deleted)} lines</span>`;
+                }
+
+                return `<div class="heatmap-cell" style="background:${bg}">
+                    <div class="heatmap-tooltip">
+                        <strong>${weekLabel}</strong><br>
+                        ${w.sessionCount} sessions, ${w.totalMessages} msgs<br>
+                        ${w.totalToolCalls} tools, ${hours}h${commitInfo}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        if (weeklyData && weeklyData.length > 0) {
+            document.getElementById('heatmap-section').style.display = '';
+            renderHeatmap(weeklyData);
+        }
+
+        // ── Git Heatmap (daily commit calendar) ─────────────
+        function renderGitHeatmap(gitData) {
+            if (!gitData || !gitData.dailyCommits || gitData.dailyCommits.length === 0) return;
+
+            document.getElementById('git-section').style.display = '';
+
+            const dark = isDark();
+            const greenPalette = dark
+                ? ['#161b22', '#0e4429', '#006d32', '#26a641', '#39d353']
+                : ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'];
+
+            // Build a map of date -> commit data
+            const commitMap = {};
+            let maxCommits = 0;
+            gitData.dailyCommits.forEach(d => {
+                commitMap[d.date] = d;
+                if (d.commits > maxCommits) maxCommits = d.commits;
+            });
+
+            // Determine date range: from earliest to latest commit date, padded to full weeks
+            const dates = gitData.dailyCommits.map(d => new Date(d.date + 'T00:00:00'));
+            const minDate = new Date(Math.min(...dates));
+            const maxDate = new Date(Math.max(...dates));
+
+            // Pad start to Sunday
+            const startDate = new Date(minDate);
+            startDate.setDate(startDate.getDate() - startDate.getDay());
+
+            // Pad end to Saturday
+            const endDate = new Date(maxDate);
+            endDate.setDate(endDate.getDate() + (6 - endDate.getDay()));
+
+            // Day labels (Mon, Wed, Fri)
+            const dayLabels = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
+            const labelsEl = document.getElementById('git-heatmap-labels');
+            labelsEl.innerHTML = dayLabels.map(l => `<span>${l}</span>`).join('');
+
+            // Generate cells
+            const grid = document.getElementById('git-heatmap-grid');
+            let cells = '';
+            const monthMarkers = [];
+            let currentDate = new Date(startDate);
+            let lastMonth = -1;
+            let colIndex = 0;
+
+            while (currentDate <= endDate) {
+                const dateStr = currentDate.toISOString().slice(0, 10);
+                const dayOfWeek = currentDate.getDay();
+                const entry = commitMap[dateStr];
+                const commits = entry ? entry.commits : 0;
+                const insertions = entry ? (entry.insertions || 0) : 0;
+                const deletions = entry ? (entry.deletions || 0) : 0;
+
+                // Determine intensity level
+                let level;
+                if (commits === 0) level = 0;
+                else if (maxCommits <= 4) {
+                    level = commits;
+                } else {
+                    const q1 = maxCommits * 0.25;
+                    const q2 = maxCommits * 0.5;
+                    const q3 = maxCommits * 0.75;
+                    level = commits <= q1 ? 1 : commits <= q2 ? 2 : commits <= q3 ? 3 : 4;
+                }
+                level = Math.min(level, 4);
+                const bg = greenPalette[level];
+
+                const dateLabel = currentDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+
+                let tooltipLines = `<strong>${dateLabel}</strong>`;
+                if (commits > 0) {
+                    tooltipLines += `<br>${commits} commit${commits !== 1 ? 's' : ''}`;
+                    if (insertions > 0 || deletions > 0) {
+                        tooltipLines += `<br><span style="color:#3fb950">+${insertions}</span> / <span style="color:#f85149">-${deletions}</span>`;
+                    }
+                } else {
+                    tooltipLines += '<br>No commits';
+                }
+
+                cells += `<div class="git-heatmap-cell" style="background:${bg}">
+                    <div class="heatmap-tooltip">${tooltipLines}</div>
+                </div>`;
+
+                // Track month labels (when a new month starts on a Sunday column)
+                if (dayOfWeek === 0) {
+                    const month = currentDate.getMonth();
+                    if (month !== lastMonth) {
+                        monthMarkers.push({ col: colIndex, label: currentDate.toLocaleDateString('en-US', { month: 'short' }) });
+                        lastMonth = month;
+                    }
+                    colIndex++;
+                }
+
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+
+            grid.innerHTML = cells;
+
+            // Render month labels
+            const monthsEl = document.getElementById('git-heatmap-months');
+            if (monthMarkers.length > 0) {
+                // Calculate total columns
+                const totalCols = colIndex;
+                const colWidth = 15; // 13px cell + 2px gap
+                let monthHtml = '';
+                for (let i = 0; i < monthMarkers.length; i++) {
+                    const nextCol = (i + 1 < monthMarkers.length) ? monthMarkers[i + 1].col : totalCols;
+                    const spanCols = nextCol - monthMarkers[i].col;
+                    const width = spanCols * colWidth;
+                    monthHtml += `<span style="width:${width}px">${monthMarkers[i].label}</span>`;
+                }
+                monthsEl.innerHTML = monthHtml;
+            }
+
+            // Update legend colors dynamically
+            const legendCells = document.querySelectorAll('#git-heatmap-legend .git-legend-cell');
+            greenPalette.forEach((color, i) => {
+                if (legendCells[i]) legendCells[i].style.background = color;
+            });
+
+            // Git stats summary below heatmap
+            const totalCommits = gitData.dailyCommits.reduce((s, d) => s + d.commits, 0);
+            const totalIns = gitData.dailyCommits.reduce((s, d) => s + (d.insertions || 0), 0);
+            const totalDel = gitData.dailyCommits.reduce((s, d) => s + (d.deletions || 0), 0);
+            const activeDays = gitData.dailyCommits.filter(d => d.commits > 0).length;
+            const repos = gitData.commitsByRepo ? gitData.commitsByRepo.length : 0;
+
+            document.getElementById('git-stats-summary').innerHTML = `
+                <div class="git-stat"><span class="git-stat-value">${totalCommits}</span> total commits</div>
+                <div class="git-stat"><span class="git-stat-added">+${formatK(totalIns)}</span> / <span class="git-stat-deleted">-${formatK(totalDel)}</span> lines</div>
+                <div class="git-stat"><span class="git-stat-value">${activeDays}</span> active days</div>
+                ${repos > 0 ? `<div class="git-stat">across <span class="git-stat-value">${repos}</span> repos</div>` : ''}
+            `;
+        }
+
+        if (gitActivity) {
+            renderGitHeatmap(gitActivity);
+        }
+
+        // ── Major Commits ───────────────────────────────────
+        function renderMajorCommits(majorCommits) {
+            if (!majorCommits || majorCommits.length === 0) return;
+
+            document.getElementById('major-commits-section').style.display = '';
+            const grid = document.getElementById('commits-grid');
+
+            grid.innerHTML = majorCommits.map(c => {
+                const shortHash = (c.hash || '').slice(0, 7);
+                const dateStr = c.date ? formatDate(c.date.slice(0, 10)) : '';
+                const msg = escHtml(c.message || '');
+                const repo = escHtml(c.repo || '');
+                const files = c.filesChanged || 0;
+                const aiIcon = c.aiAssisted ? `<span class="commit-ai-badge">AI</span>` : '';
+                const cardIcon = c.aiAssisted ? 'AI' : 'G';
+
+                return `
+                <div class="commit-card">
+                    <div class="commit-card-icon">${cardIcon}</div>
+                    <div class="commit-card-body">
+                        <div class="commit-card-header">
+                            <span class="commit-hash">${shortHash}</span>
+                            <span class="commit-repo">${repo}</span>
+                            ${aiIcon}
+                        </div>
+                        <div class="commit-message">${msg}</div>
+                        <div class="commit-meta">
+                            <span>${dateStr}</span>
+                            ${files > 0 ? `<span class="commit-files-badge">${files} file${files !== 1 ? 's' : ''}</span>` : ''}
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        if (gitActivity && gitActivity.majorCommits) {
+            renderMajorCommits(gitActivity.majorCommits);
+        }
+
+        // ── Recent Commits (for sidebar) ────────────────────
+        function renderRecentCommits(recentCommits) {
+            if (!recentCommits || recentCommits.length === 0) return null;
+
+            const card = document.createElement('div');
+            card.className = 'sidebar-card';
+            card.innerHTML = `
+                <h3>Recent Commits</h3>
+                <div class="recent-commits">
+                    ${recentCommits.slice(0, 10).map(c => {
+                        const shortHash = (c.hash || '').slice(0, 7);
+                        const dateStr = c.date ? formatDate(c.date.slice(0, 10)) : '';
+                        const repo = escHtml(c.repo || '');
+                        const msg = escHtml(c.message || '');
+                        const dotClass = c.aiAssisted ? 'recent-commit-dot ai-assisted' : 'recent-commit-dot';
+                        return `
+                        <div class="recent-commit-item" title="${msg}">
+                            <div class="${dotClass}"></div>
+                            <div class="recent-commit-info">
+                                <div class="recent-commit-msg">${msg}</div>
+                                <div class="recent-commit-detail">
+                                    <span class="recent-commit-hash">${shortHash}</span>
+                                    <span>${repo}</span>
+                                    <span>${dateStr}</span>
+                                </div>
+                            </div>
+                        </div>`;
+                    }).join('')}
+                </div>
+            `;
+            return card;
+        }
+
+        // ── Tech category helper ────────────────────────────
+        function techCssClass(name) {
+            const tech = technologyStack.find(t => t.name === name);
+            if (!tech) return 'cat-other';
+            const cat = tech.category.toLowerCase();
+            if (cat.includes('container')) return 'cat-container';
+            if (cat.includes('infrastructure')) return 'cat-infrastructure';
+            if (cat.includes('security')) return 'cat-security';
+            if (cat.includes('observability')) return 'cat-observability';
+            if (cat.includes('ai')) return 'cat-ai';
+            if (cat.includes('development')) return 'cat-development';
+            return 'cat-other';
+        }
+
+        // ── Render timeline ─────────────────────────────────
+        const timelineEl = document.getElementById('timeline');
+        timelineEl.innerHTML = milestones.map((m, i) => {
+            const color = m.color || '#667eea';
+            const stats = m.stats || {};
+
+            return `
+            <div class="milestone-card" id="${m.id}" style="border-left-color: ${color}">
+                <style>.milestone-card:nth-child(${i+1})::before { background: ${color}; box-shadow: 0 0 0 3px ${color}, var(--dot-glow); }</style>
+                <div class="milestone-header" onclick="this.parentElement.querySelector('details')?.toggleAttribute('open')">
+                    <div>
+                        <span class="pillar-badge" style="background:${color}">${m.name}</span>
+                        <span class="difficulty-badge difficulty-${m.difficulty}">${m.difficulty}</span>
+                    </div>
+                    <span class="milestone-date">${formatDate(m.dateRange.start)} — ${formatDate(m.dateRange.end)}</span>
+                </div>
+                <div class="milestone-stats">
+                    <span>${stats.sessionCount || m.sessions.length} sessions</span>
+                    <span>${stats.totalMessages || '?'} messages</span>
+                    <span>${stats.totalDuration || '?'}h</span>
+                    <span>${stats.totalFiles || 0} files</span>
+                </div>
+                <p class="milestone-narrative">${m.narrative || m.summary}</p>
+                <div class="tech-badges">
+                    ${m.technologies.slice(0, 8).map(t =>
+                        `<span class="tech-badge ${techCssClass(t)}">${t}</span>`
+                    ).join('')}
+                    ${m.technologies.length > 8 ? `<span class="tech-badge cat-other">+${m.technologies.length - 8}</span>` : ''}
+                </div>
+                <details>
+                    <summary>Show details (${m.sessions.length} sessions, ${m.enterprisePatterns.length} patterns)</summary>
+                    <div class="detail-section">
+                        ${m.accomplishments.length > 0 ? `
+                            <h4>Accomplishments</h4>
+                            <ul>${m.accomplishments.map(a => `<li>${a}</li>`).join('')}</ul>
+                        ` : ''}
+                        ${m.challenges.length > 0 ? `
+                            <h4>Challenges Overcome</h4>
+                            <ul>${m.challenges.map(c => `<li>${c}</li>`).join('')}</ul>
+                        ` : ''}
+                        ${m.enterprisePatterns.length > 0 ? `
+                            <h4>Enterprise Patterns</h4>
+                            <ul>${m.enterprisePatterns.map(p => `<li>${p}</li>`).join('')}</ul>
+                        ` : ''}
+                        <h4>Sessions</h4>
+                        <div class="session-list">
+                            ${m.sessions.map(s => {
+                                const label = s.summary ? truncate(s.summary, 60) : s.messageCount + ' msgs';
+                                const url = s.grafanaUrl || '#';
+                                return `<span class="session-chip"><a href="${url}" target="_blank" title="${escHtml(s.summary || '')}\n${formatDate(s.created?.slice(0,10))}">${label}</a></span>`;
+                            }).join('')}
+                        </div>
+                    </div>
+                </details>
+            </div>`;
+        }).join('');
+
+        // ── Sidebar ─────────────────────────────────────────
+        const sidebarEl = document.getElementById('sidebar');
+
+        // Pillar overview card
+        const maxSessions = Math.max(...milestones.map(m => m.sessions.length), 1);
+        const pillarCard = document.createElement('div');
+        pillarCard.className = 'sidebar-card';
+        pillarCard.innerHTML = `
+            <h3>Platform Pillars (${milestones.length})</h3>
+            <div class="pillar-list">
+                ${milestones.map(m => `
+                    <div class="pillar-row" onclick="document.getElementById('${m.id}')?.scrollIntoView({behavior:'smooth'})">
+                        <div class="pillar-dot" style="background:${m.color || '#667eea'}"></div>
+                        <span class="pillar-name">${m.name}</span>
+                        <span class="pillar-count">${m.sessions.length}</span>
+                        <div class="pillar-bar">
+                            <div class="pillar-bar-fill" style="width:${(m.sessions.length / maxSessions * 100)}%; background:${m.color || '#667eea'}"></div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        sidebarEl.appendChild(pillarCard);
+
+        // Recent Commits card (sidebar) — placed after pillars for visibility
+        if (gitActivity && gitActivity.recentCommits) {
+            const recentCard = renderRecentCommits(gitActivity.recentCommits);
+            if (recentCard) sidebarEl.appendChild(recentCard);
+        }
+
+        // Radar chart card
+        const radarCard = document.createElement('div');
+        radarCard.className = 'sidebar-card';
+        radarCard.innerHTML = '<h3>Skills Radar</h3><div class="radar-container"><canvas id="radar" width="280" height="280"></canvas></div>';
+        sidebarEl.appendChild(radarCard);
+
+        // Weekly sessions bar chart
+        if (weeklyData && weeklyData.length > 0) {
+            const weeklyCard = document.createElement('div');
+            weeklyCard.className = 'sidebar-card';
+            weeklyCard.innerHTML = '<h3>Weekly Sessions</h3><div class="weekly-chart-container"><canvas id="weekly-chart" width="290" height="180"></canvas></div>';
+            sidebarEl.appendChild(weeklyCard);
+        }
+
+        // Enterprise patterns card
+        const patternColors = ['#667eea','#764ba2','#e74c3c','#2ecc71','#f39c12','#3498db','#9b59b6','#1abc9c','#e67e22','#27ae60','#c0392b'];
+        const patternsCard = document.createElement('div');
+        patternsCard.className = 'sidebar-card';
+        patternsCard.id = 'enterprise-patterns-card';
+        patternsCard.innerHTML = `
+            <h3>Enterprise Patterns</h3>
+            <div class="pattern-grid">
+                ${enterprisePatterns.map((p, i) => `
+                    <div class="pattern-item">
+                        <div class="pattern-icon" style="background:${patternColors[i % patternColors.length]}">${i+1}</div>
+                        <span>${p}</span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        sidebarEl.appendChild(patternsCard);
+
+        // Tech stack card
+        const techByCategory = {};
+        technologyStack.forEach(t => {
+            if (!techByCategory[t.category]) techByCategory[t.category] = [];
+            techByCategory[t.category].push(t);
+        });
+        const techCard = document.createElement('div');
+        techCard.className = 'sidebar-card';
+        techCard.innerHTML = `
+            <h3>Technology Stack (${technologyStack.length})</h3>
+            ${Object.entries(techByCategory).map(([cat, techs]) => `
+                <div class="tech-group">
+                    <div class="tech-group-label">${cat}</div>
+                    <div class="tech-badges">
+                        ${techs.map(t => `<span class="tech-badge ${techCssClass(t.name)}" title="${t.mentions} mentions">${t.name}</span>`).join('')}
+                    </div>
+                </div>
+            `).join('')}
+        `;
+        sidebarEl.appendChild(techCard);
+
+        // ── Mobile: move Enterprise Patterns before pillars ──
+        if (window.matchMedia('(max-width: 900px)').matches) {
+            const mainLayout = document.querySelector('.main-layout');
+            const epCard = document.getElementById('enterprise-patterns-card');
+            if (mainLayout && epCard) {
+                mainLayout.insertBefore(epCard, mainLayout.firstChild);
+            }
+        }
+
+        // ── Draw charts ─────────────────────────────────────
+        drawRadar('radar', globalSkills);
+        if (weeklyData && weeklyData.length > 0) {
+            drawWeeklyChart('weekly-chart', weeklyData);
+        }
+
+        function clearCanvas(id, w, h) {
+            const c = document.getElementById(id);
+            if (c) c.getContext('2d').clearRect(0, 0, w, h);
+        }
+
+        function drawRadar(canvasId, skills) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const cx = 140, cy = 140, r = 110;
+            const categories = Object.keys(skills);
+            const n = categories.length;
+            const angleStep = (2 * Math.PI) / n;
+            const dark = isDark();
+
+            const gridColor = dark ? '#2a2a40' : '#e0e0e0';
+            const spokeColor = dark ? '#222238' : '#ddd';
+            const labelColor = dark ? '#a0a0b8' : '#555';
+            const fillColor = dark ? 'rgba(123, 147, 255, 0.25)' : 'rgba(102, 126, 234, 0.25)';
+            const strokeColor = dark ? '#7b93ff' : '#667eea';
+            const dotColor = dark ? '#7b93ff' : '#667eea';
+
+            ctx.strokeStyle = gridColor; ctx.lineWidth = 1;
+            for (let ring = 1; ring <= 4; ring++) {
+                ctx.beginPath(); ctx.arc(cx, cy, r * ring / 4, 0, 2 * Math.PI); ctx.stroke();
+            }
+
+            ctx.fillStyle = labelColor; ctx.font = '11px -apple-system, sans-serif'; ctx.textAlign = 'center';
+            for (let i = 0; i < n; i++) {
+                const angle = -Math.PI / 2 + i * angleStep;
+                ctx.beginPath(); ctx.moveTo(cx, cy);
+                ctx.lineTo(cx + r * Math.cos(angle), cy + r * Math.sin(angle));
+                ctx.strokeStyle = spokeColor; ctx.stroke();
+
+                const lx = cx + (r + 18) * Math.cos(angle);
+                const ly = cy + (r + 18) * Math.sin(angle);
+                ctx.fillStyle = labelColor;
+                categories[i].split(/[& \/]+/).forEach((w, wi) => ctx.fillText(w, lx, ly + wi * 12));
+            }
+
+            ctx.beginPath();
+            for (let i = 0; i < n; i++) {
+                const angle = -Math.PI / 2 + i * angleStep;
+                const val = skills[categories[i]] / 100;
+                const x = cx + r * val * Math.cos(angle), y = cy + r * val * Math.sin(angle);
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fillStyle = fillColor; ctx.fill();
+            ctx.strokeStyle = strokeColor; ctx.lineWidth = 2; ctx.stroke();
+
+            for (let i = 0; i < n; i++) {
+                const angle = -Math.PI / 2 + i * angleStep;
+                const val = skills[categories[i]] / 100;
+                const x = cx + r * val * Math.cos(angle), y = cy + r * val * Math.sin(angle);
+                ctx.beginPath(); ctx.arc(x, y, 4, 0, 2 * Math.PI);
+                ctx.fillStyle = dotColor; ctx.fill();
+                ctx.strokeStyle = dark ? '#16162a' : 'white'; ctx.lineWidth = 2; ctx.stroke();
+            }
+        }
+
+        function drawWeeklyChart(canvasId, weeks) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width, h = canvas.height;
+            const pad = { top: 10, right: 10, bottom: 30, left: 30 };
+            const chartW = w - pad.left - pad.right;
+            const chartH = h - pad.top - pad.bottom;
+            const maxVal = Math.max(...weeks.map(wk => wk.sessionCount), 1);
+            const barW = Math.max(2, Math.min(12, (chartW / weeks.length) - 1));
+            const gap = (chartW - barW * weeks.length) / (weeks.length + 1);
+            const dark = isDark();
+
+            ctx.strokeStyle = dark ? '#2a2a40' : '#e8e8e8'; ctx.lineWidth = 1;
+            ctx.fillStyle = dark ? '#6a6a80' : '#999'; ctx.font = '10px -apple-system, sans-serif'; ctx.textAlign = 'right';
+            for (let i = 0; i <= 4; i++) {
+                const y = pad.top + chartH - (chartH * i / 4);
+                ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w - pad.right, y); ctx.stroke();
+                ctx.fillText(Math.round(maxVal * i / 4), pad.left - 4, y + 3);
+            }
+
+            const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + chartH);
+            if (dark) {
+                gradient.addColorStop(0, '#7b93ff'); gradient.addColorStop(1, '#9b6fd0');
+            } else {
+                gradient.addColorStop(0, '#667eea'); gradient.addColorStop(1, '#764ba2');
+            }
+
+            for (let i = 0; i < weeks.length; i++) {
+                const x = pad.left + gap + i * (barW + gap);
+                const barH = (weeks[i].sessionCount / maxVal) * chartH;
+                ctx.fillStyle = gradient;
+                ctx.fillRect(x, pad.top + chartH - barH, barW, barH);
+            }
+
+            ctx.fillStyle = dark ? '#6a6a80' : '#999'; ctx.font = '9px -apple-system, sans-serif'; ctx.textAlign = 'center';
+            [0, Math.floor(weeks.length / 2), weeks.length - 1].forEach(idx => {
+                if (idx < weeks.length) {
+                    const x = pad.left + gap + idx * (barW + gap) + barW / 2;
+                    ctx.fillText(formatWeekDate(weeks[idx].weekStart), x, h - 8);
+                }
+            });
+        }
+
+        // ── Scroll Animations (IntersectionObserver) ────────
+        const scrollObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+        document.querySelectorAll('.milestone-card, .sidebar-card').forEach(el => {
+            scrollObserver.observe(el);
+        });
+
+        // Auto-collapse details when card scrolls out of view
+        const collapseObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (!entry.isIntersecting) {
+                    const details = entry.target.querySelector('details');
+                    if (details && details.open) {
+                        details.removeAttribute('open');
+                    }
+                }
+            });
+        }, { threshold: 0, rootMargin: '-5% 0px -5% 0px' });
+
+        document.querySelectorAll('.milestone-card').forEach(el => {
+            collapseObserver.observe(el);
+        });
+
+        // ── Helpers ─────────────────────────────────────────
+        function formatDate(d) {
+            if (!d) return '';
+            const dt = new Date(d + (d.includes('T') ? '' : 'T00:00:00'));
+            return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+        function formatWeekDate(d) {
+            const dt = new Date(d + 'T00:00:00');
+            return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+        function formatK(n) {
+            if (n === undefined || n === null) return '0';
+            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+            return String(n);
+        }
+        function truncate(s, len) {
+            return s.length > len ? s.slice(0, len) + '...' : s;
+        }
+        function escHtml(s) {
+            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+    })();
+    </script>
+
+    <script>
+    // ── 3D Header Canvas Animation ─────────────────────────
+    (function() {
+        const canvas = document.getElementById('header-canvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        let w, h, particles, time = 0;
+        const PARTICLE_COUNT = 45;
+        const GRID_LINES = 14;
+
+        function isDark() { return document.documentElement.getAttribute('data-theme') === 'dark'; }
+
+        function resize() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            w = canvas.width = rect.width * (window.devicePixelRatio || 1);
+            h = canvas.height = rect.height * (window.devicePixelRatio || 1);
+            canvas.style.width = rect.width + 'px';
+            canvas.style.height = rect.height + 'px';
+            ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+        }
+
+        function initParticles() {
+            const rw = canvas.parentElement.getBoundingClientRect().width;
+            const rh = canvas.parentElement.getBoundingClientRect().height;
+            particles = Array.from({ length: PARTICLE_COUNT }, () => ({
+                x: Math.random() * rw,
+                y: Math.random() * rh,
+                z: Math.random() * 200 + 50,
+                vx: (Math.random() - 0.5) * 0.4,
+                vy: (Math.random() - 0.5) * 0.3,
+                size: Math.random() * 2.5 + 0.8,
+            }));
+        }
+
+        function draw() {
+            const rw = canvas.parentElement.getBoundingClientRect().width;
+            const rh = canvas.parentElement.getBoundingClientRect().height;
+            const dark = isDark();
+            ctx.clearRect(0, 0, rw, rh);
+            time += 0.008;
+
+            // ── Perspective grid floor ──
+            ctx.save();
+            const horizon = rh * 0.35;
+            const vanishX = rw / 2;
+
+            // Horizontal lines (receding into distance)
+            for (let i = 0; i < GRID_LINES; i++) {
+                const t = i / (GRID_LINES - 1);
+                const y = horizon + (rh - horizon) * Math.pow(t, 1.6);
+                const spread = 0.3 + t * 0.7;
+                const x1 = vanishX - (rw * 0.8 * spread);
+                const x2 = vanishX + (rw * 0.8 * spread);
+                const alpha = (dark ? 0.12 : 0.08) * (0.3 + t * 0.7);
+                ctx.strokeStyle = dark
+                    ? `rgba(123, 147, 255, ${alpha})`
+                    : `rgba(255, 255, 255, ${alpha})`;
+                ctx.lineWidth = 0.8;
+                ctx.beginPath();
+                ctx.moveTo(x1, y);
+                ctx.lineTo(x2, y);
+                ctx.stroke();
+            }
+
+            // Vertical lines (converging to vanishing point)
+            const vertCount = 12;
+            for (let i = -vertCount / 2; i <= vertCount / 2; i++) {
+                const offset = (i / (vertCount / 2)) * rw * 0.8;
+                const waveOffset = Math.sin(time + i * 0.5) * 3;
+                const alpha = dark ? 0.1 : 0.06;
+                ctx.strokeStyle = dark
+                    ? `rgba(155, 111, 208, ${alpha})`
+                    : `rgba(255, 255, 255, ${alpha})`;
+                ctx.lineWidth = 0.6;
+                ctx.beginPath();
+                ctx.moveTo(vanishX + waveOffset, horizon);
+                ctx.lineTo(vanishX + offset, rh + 10);
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            // ── Floating particles with connections ──
+            const connectionDist = 100;
+            particles.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.z += Math.sin(time * 2 + p.x * 0.01) * 0.3;
+                if (p.x < -20) p.x = rw + 20;
+                if (p.x > rw + 20) p.x = -20;
+                if (p.y < -20) p.y = rh + 20;
+                if (p.y > rh + 20) p.y = -20;
+
+                const scale = 250 / (250 + p.z);
+                const sx = vanishX + (p.x - vanishX) * scale;
+                const sy = horizon + (p.y - horizon) * scale;
+                const r = p.size * scale;
+                const alpha = (0.3 + scale * 0.5) * (dark ? 1 : 0.7);
+
+                // Draw glow
+                const grd = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 4);
+                grd.addColorStop(0, dark
+                    ? `rgba(123, 147, 255, ${alpha * 0.5})`
+                    : `rgba(255, 255, 255, ${alpha * 0.6})`);
+                grd.addColorStop(1, 'transparent');
+                ctx.fillStyle = grd;
+                ctx.fillRect(sx - r * 4, sy - r * 4, r * 8, r * 8);
+
+                // Draw dot
+                ctx.beginPath();
+                ctx.arc(sx, sy, r, 0, Math.PI * 2);
+                ctx.fillStyle = dark
+                    ? `rgba(180, 200, 255, ${alpha})`
+                    : `rgba(255, 255, 255, ${alpha})`;
+                ctx.fill();
+
+                // Store screen coords for connections
+                p._sx = sx; p._sy = sy; p._alpha = alpha;
+            });
+
+            // Draw connections between nearby particles
+            for (let i = 0; i < particles.length; i++) {
+                for (let j = i + 1; j < particles.length; j++) {
+                    const a = particles[i], b = particles[j];
+                    const dx = a._sx - b._sx, dy = a._sy - b._sy;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < connectionDist) {
+                        const lineAlpha = (1 - dist / connectionDist) * 0.15 * Math.min(a._alpha, b._alpha);
+                        ctx.strokeStyle = dark
+                            ? `rgba(123, 147, 255, ${lineAlpha})`
+                            : `rgba(255, 255, 255, ${lineAlpha})`;
+                        ctx.lineWidth = 0.6;
+                        ctx.beginPath();
+                        ctx.moveTo(a._sx, a._sy);
+                        ctx.lineTo(b._sx, b._sy);
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        resize();
+        initParticles();
+        draw();
+        window.addEventListener('resize', () => { resize(); initParticles(); });
+    })();
+    </script>
+</body>
+</html>
