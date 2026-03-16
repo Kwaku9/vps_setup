@@ -48,6 +48,11 @@ screenshots/
 # services-info.txt.j2
 
 # ============================================
+# Inventory (contains real IPs)
+# ============================================
+inventory/hosts
+
+# ============================================
 # Secrets & Credentials (NEVER COMMIT!)
 # ============================================
 .vault_pass

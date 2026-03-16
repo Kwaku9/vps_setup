@@ -1,7 +1,0 @@
-[alpine_servers]
-# External access from local container to remote VPS
-alpine-vps ansible_host=REDACTED_IP ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_ed25519
-
-[alpine_servers:vars]
-ansible_python_interpreter=/usr/bin/python3
-external_ip=REDACTED_IP
