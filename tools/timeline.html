@@ -210,7 +210,7 @@
 
         /* ── Heatmap Section ─────────────────────────────── */
         .heatmap-section {
-            max-width: 1200px; margin: 0 auto; padding: 24px 20px 0;
+            max-width: 100%; margin: 0 auto; padding: 24px 20px 0;
         }
         .heatmap-card {
             background: var(--card-bg);
@@ -224,11 +224,12 @@
             padding-bottom: 8px; border-bottom: 2px solid var(--accent-1);
         }
         .heatmap-grid {
-            display: flex; flex-wrap: wrap; gap: 4px;
+            display: flex; flex-wrap: nowrap; gap: 4px;
             align-items: flex-start;
+            width: 100%;
         }
         .heatmap-cell {
-            width: 24px; height: 24px; border-radius: 3px;
+            flex: 1; min-width: 24px; aspect-ratio: 1; border-radius: 3px;
             cursor: pointer; position: relative;
             transition: transform 0.15s;
         }
@@ -266,7 +267,7 @@
 
         /* ── Git Activity Section ───────────────────────────── */
         .git-section {
-            max-width: 1200px; margin: 0 auto; padding: 24px 20px 0;
+            max-width: 100%; margin: 0 auto; padding: 24px 20px 0;
         }
         .git-section .heatmap-card {
             margin-bottom: 0;
@@ -293,13 +294,15 @@
         }
         .git-heatmap-grid {
             display: grid;
-            grid-template-rows: repeat(7, 13px);
+            grid-template-rows: repeat(7, 11px);
             grid-auto-flow: column;
-            grid-auto-columns: 13px;
+            grid-auto-columns: 11px;
             gap: 2px;
+            width: fit-content;
+            max-width: 100%;
         }
         .git-heatmap-cell {
-            width: 13px; height: 13px; border-radius: 2px;
+            width: 11px; height: 11px; border-radius: 2px;
             cursor: pointer; position: relative;
             transition: transform 0.1s;
         }
@@ -836,10 +839,18 @@
             return;
         }
 
-        const { meta, milestones, globalSkills, technologyStack, enterprisePatterns, weeklyData } = data;
+        const meta = data.meta || {};
+        const milestones = data.milestones || [];
+        const globalSkills = data.globalSkills || {};
+        const technologyStack = data.technologyStack || [];
+        const enterprisePatterns = data.enterprisePatterns || [];
+        const weeklyData = data.weeklyData || [];
         const gitActivity = data.gitActivity || null;
         window.__globalSkills = globalSkills;
         window.__weeklyData = weeklyData;
+        window.__gitActivity = gitActivity;
+
+        try { // Wrap rendering in try-catch to surface errors
         window.__gitActivity = gitActivity;
 
         // ── Stats row ───────────────────────────────────────
@@ -874,7 +885,7 @@
         document.getElementById('footer-sessions').textContent = meta.totalSessions;
         document.getElementById('footer-days').textContent = meta.totalDays;
 
-        // ── Heatmap ─────────────────────────────────────────
+        // ── Heatmap (90-day window) ─────────────────────────
         function renderHeatmap(wData) {
             const grid = document.getElementById('heatmap-grid');
             const dark = isDark();
@@ -882,17 +893,35 @@
                 ? ['#1a1a2e', '#2a2450', '#3d3570', '#5545a0', '#7b5fd0']
                 : ['#ebedf0', '#c6b8e8', '#9b82d6', '#7353c4', '#4c3d99'];
 
-            grid.innerHTML = wData.map(w => {
+            // Build a map of weekStart -> data for lookup
+            const weekMap = {};
+            wData.forEach(w => { weekMap[w.weekStart] = w; });
+
+            // Generate 13 weeks (91 days) ending at current week
+            const now = new Date();
+            const dayOfWeek = now.getDay() || 7; // 1=Mon..7=Sun
+            const thisMonday = new Date(now);
+            thisMonday.setDate(now.getDate() - dayOfWeek + 1);
+            thisMonday.setHours(0,0,0,0);
+
+            const weeks = [];
+            for (let i = 12; i >= 0; i--) {
+                const weekStart = new Date(thisMonday);
+                weekStart.setDate(thisMonday.getDate() - i * 7);
+                weeks.push(weekStart.toISOString().slice(0, 10));
+            }
+
+            grid.innerHTML = weeks.map(ws => {
+                const w = weekMap[ws] || { intensity: 0, sessionCount: 0, totalMessages: 0, totalToolCalls: 0, totalDuration: 0 };
                 const level = w.intensity <= 0 ? 0
                     : w.intensity < 0.2 ? 1
                     : w.intensity < 0.45 ? 2
                     : w.intensity < 0.7 ? 3
                     : 4;
                 const bg = intensityColors[level];
-                const weekLabel = formatWeekDate(w.weekStart);
+                const weekLabel = formatWeekDate(ws);
                 const hours = Math.round((w.totalDuration || 0) / 3600 * 10) / 10;
 
-                // Build commit tooltip suffix if commit data exists for this week
                 let commitInfo = '';
                 if (w.commitCount !== undefined && w.commitCount > 0) {
                     const added = w.linesAdded !== undefined ? w.linesAdded : 0;
@@ -903,14 +932,14 @@
                 return `<div class="heatmap-cell" style="background:${bg}">
                     <div class="heatmap-tooltip">
                         <strong>${weekLabel}</strong><br>
-                        ${w.sessionCount} sessions, ${w.totalMessages} msgs<br>
-                        ${w.totalToolCalls} tools, ${hours}h${commitInfo}
+                        ${w.sessionCount} sessions, ${w.totalMessages || 0} msgs<br>
+                        ${w.totalToolCalls || 0} tools, ${hours}h${commitInfo}
                     </div>
                 </div>`;
             }).join('');
         }
 
-        if (weeklyData && weeklyData.length > 0) {
+        if (weeklyData) {
             document.getElementById('heatmap-section').style.display = '';
             renderHeatmap(weeklyData);
         }
@@ -934,17 +963,18 @@
                 if (d.commits > maxCommits) maxCommits = d.commits;
             });
 
-            // Determine date range: from earliest to latest commit date, padded to full weeks
-            const dates = gitData.dailyCommits.map(d => new Date(d.date + 'T00:00:00'));
-            const minDate = new Date(Math.min(...dates));
-            const maxDate = new Date(Math.max(...dates));
+            // Fixed 90-day window ending today, padded to full weeks
+            const now = new Date();
+            now.setHours(0,0,0,0);
+            const ninetyDaysAgo = new Date(now);
+            ninetyDaysAgo.setDate(now.getDate() - 90);
 
             // Pad start to Sunday
-            const startDate = new Date(minDate);
+            const startDate = new Date(ninetyDaysAgo);
             startDate.setDate(startDate.getDate() - startDate.getDay());
 
             // Pad end to Saturday
-            const endDate = new Date(maxDate);
+            const endDate = new Date(now);
             endDate.setDate(endDate.getDate() + (6 - endDate.getDay()));
 
             // Day labels (Mon, Wed, Fri)
@@ -1129,7 +1159,7 @@
         // ── Tech category helper ────────────────────────────
         function techCssClass(name) {
             const tech = technologyStack.find(t => t.name === name);
-            if (!tech) return 'cat-other';
+            if (!tech || !tech.category) return 'cat-other';
             const cat = tech.category.toLowerCase();
             if (cat.includes('container')) return 'cat-container';
             if (cat.includes('infrastructure')) return 'cat-infrastructure';
@@ -1145,6 +1175,11 @@
         timelineEl.innerHTML = milestones.map((m, i) => {
             const color = m.color || '#667eea';
             const stats = m.stats || {};
+            const mSessions = Array.isArray(m.sessions) ? m.sessions : [];
+            const mTechs = m.technologies || [];
+            const mAccomp = m.accomplishments || [];
+            const mChallenge = m.challenges || [];
+            const mPatterns = m.enterprisePatterns || [];
 
             return `
             <div class="milestone-card" id="${m.id}" style="border-left-color: ${color}">
@@ -1152,41 +1187,41 @@
                 <div class="milestone-header" onclick="this.parentElement.querySelector('details')?.toggleAttribute('open')">
                     <div>
                         <span class="pillar-badge" style="background:${color}">${m.name}</span>
-                        <span class="difficulty-badge difficulty-${m.difficulty}">${m.difficulty}</span>
+                        <span class="difficulty-badge difficulty-${m.difficulty || 'intermediate'}">${m.difficulty || 'intermediate'}</span>
                     </div>
                     <span class="milestone-date">${formatDate(m.dateRange.start)} — ${formatDate(m.dateRange.end)}</span>
                 </div>
                 <div class="milestone-stats">
-                    <span>${stats.sessionCount || m.sessions.length} sessions</span>
+                    <span>${stats.sessionCount || (typeof m.sessions === 'number' ? m.sessions : mSessions.length)} sessions</span>
                     <span>${stats.totalMessages || '?'} messages</span>
                     <span>${stats.totalDuration || '?'}h</span>
                     <span>${stats.totalFiles || 0} files</span>
                 </div>
                 <p class="milestone-narrative">${m.narrative || m.summary}</p>
                 <div class="tech-badges">
-                    ${m.technologies.slice(0, 8).map(t =>
+                    ${mTechs.slice(0, 8).map(t =>
                         `<span class="tech-badge ${techCssClass(t)}">${t}</span>`
                     ).join('')}
-                    ${m.technologies.length > 8 ? `<span class="tech-badge cat-other">+${m.technologies.length - 8}</span>` : ''}
+                    ${mTechs.length > 8 ? `<span class="tech-badge cat-other">+${mTechs.length - 8}</span>` : ''}
                 </div>
                 <details>
-                    <summary>Show details (${m.sessions.length} sessions, ${m.enterprisePatterns.length} patterns)</summary>
+                    <summary>Show details (${mSessions.length} sessions, ${mPatterns.length} patterns)</summary>
                     <div class="detail-section">
-                        ${m.accomplishments.length > 0 ? `
+                        ${mAccomp.length > 0 ? `
                             <h4>Accomplishments</h4>
-                            <ul>${m.accomplishments.map(a => `<li>${a}</li>`).join('')}</ul>
+                            <ul>${mAccomp.map(a => `<li>${a}</li>`).join('')}</ul>
                         ` : ''}
-                        ${m.challenges.length > 0 ? `
+                        ${mChallenge.length > 0 ? `
                             <h4>Challenges Overcome</h4>
-                            <ul>${m.challenges.map(c => `<li>${c}</li>`).join('')}</ul>
+                            <ul>${mChallenge.map(c => `<li>${c}</li>`).join('')}</ul>
                         ` : ''}
-                        ${m.enterprisePatterns.length > 0 ? `
+                        ${mPatterns.length > 0 ? `
                             <h4>Enterprise Patterns</h4>
-                            <ul>${m.enterprisePatterns.map(p => `<li>${p}</li>`).join('')}</ul>
+                            <ul>${mPatterns.map(p => `<li>${p}</li>`).join('')}</ul>
                         ` : ''}
                         <h4>Sessions</h4>
                         <div class="session-list">
-                            ${m.sessions.map(s => {
+                            ${mSessions.map(s => {
                                 const label = s.summary ? truncate(s.summary, 60) : s.messageCount + ' msgs';
                                 const url = s.grafanaUrl || '#';
                                 return `<span class="session-chip"><a href="${url}" target="_blank" title="${escHtml(s.summary || '')}\n${formatDate(s.created?.slice(0,10))}">${label}</a></span>`;
@@ -1201,7 +1236,7 @@
         const sidebarEl = document.getElementById('sidebar');
 
         // Pillar overview card
-        const maxSessions = Math.max(...milestones.map(m => m.sessions.length), 1);
+        const maxSessions = Math.max(...milestones.map(m => typeof m.sessions === 'number' ? m.sessions : (Array.isArray(m.sessions) ? m.sessions.length : 0)), 1);
         const pillarCard = document.createElement('div');
         pillarCard.className = 'sidebar-card';
         pillarCard.innerHTML = `
@@ -1211,9 +1246,9 @@
                     <div class="pillar-row" onclick="document.getElementById('${m.id}')?.scrollIntoView({behavior:'smooth'})">
                         <div class="pillar-dot" style="background:${m.color || '#667eea'}"></div>
                         <span class="pillar-name">${m.name}</span>
-                        <span class="pillar-count">${m.sessions.length}</span>
+                        <span class="pillar-count">${typeof m.sessions === 'number' ? m.sessions : (Array.isArray(m.sessions) ? m.sessions.length : 0)}</span>
                         <div class="pillar-bar">
-                            <div class="pillar-bar-fill" style="width:${(m.sessions.length / maxSessions * 100)}%; background:${m.color || '#667eea'}"></div>
+                            <div class="pillar-bar-fill" style="width:${((typeof m.sessions === 'number' ? m.sessions : (Array.isArray(m.sessions) ? m.sessions.length : 0)) / maxSessions * 100)}%; background:${m.color || '#667eea'}"></div>
                         </div>
                     </div>
                 `).join('')}
@@ -1450,6 +1485,11 @@
         }
         function escHtml(s) {
             return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+        } catch(renderErr) {
+            console.error('Rendering error:', renderErr);
+            document.getElementById('timeline').innerHTML =
+                '<div class="loading" style="color:red">Render error: ' + renderErr.message + '</div>';
         }
     })();
     </script>
