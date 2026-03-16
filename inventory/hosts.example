@@ -1,0 +1,7 @@
+[alpine_servers]
+# Replace with your VPS IP, user, and SSH key path
+your-vps-alias ansible_host=YOUR_VPS_IP ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_ed25519
+
+[alpine_servers:vars]
+ansible_python_interpreter=/usr/bin/python3
+external_ip=YOUR_VPS_IP
