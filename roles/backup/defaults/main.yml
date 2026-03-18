@@ -10,7 +10,7 @@ backup:
   retention_days: 7
   # S3 sync (optional)
   s3_enabled: false
-  s3_bucket: "REDACTED_BUCKET"
+  s3_bucket: "{{ s3_backups_bucket }}"
   s3_region: "us-east-1"
 
   # Data directories to backup (bind mounts under /opt/podman-data)

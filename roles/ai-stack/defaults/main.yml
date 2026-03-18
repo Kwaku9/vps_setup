@@ -43,8 +43,8 @@ ai_stack:
       WEBUI_AUTH: "True"
       OLLAMA_BASE_URL: "http://127.0.0.1:11434"
     branding:
-      logo_url: "https://REDACTED_BUCKET.s3.amazonaws.com/logo4.png"
-      assets_base_url: "https://REDACTED_BUCKET.s3.amazonaws.com"
+      logo_url: "https://{{ s3_assets_bucket }}.s3.amazonaws.com/logo4.png"
+      assets_base_url: "https://{{ s3_assets_bucket }}.s3.amazonaws.com"
 
   # LiteLLM Proxy
   litellm:
@@ -65,6 +65,13 @@ ai_stack:
     port: 8088  # Changed from 8081 to avoid nginx conflict
     internal_port: 8080
     build: true
+
+  # Azure LiteLLM ACA — private model inference gateway
+  # Set azure_litellm_url in vault after Terraform deploy:
+  #   terraform output litellm_azure_url
+  azure:
+    enabled: false  # Set to true after Azure deployment
+    litellm_url: ""  # e.g., https://aiorch-litellm.happyocean-abc123.eastus2.azurecontainerapps.io
 
   # Kokoro TTS
   kokoro_tts:

@@ -12,16 +12,16 @@ cloudflared:
   tunnel_name: "alpine-vps-tunnel"
   protocol: "quic"
   metrics_port: 2000
-  domain: "REDACTED_DOMAIN"
+  domain: "{{ domain_name }}"
 
   # Traefik is now in the same pod (security-infra-pod) — use localhost
   ingress:
-    - hostname: "ssh.REDACTED_DOMAIN"
+    - hostname: "ssh.{{ domain_name }}"
       service: "ssh://host.containers.internal:22"
-    - hostname: "REDACTED_DOMAIN"
+    - hostname: "{{ domain_name }}"
       service: "https://localhost:443"
       no_tls_verify: true
-    - hostname: "*.REDACTED_DOMAIN"
+    - hostname: "*.{{ domain_name }}"
       service: "https://localhost:443"
       no_tls_verify: true
 

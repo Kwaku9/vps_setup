@@ -18,7 +18,7 @@ shared_services:
     port: 80
 
 # Base domain for all services (subdomains: grafana., chat., auth., etc.)
-domain: "REDACTED_DOMAIN"
+domain: "{{ domain_name }}"
 
 # Will be overridden by vault
 postgres_password: "VAULT_OVERRIDE"
