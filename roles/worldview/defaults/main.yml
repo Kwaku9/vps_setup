@@ -10,11 +10,11 @@ worldview:
   port: 5173
   memory: "640m"
   node_max_old_space: "448"
-  domain: "geo.REDACTED_DOMAIN"
+  domain: "geo.{{ domain_name }}"
 
   # Vite dev server config
   vite:
-    allowed_hosts: "geo.REDACTED_DOMAIN"
+    allowed_hosts: "geo.{{ domain_name }}"
     watch_polling: true
     watch_interval: 1000
 
@@ -29,5 +29,5 @@ worldview_firms_map_key: "VAULT_OVERRIDE"
 worldview_acled_email: "VAULT_OVERRIDE"
 worldview_acled_password: "VAULT_OVERRIDE"
 worldview_abuseipdb_api_key: "VAULT_OVERRIDE"
-worldview_vps_lat: "REDACTED_COORD"
-worldview_vps_lon: "REDACTED_COORD"
+worldview_vps_lat: "{{ vault_vps_lat | default('0.0') }}"
+worldview_vps_lon: "{{ vault_vps_lon | default('0.0') }}"

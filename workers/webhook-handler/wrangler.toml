@@ -2,13 +2,13 @@ name = "webhook-handler"
 main = "src/index.ts"
 compatibility_date = "2025-12-01"
 
-[vars]
-AUTHENTIK_URL = "https://auth.REDACTED_DOMAIN"
-
-[[routes]]
-pattern = "hooks.REDACTED_DOMAIN/*"
-zone_name = "REDACTED_DOMAIN"
+# Routes: configure via Cloudflare dashboard or override with
+# a local wrangler.toml that is gitignored:
+#   [[routes]]
+#   pattern = "hooks.example.com/*"
+#   zone_name = "example.com"
 
 # Secrets (set via `wrangler secret put`):
+#   AUTHENTIK_URL    - SSO provider URL (e.g. https://auth.example.com)
 #   AUTHENTIK_TOKEN  - Authentik bootstrap API token
 #   ADMIN_API_KEY    - Shared secret for /admin/* endpoints
