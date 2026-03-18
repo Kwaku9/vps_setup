@@ -44,5 +44,5 @@ security:
     mode: "discovery"  # discovery = log-only, enforcement = whitelist-based blocking
     http_port: 3128
     https_port: 3129
-    container_subnet: "REDACTED_CIDR"
-    dns_nameserver: "REDACTED_DNS"
+    container_subnet: "{{ vault_podman_network_subnet | default('10.0.0.0/24') }}"
+    dns_nameserver: "{{ vault_podman_dns | default('10.0.0.1') }}"
