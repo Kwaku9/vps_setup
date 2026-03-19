@@ -88,6 +88,10 @@
       tags: ['backup', 'backup-setup', 'backup-run', 'restore']
       when: backup.enabled | default(true)
 
+    - role: github-runner
+      tags: ['github-runner', 'cicd']
+      when: github_runner.enabled | default(false)
+
   post_tasks:
     - name: Display deployment summary
       debug:

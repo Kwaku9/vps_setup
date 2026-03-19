@@ -1,0 +1,26 @@
+---
+# GitHub Runner Role Defaults
+# Self-hosted GitHub Actions runner in a Podman container
+
+github_runner:
+  enabled: false
+  container_name: "github-runner"
+  image: "debian:bookworm-slim"
+  runner_version: "2.322.0"
+  runner_arch: "x64"
+  memory: "512m"
+  cpu_shares: 512
+
+  # GitHub repository configuration
+  repo_owner: "Kwaku9"
+  repo_name: "vps_setup"
+  labels: "self-hosted,linux,alpine-vps"
+
+  # Paths on VPS host
+  data_dir: "/opt/podman-data/github-runner"
+  work_dir: "/opt/podman-data/github-runner/_work"
+  ssh_key_path: "/opt/podman-data/github-runner/.ssh"
+
+# Vault overrides
+github_runner_token: "VAULT_OVERRIDE"
+github_runner_pat: "VAULT_OVERRIDE"
