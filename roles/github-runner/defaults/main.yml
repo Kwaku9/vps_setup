@@ -3,7 +3,7 @@
 # Self-hosted GitHub Actions runner in a Podman container
 
 github_runner:
-  enabled: false
+  enabled: true
   container_name: "github-runner"
   image: "debian:bookworm-slim"
   runner_version: "2.322.0"
