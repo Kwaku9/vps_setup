@@ -9,7 +9,7 @@ github_runner:
   runner_version: "2.333.0"
   runner_arch: "x64"
   memory: "512m"
-  cpu_shares: 512
+  cpu_shares: 512  # Low priority — same as management containers
 
   # GitHub repository configuration
   repo_owner: "Kwaku9"
