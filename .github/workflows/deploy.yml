@@ -294,14 +294,19 @@ jobs:
           TAGS="${{ needs.detect-changes.outputs.tags }}"
           COMMIT_SHA="${GITHUB_SHA:0:7}"
 
-          RECAP=$(tail -20 /tmp/ansible-output.log | grep -A5 "PLAY RECAP" | head -6 || echo "No recap available")
+          # Strip ANSI codes and extract recap
+          RECAP=$(tail -20 /tmp/ansible-output.log 2>/dev/null \
+            | sed 's/\x1b\[[0-9;]*m//g' \
+            | grep -A5 "PLAY RECAP" | head -6 \
+            || echo "No recap available")
+
+          # Build JSON safely via jq
+          MSG=$(jq -n --arg tags "$TAGS" --arg sha "$COMMIT_SHA" --arg recap "$RECAP" \
+            '{"chat_id": 8520366373, "text": ("✅ Deploy succeeded\nTags: " + $tags + "\nCommit: " + $sha + "\n\n" + $recap)}')
 
           curl -sf -X POST http://localhost:7555/send_message \
             -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": 8520366373,
-              \"text\": \"✅ Deploy succeeded\nTags: ${TAGS}\nCommit: ${COMMIT_SHA}\n\n${RECAP}\"
-            }" || true
+            -d "$MSG" || true
         continue-on-error: true
 
       - name: Notify deploy failure (Telegram)
@@ -310,14 +315,19 @@ jobs:
           TAGS="${{ needs.detect-changes.outputs.tags }}"
           COMMIT_SHA="${GITHUB_SHA:0:7}"
 
-          ERROR_CONTEXT=$(tail -30 /tmp/ansible-output.log 2>/dev/null | head -20 || echo "No output captured")
+          # Strip ANSI codes and get error context
+          ERROR_CONTEXT=$(tail -30 /tmp/ansible-output.log 2>/dev/null \
+            | sed 's/\x1b\[[0-9;]*m//g' \
+            | tail -15 \
+            || echo "No output captured")
+
+          # Build JSON safely via jq
+          MSG=$(jq -n --arg tags "$TAGS" --arg sha "$COMMIT_SHA" --arg ctx "$ERROR_CONTEXT" \
+            '{"chat_id": 8520366373, "text": ("❌ Deploy FAILED\nTags: " + $tags + "\nCommit: " + $sha + "\n\nLast output:\n" + $ctx)}')
 
           curl -sf -X POST http://localhost:7555/send_message \
             -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": 8520366373,
-              \"text\": \"❌ Deploy FAILED\nTags: ${TAGS}\nCommit: ${COMMIT_SHA}\n\nLast output:\n${ERROR_CONTEXT}\"
-            }" || true
+            -d "$MSG" || true
         continue-on-error: true
 
       - name: Cleanup
