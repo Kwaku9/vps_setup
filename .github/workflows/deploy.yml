@@ -152,7 +152,7 @@ jobs:
           RESPONSE=$(curl -sf -X POST http://localhost:7555/request_approval \
             -H "Content-Type: application/json" \
             -d "{
-              \"chat_id\": \"8520366373\",
+              \"chat_id\": 8520366373,
               \"prompt_text\": \"${PROMPT}\",
               \"metadata\": {
                 \"tool_name\": \"GitHubDeploy\",
@@ -247,10 +247,10 @@ jobs:
 
           COMMIT_SHA="${GITHUB_SHA:0:7}"
 
-          curl -sf -X POST http://localhost:7555/send \
+          curl -sf -X POST http://localhost:7555/send_message \
             -H "Content-Type: application/json" \
             -d "{
-              \"chat_id\": \"8520366373\",
+              \"chat_id\": 8520366373,
               \"text\": \"🚀 Deploy starting${MODE_LABEL}\nTags: ${TAGS}\nCommit: ${COMMIT_SHA}\"
             }" || echo "::warning::Telegram notification failed (non-fatal)"
         continue-on-error: true
@@ -296,10 +296,10 @@ jobs:
 
           RECAP=$(tail -20 /tmp/ansible-output.log | grep -A5 "PLAY RECAP" | head -6 || echo "No recap available")
 
-          curl -sf -X POST http://localhost:7555/send \
+          curl -sf -X POST http://localhost:7555/send_message \
             -H "Content-Type: application/json" \
             -d "{
-              \"chat_id\": \"8520366373\",
+              \"chat_id\": 8520366373,
               \"text\": \"✅ Deploy succeeded\nTags: ${TAGS}\nCommit: ${COMMIT_SHA}\n\n${RECAP}\"
             }" || true
         continue-on-error: true
@@ -312,10 +312,10 @@ jobs:
 
           ERROR_CONTEXT=$(tail -30 /tmp/ansible-output.log 2>/dev/null | head -20 || echo "No output captured")
 
-          curl -sf -X POST http://localhost:7555/send \
+          curl -sf -X POST http://localhost:7555/send_message \
             -H "Content-Type: application/json" \
             -d "{
-              \"chat_id\": \"8520366373\",
+              \"chat_id\": 8520366373,
               \"text\": \"❌ Deploy FAILED\nTags: ${TAGS}\nCommit: ${COMMIT_SHA}\n\nLast output:\n${ERROR_CONTEXT}\"
             }" || true
         continue-on-error: true
@@ -334,10 +334,10 @@ jobs:
           TAGS="${{ needs.detect-changes.outputs.tags }}"
           COMMIT_SHA="${GITHUB_SHA:0:7}"
 
-          curl -sf -X POST http://localhost:7555/send \
+          curl -sf -X POST http://localhost:7555/send_message \
             -H "Content-Type: application/json" \
             -d "{
-              \"chat_id\": \"8520366373\",
+              \"chat_id\": 8520366373,
               \"text\": \"🚫 Deploy skipped (denied/timed out)\nTags: ${TAGS}\nCommit: ${COMMIT_SHA}\"
             }" || true
         continue-on-error: true
