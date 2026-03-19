@@ -72,9 +72,7 @@
       tags: ['journey-tracker', 'timeline']
       when: journey_tracker.enabled | default(true)
 
-    - role: worldview
-      tags: ['worldview', 'geo']
-      when: worldview.enabled | default(true)
+    # WorldView consolidated into frontend role (frontend-pod)
 
     # squid-proxy merged into security role (host-level service)
 
@@ -106,7 +104,7 @@
           - "  ai-stack-pod: OpenWebUI, LiteLLM, PostgreSQL, SearxNG"
           - "  authentication-pod: Authentik Server, Worker, PostgreSQL, Redis"
           - "  management-pod: Portainer, Dockge"
-          - "  frontend-pod: Nginx, Atlas Charts, Journey Tracker"
+          - "  frontend-pod: Nginx, Atlas Charts, Journey Tracker, WorldView"
           - "  shared-db-pod: PostgreSQL"
           - "  security-pod: Trivy, Wazuh"
           - ""
