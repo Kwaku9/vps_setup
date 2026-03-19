@@ -6,7 +6,7 @@ github_runner:
   enabled: true
   container_name: "github-runner"
   image: "debian:bookworm-slim"
-  runner_version: "2.322.0"
+  runner_version: "2.333.0"
   runner_arch: "x64"
   memory: "512m"
   cpu_shares: 512
