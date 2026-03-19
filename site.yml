@@ -90,7 +90,7 @@
 
     - role: github-runner
       tags: ['github-runner', 'cicd']
-      when: github_runner.enabled | default(false)
+      when: deploy_github_runner | default(false)
 
   post_tasks:
     - name: Display deployment summary
