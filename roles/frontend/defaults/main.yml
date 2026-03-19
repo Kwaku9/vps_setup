@@ -1,4 +1,4 @@
-﻿---
+---
 # Frontend Role Defaults
 
 deploy_frontend: true
@@ -8,3 +8,39 @@ frontend:
     enabled: true
     version: "alpine"
     port: 8080
+
+# WorldView Geospatial Dashboard (consolidated from standalone role)
+worldview:
+  enabled: true
+  container_name: "worldview-dev"
+  image: "docker.io/library/node:22-alpine"
+  source_dir: "/workspace/vscode-projects/geospatial-dashboard"
+  port: 5173
+  memory: "640m"
+  node_max_old_space: "448"
+  domain: "geo.{{ domain_name }}"
+
+  # Vite dev server config
+  vite:
+    allowed_hosts: "geo.{{ domain_name }}"
+    watch_polling: true
+    watch_interval: 1000
+
+  # AIS Relay (maritime vessel tracking)
+  ais_relay:
+    enabled: true
+
+# Vault overrides these
+aisstream_api_key: "VAULT_OVERRIDE"
+worldview_google_maps_api_key: "VAULT_OVERRIDE"
+worldview_cesium_ion_token: "VAULT_OVERRIDE"
+worldview_opensky_username: "VAULT_OVERRIDE"
+worldview_opensky_password: "VAULT_OVERRIDE"
+worldview_adsb_api_key: "VAULT_OVERRIDE"
+worldview_wigle_api_token: "VAULT_OVERRIDE"
+worldview_firms_map_key: "VAULT_OVERRIDE"
+worldview_acled_email: "VAULT_OVERRIDE"
+worldview_acled_password: "VAULT_OVERRIDE"
+worldview_abuseipdb_api_key: "VAULT_OVERRIDE"
+worldview_vps_lat: "{{ vault_vps_lat | default('0.0') }}"
+worldview_vps_lon: "{{ vault_vps_lon | default('0.0') }}"
