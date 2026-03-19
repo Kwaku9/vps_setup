@@ -1,0 +1,206 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - '.claude/**'
+      - 'screenshots/**'
+      - 'labguide-*'
+      - 'slides-ocr/**'
+      - 'text-extracts/**'
+      - '*.png'
+      - '*.jpg'
+      - '*.csv'
+      - 'profiles.yml'
+      - '.github/**'
+
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: 'Ansible tags (comma-separated, or "all")'
+        required: false
+        default: ''
+      check_mode:
+        description: 'Dry run (--check --diff)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  detect-changes:
+    runs-on: self-hosted
+    outputs:
+      tags: ${{ steps.map.outputs.tags }}
+      should_deploy: ${{ steps.map.outputs.should_deploy }}
+    steps:
+      - name: Detect changed files and map to Ansible tags
+        id: map
+        run: |
+          # For workflow_dispatch with explicit tags
+          if [ -n "${{ github.event.inputs.tags }}" ]; then
+            echo "tags=${{ github.event.inputs.tags }}" >> $GITHUB_OUTPUT
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Get changed files
+          CHANGED=$(ssh -o StrictHostKeyChecking=no root@localhost \
+            "cd /workspace/vscode-projects/vps_setup && \
+             git fetch origin main && \
+             git diff --name-only HEAD origin/main 2>/dev/null" || echo "")
+
+          if [ -z "$CHANGED" ]; then
+            # Fallback: diff against previous commit
+            CHANGED=$(ssh -o StrictHostKeyChecking=no root@localhost \
+              "cd /workspace/vscode-projects/vps_setup && \
+               git log --name-only --pretty=format: -1 origin/main" || echo "")
+          fi
+
+          TAGS=""
+
+          add_tag() {
+            local tag="$1"
+            if [[ ! ",$TAGS," == *",$tag,"* ]]; then
+              TAGS="${TAGS:+$TAGS,}$tag"
+            fi
+          }
+
+          for file in $CHANGED; do
+            case "$file" in
+              roles/base/*)                 add_tag "base" ;;
+              roles/container-runtime/*)    add_tag "container-runtime" ;;
+              roles/cloudflared/*)          add_tag "cloudflared" ;;
+              roles/cloudflare/*)           add_tag "cloudflare" ;;
+              roles/shared-services/*)      add_tag "shared-services" ;;
+              roles/management/*)           add_tag "management" ;;
+              roles/monitoring/*)           add_tag "monitoring" ;;
+              roles/security/*)             add_tag "security" ;;
+              roles/authentication/*)       add_tag "authentication" ;;
+              roles/ai-stack/*)             add_tag "ai-stack" ;;
+              roles/trading/*)              add_tag "trading" ;;
+              roles/journey-tracker/*)      add_tag "journey-tracker" ;;
+              roles/frontend/*)             add_tag "frontend" ;;
+              roles/worldview/*)            add_tag "frontend" ;;
+              roles/backend/*)              add_tag "backend" ;;
+              roles/backup/*)               add_tag "backup" ;;
+              roles/claude-prep/*)          add_tag "claude-prep" ;;
+              roles/mcp-servers/*)          add_tag "mcp-servers" ;;
+              roles/gemini-prep/*)          add_tag "gemini-prep" ;;
+              roles/github-runner/*)        add_tag "github-runner" ;;
+              dashboards/*)                 add_tag "monitoring" ;;
+              all.yml)                      TAGS="all" ;;
+              site.yml)                     TAGS="all" ;;
+              templates/*)                  TAGS="all" ;;
+              group_vars/*)                 TAGS="all" ;;
+              *)                            ;; # Skip unknown files
+            esac
+            [ "$TAGS" = "all" ] && break
+          done
+
+          if [ -z "$TAGS" ]; then
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            echo "tags=" >> $GITHUB_OUTPUT
+            echo "::notice::No deployable files changed. Skipping."
+          else
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "tags=$TAGS" >> $GITHUB_OUTPUT
+            echo "::notice::Detected tags: $TAGS"
+          fi
+
+  deploy:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.should_deploy == 'true'
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: Notify deploy start (Telegram)
+        run: |
+          TAGS="${{ needs.detect-changes.outputs.tags }}"
+          CHECK_MODE="${{ github.event.inputs.check_mode }}"
+          MODE_LABEL=""
+          [ "$CHECK_MODE" = "true" ] && MODE_LABEL=" [DRY RUN]"
+
+          COMMIT_SHA="${GITHUB_SHA:0:7}"
+          COMMIT_MSG=$(ssh -o StrictHostKeyChecking=no root@localhost \
+            "cd /workspace/vscode-projects/vps_setup && \
+             git log -1 --pretty=format:'%s' origin/main 2>/dev/null" || echo "unknown")
+
+          curl -sf -X POST http://localhost:7555/send \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"8520366373\",
+              \"text\": \"🚀 Deploy started${MODE_LABEL}\nTags: ${TAGS}\nCommit: ${COMMIT_SHA} - ${COMMIT_MSG}\"
+            }" || echo "::warning::Telegram notification failed (non-fatal)"
+        continue-on-error: true
+
+      - name: Pull latest code on VPS
+        run: |
+          ssh -o StrictHostKeyChecking=no root@localhost \
+            "cd /workspace/vscode-projects/vps_setup && \
+             git fetch origin main && \
+             git reset --hard origin/main && \
+             git-crypt unlock /root/.git-crypt-key 2>/dev/null || true"
+
+      - name: Run Ansible playbook
+        id: ansible
+        run: |
+          TAGS="${{ needs.detect-changes.outputs.tags }}"
+          CHECK_MODE="${{ github.event.inputs.check_mode }}"
+
+          EXTRA_ARGS=""
+          [ "$CHECK_MODE" = "true" ] && EXTRA_ARGS="--check --diff"
+
+          if [ "$TAGS" = "all" ]; then
+            TAG_ARGS=""
+          else
+            TAG_ARGS="--tags $TAGS"
+          fi
+
+          ssh -o StrictHostKeyChecking=no root@localhost \
+            "cd /workspace/vscode-projects/vps_setup && \
+             ansible-playbook -i inventory/hosts site.yml \
+               $TAG_ARGS $EXTRA_ARGS \
+               2>&1" | tee /tmp/ansible-output.log
+
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          exit $EXIT_CODE
+
+      - name: Notify deploy success (Telegram)
+        if: success()
+        run: |
+          TAGS="${{ needs.detect-changes.outputs.tags }}"
+          COMMIT_SHA="${GITHUB_SHA:0:7}"
+
+          RECAP=$(tail -20 /tmp/ansible-output.log | grep -A5 "PLAY RECAP" | head -6 || echo "No recap available")
+
+          curl -sf -X POST http://localhost:7555/send \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"8520366373\",
+              \"text\": \"✅ Deploy succeeded\nTags: ${TAGS}\nCommit: ${COMMIT_SHA}\n\n${RECAP}\"
+            }" || true
+        continue-on-error: true
+
+      - name: Notify deploy failure (Telegram)
+        if: failure()
+        run: |
+          TAGS="${{ needs.detect-changes.outputs.tags }}"
+          COMMIT_SHA="${GITHUB_SHA:0:7}"
+
+          ERROR_CONTEXT=$(tail -30 /tmp/ansible-output.log 2>/dev/null | head -20 || echo "No output captured")
+
+          curl -sf -X POST http://localhost:7555/send \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"8520366373\",
+              \"text\": \"❌ Deploy FAILED\nTags: ${TAGS}\nCommit: ${COMMIT_SHA}\n\nLast output:\n${ERROR_CONTEXT}\"
+            }" || true
+        continue-on-error: true
+
+      - name: Cleanup
+        if: always()
+        run: rm -f /tmp/ansible-output.log

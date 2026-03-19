@@ -1,0 +1,6 @@
+---
+- name: restart github-runner
+  containers.podman.podman_container:
+    name: "{{ github_runner.container_name | default('github-runner') }}"
+    state: started
+    restart: true

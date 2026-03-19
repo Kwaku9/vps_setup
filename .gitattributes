@@ -89,3 +89,6 @@ roles/trading/files/backtrader/Dockerfile !filter !diff
 roles/trading/files/backtrader/requirements.txt !filter !diff
 roles/trading/files/lightweight-charts/Dockerfile !filter !diff
 roles/trading/files/lightweight-charts/package.json !filter !diff
+
+# GitHub Actions workflows must be readable by GitHub (never encrypt)
+.github/workflows/*.yml !filter !diff
