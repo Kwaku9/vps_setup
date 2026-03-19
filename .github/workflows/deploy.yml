@@ -279,8 +279,8 @@ jobs:
           fi
 
           ssh -o StrictHostKeyChecking=no root@localhost \
-            "cd /workspace/vscode-projects/vps_setup && \
-             ansible-playbook -i inventory/hosts site.yml \
+            "podman exec ansible-deployment \
+             ansible-playbook -i /ansible/inventory/hosts /ansible/site.yml \
                $TAG_ARGS $EXTRA_ARGS \
                2>&1" | tee /tmp/ansible-output.log
 
