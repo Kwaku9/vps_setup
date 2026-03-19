@@ -1,6 +1,6 @@
 ---
 # GitHub Runner Role Defaults
-# Self-hosted GitHub Actions runner in a Podman container
+# Self-hosted GitHub Actions runner in a Podman container (Debian bookworm-slim)
 
 github_runner:
   enabled: true
