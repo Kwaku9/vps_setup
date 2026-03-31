@@ -115,12 +115,12 @@ trivy_vulnerabilities_total{severity="MEDIUM"} ${total_medium}
 trivy_vulnerabilities_total{severity="LOW"} ${total_low}
 trivy_images_scanned ${image_count}
 trivy_images_with_critical ${images_with_critical}
-trivy_scan_timestamp ${SCAN_END}000
+trivy_scan_timestamp ${SCAN_END}
 trivy_scan_errors ${scan_errors}
-trivy_vulnerability_detail_timestamp ${SCAN_END}000
+trivy_vulnerability_detail_timestamp ${SCAN_END}
 EOF
 
 # Push to VictoriaMetrics
-curl -s -X POST "$VM_PUSH_URL" --data-binary @"$METRICS_FILE"
+curl -s -X POST "$VM_PUSH_URL" -d @"$METRICS_FILE"
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') Scan complete: ${image_count} images, ${total_critical} CRITICAL, ${total_high} HIGH, ${total_medium} MEDIUM, ${total_low} LOW (${SCAN_DURATION}s)"
