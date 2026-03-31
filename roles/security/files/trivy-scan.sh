@@ -115,9 +115,9 @@ trivy_vulnerabilities_total{severity="MEDIUM"} ${total_medium}
 trivy_vulnerabilities_total{severity="LOW"} ${total_low}
 trivy_images_scanned ${image_count}
 trivy_images_with_critical ${images_with_critical}
-trivy_scan_timestamp ${SCAN_END}
+trivy_scan_timestamp ${SCAN_END}000
 trivy_scan_errors ${scan_errors}
-trivy_vulnerability_detail_timestamp ${SCAN_END}
+trivy_vulnerability_detail_timestamp ${SCAN_END}000
 EOF
 
 # Push to VictoriaMetrics
