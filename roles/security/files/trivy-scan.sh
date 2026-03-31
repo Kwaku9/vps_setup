@@ -90,7 +90,8 @@ for image in $images; do
             .Target as $target |
             .Vulnerabilities[]? |
             select(.Severity == "CRITICAL" or .Severity == "HIGH") |
-            "trivy_vulnerability_id{image_repository=\"'"${image_repo}"'\",image_tag=\"'"${image_tag}"'\",severity=\"\(.Severity)\",vuln_id=\"\(.VulnerabilityID)\",resource=\"\(.PkgName // "unknown")\",installed_version=\"\(.InstalledVersion // "")\",fixed_version=\"\(.FixedVersion // "")\",vuln_title=\"\(.Title // "" | gsub("[\"\\\\]"; "_") | .[0:80])\"} 1"
+            (.Severity | if . == "CRITICAL" then "Critical" elif . == "HIGH" then "High" elif . == "MEDIUM" then "Medium" elif . == "LOW" then "Low" else . end) as $sev |
+            "trivy_vulnerability_id{image_repository=\"'"${image_repo}"'\",image_tag=\"'"${image_tag}"'\",severity=\"\($sev)\",vuln_id=\"\(.VulnerabilityID)\",resource=\"\(.PkgName // "unknown")\",installed_version=\"\(.InstalledVersion // "")\",fixed_version=\"\(.FixedVersion // "")\",vuln_title=\"\(.Title // "" | gsub("[\"\\\\]"; "_") | .[0:80])\"} 1"
         ' "$json_file" 2>/dev/null >> "$METRICS_FILE"
     else
         scan_errors=$((scan_errors + 1))
@@ -120,7 +121,13 @@ trivy_scan_errors ${scan_errors}
 trivy_vulnerability_detail_timestamp ${SCAN_END}
 EOF
 
-# Push to VictoriaMetrics
-curl -s -X POST "$VM_PUSH_URL" -d @"$METRICS_FILE"
+# Write to textfile collector so node_exporter keeps metrics fresh
+TEXTFILE_DIR="/opt/compose/textfile-collector"
+grep -v "^#" "$METRICS_FILE" | grep -v "^$" > "${TEXTFILE_DIR}/trivy.prom"
+
+# Also write detail metrics to separate textfile
+grep "trivy_vulnerability_id" "$METRICS_FILE" > "${TEXTFILE_DIR}/trivy-details.prom"
+# Add header
+sed -i '1i# HELP trivy_vulnerability_id Individual vulnerability details\n# TYPE trivy_vulnerability_id gauge' "${TEXTFILE_DIR}/trivy-details.prom"
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') Scan complete: ${image_count} images, ${total_critical} CRITICAL, ${total_high} HIGH, ${total_medium} MEDIUM, ${total_low} LOW (${SCAN_DURATION}s)"
