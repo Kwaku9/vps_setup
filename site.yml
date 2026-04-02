@@ -108,7 +108,7 @@
           - "  ai-stack-pod: OpenWebUI, LiteLLM, PostgreSQL, SearxNG"
           - "  authentication-pod: Authentik Server, Worker, PostgreSQL, Redis"
           - "  management-pod: Portainer, Dockge"
-          - "  frontend-pod: Nginx, Atlas Charts, Journey Tracker, WorldView"
+          - "  frontend-pod: Nginx, Atlas Charts, Journey Tracker, WorldView, Ops Dashboard"
           - "  shared-db-pod: PostgreSQL"
           - "  security-pod: Trivy, Wazuh"
           - ""

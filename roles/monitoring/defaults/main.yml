@@ -39,6 +39,11 @@ monitoring:
     enabled: true
     version: "v1.12.2"
     memory: "640m"  # Increased from 512m — was at 88%, needs headroom
+  vmalert:
+    enabled: true
+    version: "v1.115.0"
+    port: 8880
+    memory: "128m"
   checkmk:
     enabled: false
   image_renderer:

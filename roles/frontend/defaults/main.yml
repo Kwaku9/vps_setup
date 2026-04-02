@@ -9,6 +9,19 @@ frontend:
     version: "alpine"
     port: 8080
 
+# Ops Dashboard - Infrastructure status & management UI
+ops_dashboard:
+  enabled: true
+  source_dir: "/opt/compose/ops-dashboard"
+  image: "localhost/ops-dashboard:latest"
+  memory: "256m"
+  cpu_shares: 512
+  domain: "ops.{{ domain_name }}"
+  port: 8090
+  ssh_host: "10.89.0.1"
+  ssh_known_hosts: "/root/.ssh/known_hosts_ops"
+  vm_url: "http://metrics-pod:8428"
+
 # WorldView Geospatial Dashboard (consolidated from standalone role)
 worldview:
   enabled: true
