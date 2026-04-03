@@ -13,7 +13,7 @@ management:
     data_volume: "portainer-data"
 
   dockge:
-    enabled: true
+    enabled: false
     version: "1"
     image: "louislam/dockge:1"
     port: 5001
