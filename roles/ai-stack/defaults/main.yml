@@ -11,7 +11,7 @@ ai_stack:
 
   # n8n with Claude Code CLI
   n8n_claude:
-    enabled: true
+    enabled: false
     name: "n8n-claude"
     source_path: "n8n/n8n-claude"
     image: "n8n-claude:latest"
@@ -58,7 +58,7 @@ ai_stack:
 
   # Fabric API
   fabric_api:
-    enabled: true
+    enabled: false
     name: "fabric-api"
     source_path: "fabric"
     image: "fabric-api:latest"
