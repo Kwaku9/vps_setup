@@ -36,18 +36,20 @@ mcp_servers:
     # Google Docs/Drive MCP
     google_docs:
       enabled: true
-      name: "google-docs-drive"
+      name: "google-docs-mcp"
       container_name: "google-docs-mcp"
       source_path: "vscode-projects/mcp-googledocs-server"
-      transport: "http"
-      port: 9090
-      internal_port: 9090
+      transport: "stdio"
+      port: 9091
+      internal_port: 9091
       image: "google-docs-mcp:latest"
       build: true
-      health_endpoint: "/health"
+      command: "node ./dist/server.js"
       env:
-        MCP_MODE: "http"
-        PORT: "9090"
+        MCP_TRANSPORT: "httpStream"
+        PORT: "9091"
+      stdio_env:
+        MCP_TRANSPORT: "stdio"
       volumes: []
       credentials_file: "credentials.json"
 

@@ -88,6 +88,10 @@
       tags: ['backup', 'backup-setup', 'backup-run', 'restore']
       when: backup.enabled | default(true)
 
+    - role: flyer-generator
+      tags: ['flyer-generator']
+      when: flyer_generator.enabled | default(true)
+
     - role: github-runner
       tags: ['github-runner', 'cicd']
       when: deploy_github_runner | default(false)
