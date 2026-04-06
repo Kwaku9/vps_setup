@@ -14,15 +14,15 @@ cloudflared:
   metrics_port: 2000
   domain: "{{ domain_name }}"
 
-  # Traefik is now in the same pod (security-infra-pod) — use localhost
+  # Traefik is standalone — use container name via Podman DNS
   ingress:
     - hostname: "ssh.{{ domain_name }}"
       service: "ssh://host.containers.internal:22"
     - hostname: "{{ domain_name }}"
-      service: "https://localhost:443"
+      service: "https://traefik:443"
       no_tls_verify: true
     - hostname: "*.{{ domain_name }}"
-      service: "https://localhost:443"
+      service: "https://traefik:443"
       no_tls_verify: true
 
 # Vault overrides these
