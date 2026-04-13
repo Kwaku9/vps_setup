@@ -16,6 +16,20 @@
     - all.yml    # Load global configuration variables
     - vault.yml  # Load encrypted credentials (overrides all.yml)
 
+  pre_tasks:
+    # Render local-only config files from vault secrets.
+    # delegate_to: localhost runs on the ansible controller (ansible-deployment
+    # container), which sees the repo at /ansible and writes into the mounted
+    # tools/ directory — same location Claude Code hooks read from.
+    - name: Render tools/telegram-approval.json from vault
+      template:
+        src: "{{ playbook_dir }}/tools/telegram-approval.json.j2"
+        dest: "{{ playbook_dir }}/tools/telegram-approval.json"
+        mode: '0600'
+      delegate_to: localhost
+      run_once: true
+      tags: ['always', 'telegram-approval']
+
   roles:
     - role: base
       tags: ['base', 'always']
@@ -97,6 +111,17 @@
       when: deploy_github_runner | default(false)
 
   post_tasks:
+    # Netavark NAT recovery — always runs at end of play.
+    # Reloads firewall rules for every running container. Idempotent, ~3s.
+    # Fixes the "curl 127.0.0.1:<port> times out" bug that hits every time
+    # Ansible recreates a container or pod with host port mappings. See
+    # roles/base/handlers/main.yml for the full explanation.
+    - name: Recover netavark NAT (reload all container firewall rules)
+      command: podman network reload --all
+      changed_when: false
+      failed_when: false
+      tags: ['always', 'network-recover']
+
     - name: Display deployment summary
       debug:
         msg:

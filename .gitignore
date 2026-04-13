@@ -147,3 +147,11 @@ roles/mcp-servers/files/scrapy-mcp/output.*
 # Flyer generator runtime output — container writes PDFs here
 flyers/output/*
 !flyers/output/.gitkeep
+
+# Batch 11 (2026-04-12): local runtime artifacts, not source of truth
+# Third-party clone (tanbiralam/claude-code) with its own .git dir
+/claude-code/
+# Fabric CLI venv
+/tools/fabric-venv/
+# Rendered from tools/telegram-approval.json.j2 via vault pre_task — never commit
+/tools/telegram-approval.json
