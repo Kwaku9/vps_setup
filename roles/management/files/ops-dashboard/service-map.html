@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ops Dashboard — Complete Service &amp; Stack Map</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #0d1117;
+    color: #c9d1d9;
+    padding: 2rem;
+    line-height: 1.5;
+  }
+  h1 { color: #58a6ff; font-size: 1.8rem; margin-bottom: 0.5rem; }
+  h2 {
+    color: #79c0ff; font-size: 1.3rem;
+    margin: 2.5rem 0 1rem 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #21262d;
+  }
+  .subtitle { color: #8b949e; margin-bottom: 2rem; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; font-size: 0.82rem; }
+  th, td { padding: 0.45rem 0.65rem; text-align: left; border: 1px solid #21262d; }
+  th {
+    background: #161b22; color: #f0f6fc; font-weight: 600;
+    position: sticky; top: 0; z-index: 10;
+  }
+  tr:hover { background: #161b22; }
+  .stack-header td {
+    background: #1c2333; font-weight: 700; color: #58a6ff;
+    font-size: 0.88rem; padding: 0.55rem 0.75rem;
+    border-bottom: 2px solid #30363d;
+  }
+  .on { color: #3fb950; font-weight: 700; text-align: center; }
+  .off { color: #6e4040; text-align: center; }
+  .badge {
+    display: inline-block; padding: 0.1rem 0.4rem; border-radius: 3px;
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.5px;
+  }
+  .badge-vps { background: #1a3a4a; color: #58a6ff; }
+  .badge-azure { background: #1a2a4a; color: #79b8ff; }
+  .badge-host { background: #2a1a3a; color: #bc8cff; }
+  .badge-standalone { background: #2a2a1a; color: #d2a822; }
+  .badge-cron { background: #1a2a2a; color: #56d6b4; }
+  .tier {
+    display: inline-block; padding: 0.1rem 0.4rem; border-radius: 3px;
+    font-size: 0.68rem; font-weight: 600;
+  }
+  .tier-base { background: #1a3320; color: #3fb950; }
+  .tier-basic { background: #1a3320; color: #3fb950; }
+  .tier-logs { background: #3a2a10; color: #d29922; }
+  .tier-metrics { background: #2a3a10; color: #a5d622; }
+  .tier-full { background: #1a3320; color: #3fb950; }
+  .tier-advanced { background: #3a1a1a; color: #f85149; }
+  .tier-sso { background: #2a2040; color: #bc8cff; }
+  .tier-chat { background: #1a3a4a; color: #58a6ff; }
+  .tier-speech { background: #1a4a3a; color: #56d6b4; }
+  .tier-serverless { background: #1a2a4a; color: #79b8ff; }
+  .tier-code-gpu { background: #3a2a10; color: #d29922; }
+  .tier-media-gpu { background: #3a1a2a; color: #f778ba; }
+  .tier-na { background: #1a1a1a; color: #484f58; }
+  .tier-traces { background: #2a1a3a; color: #bc8cff; }
+  .tier-telegram { background: #1a3a4a; color: #58a6ff; }
+  .tier-mcp { background: #1a4a3a; color: #56d6b4; }
+  .tier-web { background: #2a2a40; color: #a0a0ff; }
+  .tier-fintech { background: #2a3a1a; color: #a5d622; }
+  .always-on {
+    display: inline-block; padding: 0.1rem 0.4rem; border-radius: 3px;
+    font-size: 0.62rem; font-weight: 700; letter-spacing: 0.5px;
+    background: #1a3320; color: #3fb950; border: 1px solid #2a5a30;
+    margin-left: 0.3rem; vertical-align: middle;
+  }
+  .prof-minimal { color: #8b949e; }
+  .prof-chat { color: #58a6ff; }
+  .prof-full { color: #3fb950; }
+  .prof-inference { color: #d29922; }
+  .prof-media { color: #f778ba; }
+  .stack-table td:first-child { font-weight: 700; color: #58a6ff; }
+  .stack-table .tier-cell { min-width: 180px; }
+  .tier-services { color: #8b949e; font-size: 0.72rem; display: block; margin-top: 2px; }
+  .legend { display: flex; gap: 2rem; margin: 1rem 0 2rem 0; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .dot-on { background: #3fb950; }
+  .dot-off { background: #6e4040; }
+  .live-status { font-size: 0.7rem; padding: 0.1rem 0.3rem; border-radius: 3px; margin-left: 0.3rem; }
+  .live-running { background: #1a3320; color: #3fb950; }
+  .live-exited { background: #3a1a1a; color: #f85149; }
+  .live-degraded { background: #3a2a10; color: #d29922; }
+  .note { color: #8b949e; font-size: 0.72rem; font-style: italic; }
+
+  /* Collapsible stack sections */
+  details.stack-group {
+    margin: 0;
+    border-bottom: 1px solid #21262d;
+  }
+  details.stack-group > summary {
+    cursor: pointer;
+    padding: 0.55rem 0.75rem;
+    background: #1c2333;
+    font-weight: 700;
+    color: #58a6ff;
+    font-size: 0.88rem;
+    border-bottom: 2px solid #30363d;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    user-select: none;
+  }
+  details.stack-group > summary::-webkit-details-marker { display: none; }
+  details.stack-group > summary::before {
+    content: '\25B6'; /* right triangle */
+    font-size: 0.7rem;
+    transition: transform 0.15s;
+    display: inline-block;
+  }
+  details.stack-group[open] > summary::before {
+    transform: rotate(90deg);
+  }
+  details.stack-group > summary:hover {
+    background: #243044;
+  }
+  details.stack-group table {
+    margin: 0;
+    border-top: none;
+  }
+  .stack-count {
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: #8b949e;
+    margin-left: 0.3rem;
+  }
+</style>
+</head>
+<body>
+
+<h1>Ops Dashboard — Complete Service &amp; Stack Map</h1>
+<p class="subtitle">All services from live VPS inventory (2026-03-19) + Azure endpoints — organized by stack</p>
+
+<div class="legend">
+  <div class="legend-item"><span class="legend-dot dot-on"></span> ON in profile</div>
+  <div class="legend-item"><span class="legend-dot dot-off"></span> OFF in profile</div>
+  <div class="legend-item"><span class="badge badge-vps">VPS</span> VPS Pod</div>
+  <div class="legend-item"><span class="badge badge-standalone">STD</span> Standalone</div>
+  <div class="legend-item"><span class="badge badge-host">HST</span> Host Service</div>
+  <div class="legend-item"><span class="badge badge-cron">CRN</span> Cron Job</div>
+  <div class="legend-item"><span class="badge badge-azure">AZR</span> Azure Endpoint</div>
+</div>
+
+<h2>Table 1: All Services x Profiles (Live VPS + Azure)</h2>
+
+<details class="stack-group" open>
+<summary>CORE — Always-on infrastructure <span class="stack-count">(8 services, includes metrics data store)</span></summary>
+<table>
+  <thead><tr><th>Service</th><th>Location</th><th>Stack</th><th>Tier</th><th>Live Status</th><th class="prof-minimal">Minimal</th><th class="prof-chat">Chat Only</th><th class="prof-full">Full Stack</th><th class="prof-inference">Inference</th><th class="prof-media">Media</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>traefik</td>
+      <td><span class="badge badge-vps">VPS</span> security-infra-pod</td>
+      <td>core</td><td><span class="tier tier-base">base</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>cloudflared</td>
+      <td><span class="badge badge-vps">VPS</span> security-infra-pod</td>
+      <td>core</td><td><span class="tier tier-base">base</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>postgres <span class="note">(shared)</span></td>
+      <td><span class="badge badge-vps">VPS</span> shared-db-pod</td>
+      <td>core</td><td><span class="tier tier-base">base</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>fail2ban</td>
+      <td><span class="badge badge-host">HST</span> host service</td>
+      <td>core</td><td><span class="tier tier-base">base</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>node-exporter</td>
+      <td><span class="badge badge-host">HST</span> host service</td>
+      <td>core</td><td><span class="tier tier-base">base</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>iptables</td>
+      <td><span class="badge badge-host">HST</span> host service</td>
+      <td>core</td><td><span class="tier tier-base">base</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>crond</td>
+      <td><span class="badge badge-host">HST</span> host service</td>
+      <td>core</td><td><span class="tier tier-base">base</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+
+    <tr>
+      <td>victoria-metrics <span class="note">(data store)</span></td>
+      <td><span class="badge badge-vps">VPS</span> metrics-pod</td>
+      <td>core</td><td><span class="tier tier-base">base</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+
+  </tbody></table></details>
+
+<details class="stack-group" open>
+<summary>SECURITY — Threat detection &amp; enforcement <span class="stack-count">(2 services)</span></summary>
+<table><thead><tr><th>Service</th><th>Location</th><th>Stack</th><th>Tier</th><th>Live Status</th><th class="prof-minimal">Minimal</th><th class="prof-chat">Chat Only</th><th class="prof-full">Full Stack</th><th class="prof-inference">Inference</th><th class="prof-media">Media</th></tr></thead><tbody>
+    <tr>
+      <td>crowdsec</td>
+      <td><span class="badge badge-vps">VPS</span> security-infra-pod</td>
+      <td>security</td><td><span class="tier tier-basic">basic</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>tetragon</td>
+      <td><span class="badge badge-standalone">STD</span> standalone</td>
+      <td>security</td><td><span class="tier tier-advanced">advanced</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td><td class="off">OFF</td>
+    </tr>
+
+  </tbody></table></details>
+
+<details class="stack-group" open>
+<summary>AUTH — Identity &amp; SSO <span class="stack-count">(4 containers in authentication-pod)</span></summary>
+<table><thead><tr><th>Service</th><th>Location</th><th>Stack</th><th>Tier</th><th>Live Status</th><th class="prof-minimal">Minimal</th><th class="prof-chat">Chat Only</th><th class="prof-full">Full Stack</th><th class="prof-inference">Inference</th><th class="prof-media">Media</th></tr></thead><tbody>
+    <tr>
+      <td>authentik-server</td>
+      <td><span class="badge badge-vps">VPS</span> authentication-pod</td>
+      <td>auth</td><td><span class="tier tier-sso">sso</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>authentik-worker</td>
+      <td><span class="badge badge-vps">VPS</span> authentication-pod</td>
+      <td>auth</td><td><span class="tier tier-sso">sso</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>authentik-postgres</td>
+      <td><span class="badge badge-vps">VPS</span> authentication-pod</td>
+      <td>auth</td><td><span class="tier tier-sso">sso</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>redis</td>
+      <td><span class="badge badge-vps">VPS</span> authentication-pod</td>
+      <td>auth</td><td><span class="tier tier-sso">sso</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+
+  </tbody></table></details>
+
+<details class="stack-group" open>
+<summary>AI — Chat, LLM routing, speech, search <span class="stack-count">(4+ containers in ai-stack-pod)</span></summary>
+<table><thead><tr><th>Service</th><th>Location</th><th>Stack</th><th>Tier</th><th>Live Status</th><th class="prof-minimal">Minimal</th><th class="prof-chat">Chat Only</th><th class="prof-full">Full Stack</th><th class="prof-inference">Inference</th><th class="prof-media">Media</th></tr></thead><tbody>
+    <tr>
+      <td>litellm</td>
+      <td><span class="badge badge-vps">VPS</span> ai-stack-pod</td>
+      <td>ai</td><td><span class="tier tier-chat">chat</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>open-webui</td>
+      <td><span class="badge badge-vps">VPS</span> ai-stack-pod</td>
+      <td>ai</td><td><span class="tier tier-chat">chat</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>ai-stack-postgres</td>
+      <td><span class="badge badge-vps">VPS</span> ai-stack-pod</td>
+      <td>ai</td><td><span class="tier tier-chat">chat</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>searxng</td>
+      <td><span class="badge badge-standalone">STD</span> standalone</td>
+      <td>ai</td><td><span class="tier tier-chat">chat</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="off">OFF</td>
+    </tr>
+
+  </tbody></table></details>
+
+<details class="stack-group" open>
+<summary>MONITORING — Observability stack, tiered <span class="stack-count">(5 containers across 3 pods; VM is always-on in core)</span></summary>
+<table><thead><tr><th>Service</th><th>Location</th><th>Stack</th><th>Tier</th><th>Live Status</th><th class="prof-minimal">Minimal</th><th class="prof-chat">Chat Only</th><th class="prof-full">Full Stack</th><th class="prof-inference">Inference</th><th class="prof-media">Media</th></tr></thead><tbody>
+    <tr>
+      <td>alloy</td>
+      <td><span class="badge badge-vps">VPS</span> logs-pod</td>
+      <td>monitoring</td><td><span class="tier tier-logs">logs</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>loki</td>
+      <td><span class="badge badge-vps">VPS</span> logs-pod</td>
+      <td>monitoring</td><td><span class="tier tier-logs">logs</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>grafana</td>
+      <td><span class="badge badge-vps">VPS</span> metrics-pod</td>
+      <td>monitoring</td><td><span class="tier tier-metrics">dashboards</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>renderer <span class="note">(grafana image renderer)</span></td>
+      <td><span class="badge badge-vps">VPS</span> metrics-pod</td>
+      <td>monitoring</td><td><span class="tier tier-metrics">dashboards</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>tempo</td>
+      <td><span class="badge badge-vps">VPS</span> tempo-pod</td>
+      <td>monitoring</td><td><span class="tier tier-traces">traces</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td><td class="off">OFF</td>
+    </tr>
+
+  </tbody></table></details>
+
+<details class="stack-group" open>
+<summary>MANAGEMENT — Container &amp; infra management <span class="stack-count">(2 services)</span></summary>
+<table><thead><tr><th>Service</th><th>Location</th><th>Stack</th><th>Tier</th><th>Live Status</th><th class="prof-minimal">Minimal</th><th class="prof-chat">Chat Only</th><th class="prof-full">Full Stack</th><th class="prof-inference">Inference</th><th class="prof-media">Media</th></tr></thead><tbody>
+    <tr>
+      <td>portainer</td>
+      <td><span class="badge badge-vps">VPS</span> management-pod</td>
+      <td>mgmt</td><td><span class="tier tier-base">mgmt</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td><td class="off">OFF</td>
+    </tr>
+    <tr>
+      <td>ansible-deployment</td>
+      <td><span class="badge badge-standalone">STD</span> host network</td>
+      <td>mgmt</td><td><span class="tier tier-base">base</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+
+  </tbody></table></details>
+
+<details class="stack-group" open>
+<summary>COMMUNICATIONS — Bot &amp; messaging <span class="stack-count">(1 service)</span></summary>
+<table><thead><tr><th>Service</th><th>Location</th><th>Stack</th><th>Tier</th><th>Live Status</th><th class="prof-minimal">Minimal</th><th class="prof-chat">Chat Only</th><th class="prof-full">Full Stack</th><th class="prof-inference">Inference</th><th class="prof-media">Media</th></tr></thead><tbody>
+    <tr>
+      <td>telegram-gateway</td>
+      <td><span class="badge badge-vps">VPS</span> mcp-pod</td>
+      <td>comms</td><td><span class="tier tier-telegram">telegram</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td><td class="on">ON</td>
+    </tr>
+
+  </tbody></table></details>
+
+<details class="stack-group" open>
+<summary>MCP — Claude Code MCP servers <span class="stack-count">(3 containers in mcp-pod)</span></summary>
+<table><thead><tr><th>Service</th><th>Location</th><th>Stack</th><th>Tier</th><th>Live Status</th><th class="prof-minimal">Minimal</th><th class="prof-chat">Chat Only</th><th class="prof-full">Full Stack</th><th class="prof-inference">Inference</th><th class="prof-media">Media</th></tr></thead><tbody>
+    <tr>
+      <td>context7-mcp</td>
+      <td><span class="badge badge-vps">VPS</span> mcp-pod</td>
+      <td>mcp</td><td><span class="tier tier-mcp">mcp</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="off">OFF</td>
+    </tr>
+    <tr>
+      <td>google-docs-mcp</td>
+      <td><span class="badge badge-vps">VPS</span> mcp-pod</td>
+      <td>mcp</td><td><span class="tier tier-mcp">mcp</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="off">OFF</td>
+    </tr>
+    <tr>
+      <td>n8n-mcp</td>
+      <td><span class="badge badge-standalone">STD</span> standalone</td>
+      <td>mcp</td><td><span class="tier tier-mcp">mcp</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="off">OFF</td>
+    </tr>
+
+  </tbody></table></details>
+
+<details class="stack-group" open>
+<summary>FRONTEND — Web applications <span class="stack-count">(3 containers in frontend-pod)</span></summary>
+<table><thead><tr><th>Service</th><th>Location</th><th>Stack</th><th>Tier</th><th>Live Status</th><th class="prof-minimal">Minimal</th><th class="prof-chat">Chat Only</th><th class="prof-full">Full Stack</th><th class="prof-inference">Inference</th><th class="prof-media">Media</th></tr></thead><tbody>
+    <tr>
+      <td>journey-tracker</td>
+      <td><span class="badge badge-vps">VPS</span> frontend-pod</td>
+      <td>frontend</td><td><span class="tier tier-web">web</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>worldview-dev</td>
+      <td><span class="badge badge-vps">VPS</span> frontend-pod</td>
+      <td>frontend</td><td><span class="tier tier-web">web</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>ais-relay</td>
+      <td><span class="badge badge-vps">VPS</span> frontend-pod</td>
+      <td>frontend</td><td><span class="tier tier-web">web</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td><td class="on">ON</td>
+    </tr>
+  </tbody></table></details>
+
+<details class="stack-group" open>
+<summary>FINTECH — Market data, brokerage &amp; financial charts <span class="stack-count">(3 containers + cron jobs)</span></summary>
+<table><thead><tr><th>Service</th><th>Location</th><th>Stack</th><th>Tier</th><th>Live Status</th><th class="prof-minimal">Minimal</th><th class="prof-chat">Chat Only</th><th class="prof-full">Full Stack</th><th class="prof-inference">Inference</th><th class="prof-media">Media</th></tr></thead><tbody>
+    <tr>
+      <td>atlas-charts</td>
+      <td><span class="badge badge-standalone">STD</span> standalone</td>
+      <td>fintech</td><td><span class="tier tier-fintech">fintech</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td><td class="off">OFF</td>
+    </tr>
+    <tr>
+      <td>ib-mcp-server</td>
+      <td><span class="badge badge-standalone">STD</span> standalone</td>
+      <td>fintech</td><td><span class="tier tier-fintech">fintech</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td><td class="off">OFF</td>
+    </tr>
+    <tr>
+      <td>ibeam <span class="note">(IB Gateway)</span></td>
+      <td><span class="badge badge-standalone">STD</span> standalone</td>
+      <td>fintech</td><td><span class="tier tier-fintech">fintech</span></td>
+      <td><span class="live-status live-exited">Exited</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td><td class="off">OFF</td>
+    </tr>
+
+  </tbody></table></details>
+
+<details class="stack-group" open>
+<summary>CI/CD — Build &amp; deployment runners <span class="stack-count">(1 service)</span></summary>
+<table><thead><tr><th>Service</th><th>Location</th><th>Stack</th><th>Tier</th><th>Live Status</th><th class="prof-minimal">Minimal</th><th class="prof-chat">Chat Only</th><th class="prof-full">Full Stack</th><th class="prof-inference">Inference</th><th class="prof-media">Media</th></tr></thead><tbody>
+    <tr>
+      <td>github-runner</td>
+      <td><span class="badge badge-standalone">STD</span> host network</td>
+      <td>ci-cd</td><td><span class="tier tier-base">base</span></td>
+      <td><span class="live-status live-running">Running</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+
+  </tbody></table></details>
+
+<details class="stack-group" open>
+<summary>HOST — Additional host-level services <span class="stack-count">(1 service)</span></summary>
+<table><thead><tr><th>Service</th><th>Location</th><th>Stack</th><th>Tier</th><th>Live Status</th><th class="prof-minimal">Minimal</th><th class="prof-chat">Chat Only</th><th class="prof-full">Full Stack</th><th class="prof-inference">Inference</th><th class="prof-media">Media</th></tr></thead><tbody>
+    <tr>
+      <td>squid</td>
+      <td><span class="badge badge-host">HST</span> host service</td>
+      <td>host</td><td><span class="tier tier-base">base</span></td>
+      <td><span class="live-status live-exited">Stopped</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+
+  </tbody></table></details>
+
+<details class="stack-group" open>
+<summary>CRON JOBS — Scheduled automation <span class="stack-count">(16 jobs)</span></summary>
+<table><thead><tr><th>Service</th><th>Location</th><th>Stack</th><th>Tier</th><th>Live Status</th><th class="prof-minimal">Minimal</th><th class="prof-chat">Chat Only</th><th class="prof-full">Full Stack</th><th class="prof-inference">Inference</th><th class="prof-media">Media</th></tr></thead><tbody>
+    <tr>
+      <td>podman-metrics</td>
+      <td><span class="badge badge-cron">CRN</span> every 1 min</td>
+      <td>monitoring</td><td><span class="tier tier-metrics">metrics</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>cloudflare-zone-metrics</td>
+      <td><span class="badge badge-cron">CRN</span> every 5 min</td>
+      <td>monitoring</td><td><span class="tier tier-metrics">metrics</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>cloudflare-access-metrics</td>
+      <td><span class="badge badge-cron">CRN</span> every 5 min</td>
+      <td>monitoring</td><td><span class="tier tier-metrics">metrics</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>authentik-events-metrics</td>
+      <td><span class="badge badge-cron">CRN</span> every 5 min</td>
+      <td>monitoring</td><td><span class="tier tier-metrics">metrics</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>crowdsec-geo-feed</td>
+      <td><span class="badge badge-cron">CRN</span> every 5 min</td>
+      <td>security</td><td><span class="tier tier-basic">basic</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>fail2ban-metrics</td>
+      <td><span class="badge badge-cron">CRN</span> every 5 min</td>
+      <td>security</td><td><span class="tier tier-basic">basic</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>threat-feed-checker</td>
+      <td><span class="badge badge-cron">CRN</span> every 15 min</td>
+      <td>security</td><td><span class="tier tier-basic">basic</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>daily-services-check</td>
+      <td><span class="badge badge-cron">CRN</span> daily 7am</td>
+      <td>monitoring</td><td><span class="tier tier-logs">logs</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>daily-security-check</td>
+      <td><span class="badge badge-cron">CRN</span> daily 7:30am</td>
+      <td>security</td><td><span class="tier tier-basic">basic</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>crowdsec-daily-report</td>
+      <td><span class="badge badge-cron">CRN</span> daily 9am</td>
+      <td>security</td><td><span class="tier tier-basic">basic</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>trivy-scan-metrics</td>
+      <td><span class="badge badge-cron">CRN</span> daily 2am</td>
+      <td>security</td><td><span class="tier tier-advanced">advanced</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td><td class="off">OFF</td>
+    </tr>
+    <tr>
+      <td>daily-session-ingest</td>
+      <td><span class="badge badge-cron">CRN</span> daily 3am</td>
+      <td>ai</td><td><span class="tier tier-chat">chat</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>daily-market-notify</td>
+      <td><span class="badge badge-cron">CRN</span> 5pm M-F</td>
+      <td>fintech</td><td><span class="tier tier-fintech">fintech</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td><td class="off">OFF</td>
+    </tr>
+    <tr>
+      <td>position-sync</td>
+      <td><span class="badge badge-cron">CRN</span> 9:45am+4:15pm M-F</td>
+      <td>fintech</td><td><span class="tier tier-fintech">fintech</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td><td class="off">OFF</td>
+    </tr>
+    <tr>
+      <td>ivscan-daily</td>
+      <td><span class="badge badge-cron">CRN</span> 4:30pm M-F</td>
+      <td>fintech</td><td><span class="tier tier-fintech">fintech</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td><td class="off">OFF</td>
+    </tr>
+    <tr>
+      <td>ibkr-ohlc-ingest</td>
+      <td><span class="badge badge-cron">CRN</span> market hours M-F</td>
+      <td>fintech</td><td><span class="tier tier-fintech">fintech</span></td>
+      <td><span class="live-status live-running">Active</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td><td class="off">OFF</td>
+    </tr>
+
+  </tbody></table></details>
+
+<details class="stack-group" open>
+<summary>AZURE INFERENCE — Serverless <span class="stack-count">(pay-per-token, 3 endpoints)</span></summary>
+<table><thead><tr><th>Service</th><th>Location</th><th>Stack</th><th>Tier</th><th>Live Status</th><th class="prof-minimal">Minimal</th><th class="prof-chat">Chat Only</th><th class="prof-full">Full Stack</th><th class="prof-inference">Inference</th><th class="prof-media">Media</th></tr></thead><tbody>
+    <tr>
+      <td>deepseek-r1</td>
+      <td><span class="badge badge-azure">AZR</span> serverless</td>
+      <td>azure-inference</td><td><span class="tier tier-serverless">serverless</span></td>
+      <td><span class="live-status live-degraded">Not deployed</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>llama-3-3-70b</td>
+      <td><span class="badge badge-azure">AZR</span> serverless</td>
+      <td>azure-inference</td><td><span class="tier tier-serverless">serverless</span></td>
+      <td><span class="live-status live-degraded">Not deployed</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>deepseek-v3</td>
+      <td><span class="badge badge-azure">AZR</span> serverless</td>
+      <td>azure-inference</td><td><span class="tier tier-serverless">serverless</span></td>
+      <td><span class="live-status live-degraded">Not deployed</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+
+  </tbody></table></details>
+
+<details class="stack-group" open>
+<summary>AZURE INFERENCE — Managed GPU <span class="stack-count">(pay-per-second, 7 endpoints)</span></summary>
+<table><thead><tr><th>Service</th><th>Location</th><th>Stack</th><th>Tier</th><th>Live Status</th><th class="prof-minimal">Minimal</th><th class="prof-chat">Chat Only</th><th class="prof-full">Full Stack</th><th class="prof-inference">Inference</th><th class="prof-media">Media</th></tr></thead><tbody>
+    <tr>
+      <td>qwen3-coder</td>
+      <td><span class="badge badge-azure">AZR</span> managed GPU</td>
+      <td>azure-inference</td><td><span class="tier tier-code-gpu">code-gpu</span></td>
+      <td><span class="live-status live-degraded">Not deployed</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="off">OFF</td>
+    </tr>
+    <tr>
+      <td>deepseek-ocr</td>
+      <td><span class="badge badge-azure">AZR</span> managed GPU</td>
+      <td>azure-inference</td><td><span class="tier tier-code-gpu">code-gpu</span></td>
+      <td><span class="live-status live-degraded">Not deployed</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>qwen3-tts</td>
+      <td><span class="badge badge-azure">AZR</span> managed GPU</td>
+      <td>azure-inference</td><td><span class="tier tier-media-gpu">media-gpu</span></td>
+      <td><span class="live-status live-degraded">Not deployed</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>ace-step</td>
+      <td><span class="badge badge-azure">AZR</span> managed GPU</td>
+      <td>azure-inference</td><td><span class="tier tier-media-gpu">media-gpu</span></td>
+      <td><span class="live-status live-degraded">Not deployed</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>qwen-image</td>
+      <td><span class="badge badge-azure">AZR</span> managed GPU</td>
+      <td>azure-inference</td><td><span class="tier tier-media-gpu">media-gpu</span></td>
+      <td><span class="live-status live-degraded">Not deployed</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>ltx-video</td>
+      <td><span class="badge badge-azure">AZR</span> managed GPU</td>
+      <td>azure-inference</td><td><span class="tier tier-media-gpu">media-gpu</span></td>
+      <td><span class="live-status live-degraded">Not deployed</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td>
+    </tr>
+    <tr>
+      <td>trellis-3d</td>
+      <td><span class="badge badge-azure">AZR</span> managed GPU</td>
+      <td>azure-inference</td><td><span class="tier tier-media-gpu">media-gpu</span></td>
+      <td><span class="live-status live-degraded">Not deployed</span></td>
+      <td class="off">OFF</td><td class="off">OFF</td><td class="off">OFF</td><td class="off">OFF</td><td class="on">ON</td>
+    </tr>
+  </tbody></table></details>
+
+<!-- PROFILE SUMMARY -->
+<h2>Profile Summary</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Profile</th>
+      <th>VPS Services ON</th>
+      <th>Azure Endpoints</th>
+      <th>Cron Jobs</th>
+      <th>Monitoring</th>
+      <th>Auth</th>
+      <th>Est. Cost/hr</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td class="prof-minimal">Minimal</td><td class="on">13</td><td class="off">0</td><td>7</td><td>off <span class="note">(VM always on)</span></td><td>off</td><td>$0.00</td></tr>
+    <tr><td class="prof-chat">Chat Only</td><td class="on">19</td><td class="off">0</td><td>8</td><td>off <span class="note">(VM always on)</span></td><td><span class="tier tier-sso">sso</span></td><td>$0.00</td></tr>
+    <tr><td class="prof-full">Full Stack</td><td class="on">40</td><td class="on">3</td><td>16</td><td><span class="tier tier-full">full</span></td><td><span class="tier tier-sso">sso</span></td><td>$0.00</td></tr>
+    <tr><td class="prof-inference">Inference Heavy</td><td class="on">27</td><td class="on">5</td><td>12</td><td><span class="tier tier-metrics">dashboards</span></td><td><span class="tier tier-sso">sso</span></td><td>$2.30</td></tr>
+    <tr><td class="prof-media">Media Production</td><td class="on">31</td><td class="on">10</td><td>12</td><td><span class="tier tier-metrics">dashboards</span></td><td><span class="tier tier-sso">sso</span></td><td>$7.80</td></tr>
+  </tbody>
+</table>
+
+<!-- STACKS TABLE -->
+<h2>Table 2: Service Stacks &amp; Tiers</h2>
+
+<table class="stack-table">
+  <thead>
+    <tr>
+      <th>Stack</th>
+      <th class="tier-cell">Tier 1</th>
+      <th class="tier-cell">Tier 2</th>
+      <th class="tier-cell">Tier 3</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>core</td>
+      <td>
+        <span class="tier tier-base">always on</span>
+        <span class="tier-services">traefik, cloudflared, postgres, <strong>victoria-metrics</strong>, fail2ban, node-exporter, iptables, crond, squid, ansible-deployment, github-runner</span>
+      </td>
+      <td colspan="2" style="color:#484f58;text-align:center;">— no tiers, always active —</td>
+    </tr>
+    <tr>
+      <td>security</td>
+      <td>
+        <span class="tier tier-basic">basic</span>
+        <span class="tier-services">crowdsec, fail2ban, crowdsec-geo-feed, fail2ban-metrics, threat-feed-checker, daily-security-check, crowdsec-daily-report</span>
+      </td>
+      <td>
+        <span class="tier tier-advanced">advanced</span>
+        <span class="tier-services">+ tetragon, trivy-scan-metrics</span>
+      </td>
+      <td style="color:#484f58;text-align:center;">—</td>
+    </tr>
+    <tr>
+      <td>auth</td>
+      <td>
+        <span class="tier tier-na">off</span>
+        <span class="tier-services">No SSO — services use built-in login</span>
+      </td>
+      <td>
+        <span class="tier tier-sso">sso</span>
+        <span class="tier-services">authentik-server, authentik-worker, authentik-postgres, redis</span>
+      </td>
+      <td style="color:#484f58;text-align:center;">—</td>
+    </tr>
+    <tr>
+      <td>ai</td>
+      <td>
+        <span class="tier tier-na">off</span>
+        <span class="tier-services">No AI services</span>
+      </td>
+      <td>
+        <span class="tier tier-chat">chat</span>
+        <span class="tier-services">litellm, open-webui, ai-stack-postgres, daily-session-ingest</span>
+      </td>
+      <td>
+        <span class="tier tier-chat">chat+search</span>
+        <span class="tier-services">+ searxng</span>
+      </td>
+    </tr>
+    <tr>
+      <td>monitoring</td>
+      <td>
+        <span class="tier tier-logs">logs</span>
+        <span class="tier-services">alloy, loki, daily-services-check</span>
+      </td>
+      <td>
+        <span class="tier tier-metrics">dashboards</span>
+        <span class="tier-services">+ grafana, renderer</span>
+        <span class="tier-services" style="color:#56d6b4;">Note: victoria-metrics + metrics cron jobs are always-on (core)</span>
+      </td>
+      <td>
+        <span class="tier tier-traces">traces</span>
+        <span class="tier-services">+ tempo (distributed tracing)</span>
+      </td>
+    </tr>
+    <tr>
+      <td>comms</td>
+      <td>
+        <span class="tier tier-na">off</span>
+        <span class="tier-services">No messaging</span>
+      </td>
+      <td>
+        <span class="tier tier-telegram">telegram</span>
+        <span class="tier-services">telegram-gateway</span>
+      </td>
+      <td style="color:#484f58;text-align:center;">—</td>
+    </tr>
+    <tr>
+      <td>mcp</td>
+      <td>
+        <span class="tier tier-na">off</span>
+        <span class="tier-services">No MCP servers</span>
+      </td>
+      <td>
+        <span class="tier tier-mcp">mcp</span>
+        <span class="tier-services">context7-mcp, google-docs-mcp, n8n-mcp</span>
+      </td>
+      <td style="color:#484f58;text-align:center;">—</td>
+    </tr>
+    <tr>
+      <td>frontend</td>
+      <td>
+        <span class="tier tier-na">off</span>
+        <span class="tier-services">No frontend apps</span>
+      </td>
+      <td>
+        <span class="tier tier-web">web</span>
+        <span class="tier-services">journey-tracker, worldview-dev, ais-relay</span>
+      </td>
+      <td style="color:#484f58;text-align:center;">—</td>
+    </tr>
+    <tr>
+      <td>fintech</td>
+      <td>
+        <span class="tier tier-na">off</span>
+        <span class="tier-services">No fintech services</span>
+      </td>
+      <td>
+        <span class="tier tier-fintech">fintech</span>
+        <span class="tier-services">ib-mcp-server, ibeam, atlas-charts, position-sync, ivscan-daily, ibkr-ohlc-ingest, daily-market-notify</span>
+      </td>
+      <td style="color:#484f58;text-align:center;">—</td>
+    </tr>
+    <tr>
+      <td>azure-inference</td>
+      <td>
+        <span class="tier tier-serverless">serverless</span>
+        <span class="tier-services">deepseek-r1, llama-3.3-70b, deepseek-v3 (pay-per-token)</span>
+      </td>
+      <td>
+        <span class="tier tier-code-gpu">code-gpu</span>
+        <span class="tier-services">+ qwen3-coder, deepseek-ocr</span>
+      </td>
+      <td>
+        <span class="tier tier-media-gpu">media-gpu</span>
+        <span class="tier-services">+ qwen3-tts, ace-step, qwen-image, ltx-video, trellis-3d</span>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<p class="subtitle" style="margin-top: 2rem; font-size: 0.75rem;">
+  Generated from live VPS inventory (2026-03-19) + Azure ML deployment plan<br>
+  Ops Dashboard project @ C:\Users\swirl\VScdeProjects\ops-dashboard
+</p>
+
+</body>
+</html>

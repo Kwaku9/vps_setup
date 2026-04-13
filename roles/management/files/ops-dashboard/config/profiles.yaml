@@ -1,0 +1,788 @@
+# Operational Profiles Configuration
+# Services and patterns for VPS + Azure infrastructure
+
+services:
+  # === VPS: security-infra-pod (always on) ===
+  traefik:
+    platform: vps
+    endpoint_type: pod
+    pod: security-infra-pod
+    description: "Reverse proxy and TLS termination"
+    cpu_shares: 2048
+    memory_mb: 256
+    ansible_tag: security-infra
+    dependencies: []
+
+  cloudflared:
+    platform: vps
+    endpoint_type: pod
+    pod: security-infra-pod
+    description: "Cloudflare tunnel for ingress"
+    memory_mb: 128
+    ansible_tag: security-infra
+    dependencies: [traefik]
+
+  crowdsec:
+    platform: vps
+    endpoint_type: pod
+    pod: security-infra-pod
+    description: "Intrusion detection and prevention"
+    memory_mb: 256
+    ansible_tag: crowdsec
+    dependencies: [traefik]
+
+  # === VPS: ai-stack-pod ===
+  open-webui:
+    platform: vps
+    endpoint_type: pod
+    pod: ai-stack-pod
+    description: "Chat UI frontend"
+    cpu_shares: 2048
+    memory_mb: 512
+    ansible_tag: ai-stack
+    dependencies: [litellm, traefik]
+
+  ai-stack-postgres:
+    platform: vps
+    endpoint_type: pod
+    pod: ai-stack-pod
+    description: "PostgreSQL for AI stack (LiteLLM)"
+    memory_mb: 256
+    ansible_tag: ai-stack
+    dependencies: []
+
+  litellm:
+    platform: vps
+    endpoint_type: pod
+    pod: ai-stack-pod
+    description: "LLM proxy and router"
+    cpu_shares: 1024
+    memory_mb: 256
+    ansible_tag: ai-stack
+    dependencies: [postgres]
+
+  # === Azure: Speech (ACA) ===
+  whisper-stt:
+    platform: azure
+    endpoint_type: serverless
+    description: "Whisper speech-to-text (Azure Container App)"
+    azure_endpoint: whisper-stt
+    cost_per_hour: 0.0
+    dependencies: []
+
+  kokoro-tts:
+    platform: azure
+    endpoint_type: serverless
+    description: "Kokoro text-to-speech (Azure Container App)"
+    azure_endpoint: kokoro-tts
+    cost_per_hour: 0.0
+    dependencies: []
+
+  # === VPS: authentication-pod (4 containers) ===
+  authentik-server:
+    platform: vps
+    endpoint_type: pod
+    pod: authentication-pod
+    description: "Authentik SSO server"
+    cpu_shares: 2048
+    memory_mb: 512
+    ansible_tag: authentication
+    dependencies: [authentik-postgres, redis, traefik]
+
+  authentik-worker:
+    platform: vps
+    endpoint_type: pod
+    pod: authentication-pod
+    description: "Authentik background worker"
+    memory_mb: 256
+    ansible_tag: authentication
+    dependencies: [authentik-postgres, redis]
+
+  authentik-postgres:
+    platform: vps
+    endpoint_type: pod
+    pod: authentication-pod
+    description: "PostgreSQL for Authentik"
+    memory_mb: 256
+    ansible_tag: authentication
+    dependencies: []
+
+  redis:
+    platform: vps
+    endpoint_type: pod
+    pod: authentication-pod
+    description: "Redis cache for Authentik"
+    memory_mb: 128
+    ansible_tag: authentication
+    dependencies: []
+
+  # === VPS: metrics-pod (victoriametrics is core/always-on) ===
+  victoriametrics:
+    platform: vps
+    endpoint_type: pod
+    pod: metrics-pod
+    description: "Time-series metrics storage (always-on data store)"
+    cpu_shares: 1024
+    memory_mb: 256
+    ansible_tag: metrics
+    dependencies: []
+
+  grafana:
+    platform: vps
+    endpoint_type: pod
+    pod: metrics-pod
+    description: "Metrics dashboards and alerting"
+    cpu_shares: 1024
+    memory_mb: 256
+    ansible_tag: metrics
+    dependencies: [victoriametrics, traefik]
+
+  renderer:
+    platform: vps
+    endpoint_type: pod
+    pod: metrics-pod
+    description: "Grafana image renderer"
+    memory_mb: 128
+    ansible_tag: metrics
+    dependencies: [grafana]
+
+  # === VPS: logs-pod ===
+  alloy:
+    platform: vps
+    endpoint_type: pod
+    pod: logs-pod
+    description: "OpenTelemetry collector (logs + traces)"
+    cpu_shares: 512
+    memory_mb: 256
+    ansible_tag: logs
+    dependencies: [loki]
+
+  loki:
+    platform: vps
+    endpoint_type: pod
+    pod: logs-pod
+    description: "Log aggregation and storage"
+    cpu_shares: 1024
+    memory_mb: 256
+    ansible_tag: logs
+    dependencies: []
+
+  # === VPS: tempo-pod ===
+  tempo:
+    platform: vps
+    endpoint_type: pod
+    pod: tempo-pod
+    description: "Distributed tracing backend"
+    cpu_shares: 512
+    memory_mb: 256
+    ansible_tag: tempo
+    dependencies: []
+
+  # === VPS: shared-db-pod ===
+  postgres:
+    platform: vps
+    endpoint_type: pod
+    pod: shared-db-pod
+    description: "PostgreSQL shared database"
+    memory_mb: 256
+    ansible_tag: shared-db
+    dependencies: []
+
+  # === VPS: mcp-pod ===
+  telegram-gateway:
+    platform: vps
+    endpoint_type: pod
+    pod: mcp-pod
+    description: "Telegram bot gateway"
+    cpu_shares: 512
+    memory_mb: 512
+    ansible_tag: mcp
+    dependencies: [postgres, traefik]
+
+  context7-mcp:
+    platform: vps
+    endpoint_type: pod
+    pod: mcp-pod
+    description: "Context7 MCP server"
+    memory_mb: 256
+    ansible_tag: mcp
+    dependencies: []
+
+  google-docs-mcp:
+    platform: vps
+    endpoint_type: pod
+    pod: mcp-pod
+    description: "Google Docs MCP server"
+    memory_mb: 256
+    ansible_tag: mcp
+    dependencies: []
+
+  n8n-mcp:
+    platform: vps
+    endpoint_type: pod
+    pod: mcp-pod
+    description: "n8n workflow automation MCP server"
+    memory_mb: 256
+    ansible_tag: mcp
+    dependencies: []
+
+  # === VPS: management-pod ===
+  portainer:
+    platform: vps
+    endpoint_type: pod
+    pod: management-pod
+    description: "Container management UI"
+    memory_mb: 128
+    ansible_tag: management
+    dependencies: [traefik]
+
+  # === VPS: frontend-pod ===
+  journey-tracker:
+    platform: vps
+    endpoint_type: pod
+    pod: frontend-pod
+    description: "Session timeline viewer"
+    memory_mb: 128
+    ansible_tag: frontend
+    dependencies: [traefik]
+
+  worldview-dev:
+    platform: vps
+    endpoint_type: pod
+    pod: frontend-pod
+    description: "Geospatial dashboard"
+    memory_mb: 640
+    ansible_tag: frontend
+    dependencies: [traefik]
+
+  ais-relay:
+    platform: vps
+    endpoint_type: pod
+    pod: frontend-pod
+    description: "Maritime AIS data relay"
+    memory_mb: 128
+    ansible_tag: frontend
+    dependencies: [traefik]
+
+  ops-dashboard:
+    platform: vps
+    endpoint_type: pod
+    pod: frontend-pod
+    description: "Operational profiles dashboard"
+    memory_mb: 256
+    ansible_tag: frontend
+    dependencies: [traefik]
+
+  # === VPS: security-pod ===
+  tetragon:
+    platform: vps
+    endpoint_type: pod
+    pod: security-pod
+    description: "eBPF runtime security enforcement"
+    memory_mb: 256
+    ansible_tag: security
+    dependencies: []
+
+  # === VPS: Standalone containers (no pod) ===
+  ansible-deployment:
+    platform: vps
+    endpoint_type: pod
+    description: "Ansible deployment runner (host network)"
+    memory_mb: 256
+    ansible_tag: ansible
+    dependencies: []
+
+  github-runner:
+    platform: vps
+    endpoint_type: pod
+    description: "GitHub Actions self-hosted runner"
+    memory_mb: 512
+    ansible_tag: github-runner
+    dependencies: []
+
+  atlas-charts:
+    platform: vps
+    endpoint_type: pod
+    description: "Atlas charts visualization"
+    memory_mb: 128
+    dependencies: []
+
+  searxng:
+    platform: vps
+    endpoint_type: pod
+    description: "Privacy-respecting metasearch engine"
+    memory_mb: 256
+    dependencies: [traefik]
+
+  ib-mcp-server:
+    platform: vps
+    endpoint_type: pod
+    description: "Interactive Brokers MCP server"
+    memory_mb: 256
+    dependencies: [ibeam]
+
+  ibeam:
+    platform: vps
+    endpoint_type: pod
+    description: "Interactive Brokers gateway authentication"
+    memory_mb: 256
+    dependencies: []
+
+  backtrader:
+    platform: vps
+    endpoint_type: pod
+    description: "Backtrader algorithmic trading engine"
+    memory_mb: 256
+    dependencies: [ibeam]
+
+  # === VPS: Host services ===
+  node-exporter:
+    platform: host
+    endpoint_type: host_service
+    description: "System metrics exporter"
+    ansible_tag: node-exporter
+    dependencies: []
+
+  fail2ban:
+    platform: host
+    endpoint_type: host_service
+    description: "Brute-force protection"
+    ansible_tag: fail2ban
+    dependencies: []
+
+  squid:
+    platform: host
+    endpoint_type: host_service
+    description: "Forward proxy for outbound traffic"
+    ansible_tag: squid
+    dependencies: []
+
+  # === Azure: Serverless endpoints ===
+  deepseek-r1:
+    platform: azure
+    endpoint_type: serverless
+    description: "DeepSeek R1 — reasoning model"
+    azure_endpoint: deepseek-r1
+    cost_per_hour: 0.0
+    dependencies: []
+
+  llama-3-3-70b:
+    platform: azure
+    endpoint_type: serverless
+    description: "Llama 3.3 70B — general purpose"
+    azure_endpoint: llama-3-3-70b
+    cost_per_hour: 0.0
+    dependencies: []
+
+  deepseek-v3:
+    platform: azure
+    endpoint_type: serverless
+    description: "DeepSeek V3 — fast general purpose"
+    azure_endpoint: deepseek-v3
+    cost_per_hour: 0.0
+    dependencies: []
+
+  # === Azure: Managed GPU endpoints ===
+  qwen3-coder:
+    platform: azure
+    endpoint_type: managed_gpu
+    description: "Qwen3-Coder-30B — code generation (MoE 3B active)"
+    azure_endpoint: qwen3-coder
+    cost_per_hour: 1.50
+    dependencies: []
+
+  deepseek-ocr:
+    platform: azure
+    endpoint_type: managed_gpu
+    description: "DeepSeek OCR — vision/document understanding"
+    azure_endpoint: deepseek-ocr
+    cost_per_hour: 0.80
+    dependencies: []
+
+  qwen3-tts:
+    platform: azure
+    endpoint_type: managed_gpu
+    description: "Qwen3-TTS — voice cloning (1.7B)"
+    azure_endpoint: qwen3-tts
+    cost_per_hour: 0.60
+    dependencies: []
+
+  ace-step:
+    platform: azure
+    endpoint_type: managed_gpu
+    description: "ACE-Step 1.5 — music generation"
+    azure_endpoint: ace-step
+    cost_per_hour: 1.20
+    dependencies: []
+
+  qwen-image:
+    platform: azure
+    endpoint_type: managed_gpu
+    description: "Qwen-Image-2512 — image generation (20B)"
+    azure_endpoint: qwen-image
+    cost_per_hour: 2.00
+    dependencies: []
+
+  ltx-video:
+    platform: azure
+    endpoint_type: managed_gpu
+    description: "LTX-2 — video generation (22B)"
+    azure_endpoint: ltx-video
+    cost_per_hour: 2.50
+    dependencies: []
+
+  trellis-3d:
+    platform: azure
+    endpoint_type: managed_gpu
+    description: "TRELLIS.2 — 3D asset generation (4B)"
+    azure_endpoint: trellis-3d
+    cost_per_hour: 1.00
+    dependencies: []
+
+
+# === Service Stacks (tiered sub-profiles) ===
+# NOTE: victoriametrics is always-on (core data store), not part of monitoring tiers
+stacks:
+  monitoring:
+    description: "Observability — logs, dashboards, tracing (VM + metrics cron jobs are always-on core)"
+    tiers:
+      - name: logs
+        description: "Log collection and storage"
+        services: [alloy, loki]
+      - name: dashboards
+        description: "Logs + Grafana dashboards and image renderer"
+        services: [alloy, loki, grafana, renderer]
+      - name: traces
+        description: "Dashboards + distributed tracing"
+        services: [alloy, loki, grafana, renderer, tempo]
+
+  security:
+    description: "Threat detection and enforcement"
+    tiers:
+      - name: basic
+        description: "CrowdSec WAF + fail2ban"
+        services: [crowdsec]
+      - name: advanced
+        description: "Basic + eBPF runtime enforcement"
+        services: [crowdsec, tetragon]
+
+  auth:
+    description: "Identity and SSO"
+    tiers:
+      - name: sso
+        description: "Authentik OAuth2/OIDC for all services"
+        services: [authentik-server, authentik-worker, authentik-postgres, redis]
+
+  azure-ai:
+    description: "Azure AI — all Azure endpoints, inference, speech, GPU models"
+    tiers:
+      - name: chat
+        description: "LiteLLM + Open WebUI + speech + serverless models"
+        services: [litellm, open-webui, whisper-stt, kokoro-tts, deepseek-r1, llama-3-3-70b, deepseek-v3]
+      - name: code-gpu
+        description: "Chat + code/OCR GPU endpoints"
+        services: [litellm, open-webui, whisper-stt, kokoro-tts, deepseek-r1, llama-3-3-70b, deepseek-v3, qwen3-coder, deepseek-ocr]
+      - name: media-gpu
+        description: "All Azure AI — including media generation GPU models"
+        services: [litellm, open-webui, whisper-stt, kokoro-tts, deepseek-r1, llama-3-3-70b, deepseek-v3, qwen3-coder, deepseek-ocr, qwen3-tts, ace-step, qwen-image, ltx-video, trellis-3d]
+
+  speech:
+    description: "Voice — STT and TTS (Azure Container Apps)"
+    tiers:
+      - name: speech
+        description: "Whisper STT + Kokoro TTS on ACA"
+        services: [whisper-stt, kokoro-tts]
+
+  comms:
+    description: "Bot and messaging"
+    tiers:
+      - name: telegram
+        description: "Telegram bot gateway"
+        services: [telegram-gateway]
+
+  frontend:
+    description: "Web applications"
+    tiers:
+      - name: web
+        description: "Frontend web apps"
+        services: [journey-tracker, worldview-dev, ais-relay]
+
+  trading:
+    description: "IBKR trading — gateway, MCP server, backtesting, charts"
+    tiers:
+      - name: gateway
+        description: "IBeam + MCP server (requires 2FA approval)"
+        services: [ibeam, ib-mcp-server]
+      - name: full
+        description: "Gateway + backtrader + charts"
+        services: [ibeam, ib-mcp-server, backtrader, atlas-charts]
+
+
+
+# === Operational Profiles ===
+profiles:
+  minimal:
+    description: "Core infrastructure only — ingress, database, metrics storage, security"
+    estimated_cost_per_hour: 0.0
+    stacks:
+      monitoring: "off"
+    services:
+      traefik: true
+      cloudflared: true
+      crowdsec: true
+      postgres: true
+      victoriametrics: true  # always-on data store
+      fail2ban: true
+      node-exporter: true
+      squid: true
+      # Everything else off
+      open-webui: false
+      litellm: false
+      whisper-stt: false
+      kokoro-tts: false
+      authentik-server: false
+      authentik-worker: false
+      authentik-postgres: false
+      redis: false
+      telegram-gateway: false
+      portainer: false
+      journey-tracker: false
+      worldview-dev: false
+      ais-relay: false
+      tetragon: false
+      # New services
+      ai-stack-postgres: false
+      ansible-deployment: true
+      github-runner: true
+      ops-dashboard: true
+      context7-mcp: false
+      google-docs-mcp: false
+      n8n-mcp: false
+      ib-mcp-server: false
+      ibeam: false
+      atlas-charts: false
+      backtrader: false
+      searxng: false
+      deepseek-r1: false
+      llama-3-3-70b: false
+      deepseek-v3: false
+      qwen3-coder: false
+      deepseek-ocr: false
+      qwen3-tts: false
+      ace-step: false
+      qwen-image: false
+      ltx-video: false
+      trellis-3d: false
+
+  chat-only:
+    description: "AI chat + speech + Azure serverless — no auth, no monitoring"
+    estimated_cost_per_hour: 0.0
+    stacks:
+      monitoring: "off"
+    services:
+      traefik: true
+      cloudflared: true
+      crowdsec: true
+      postgres: true
+      victoriametrics: true  # always-on data store
+      fail2ban: true
+      node-exporter: true
+      squid: true
+      open-webui: true
+      litellm: true
+      whisper-stt: true  # Azure Container App
+      kokoro-tts: true   # Azure Container App
+      authentik-server: false
+      authentik-worker: false
+      authentik-postgres: false
+      redis: false
+      # Azure serverless included
+      deepseek-r1: true
+      llama-3-3-70b: true
+      deepseek-v3: true
+      # Extras off
+      telegram-gateway: false
+      portainer: false
+      journey-tracker: false
+      worldview-dev: false
+      ais-relay: false
+      tetragon: false
+      # New services
+      ai-stack-postgres: true
+      ansible-deployment: true
+      github-runner: true
+      ops-dashboard: true
+      context7-mcp: false
+      google-docs-mcp: false
+      n8n-mcp: false
+      ib-mcp-server: false
+      ibeam: false
+      atlas-charts: false
+      backtrader: false
+      searxng: false
+      # Azure GPU off
+      qwen3-coder: false
+      deepseek-ocr: false
+      qwen3-tts: false
+      ace-step: false
+      qwen-image: false
+      ltx-video: false
+      trellis-3d: false
+
+  full-stack:
+    description: "Everything on — full observability, chat, auth, monitoring, telegram"
+    estimated_cost_per_hour: 0.0
+    stacks:
+      monitoring: "traces"
+    services:
+      traefik: true
+      cloudflared: true
+      crowdsec: true
+      postgres: true
+      victoriametrics: true  # always-on data store
+      fail2ban: true
+      node-exporter: true
+      squid: true
+      open-webui: true
+      litellm: true
+      whisper-stt: true
+      kokoro-tts: true
+      authentik-server: true
+      authentik-worker: true
+      authentik-postgres: true
+      redis: true
+      telegram-gateway: true
+      portainer: true
+      journey-tracker: true
+      worldview-dev: true
+      ais-relay: true
+      tetragon: true
+      # New services
+      ai-stack-postgres: true
+      ansible-deployment: true
+      github-runner: true
+      ops-dashboard: true
+      context7-mcp: true
+      google-docs-mcp: true
+      n8n-mcp: true
+      ib-mcp-server: false
+      ibeam: false
+      atlas-charts: false
+      backtrader: false
+      searxng: true
+      # Azure serverless (pay-per-token, always available)
+      deepseek-r1: true
+      llama-3-3-70b: true
+      deepseek-v3: true
+      # Azure GPU off by default even in full-stack
+      qwen3-coder: false
+      deepseek-ocr: false
+      qwen3-tts: false
+      ace-step: false
+      qwen-image: false
+      ltx-video: false
+      trellis-3d: false
+
+  inference-heavy:
+    description: "Chat + Azure serverless + code/OCR GPU endpoints"
+    estimated_cost_per_hour: 2.30
+    stacks:
+      monitoring: "dashboards"
+    services:
+      traefik: true
+      cloudflared: true
+      crowdsec: true
+      postgres: true
+      victoriametrics: true  # always-on data store
+      fail2ban: true
+      node-exporter: true
+      squid: true
+      open-webui: true
+      litellm: true
+      whisper-stt: true
+      kokoro-tts: true
+      authentik-server: true
+      authentik-worker: true
+      authentik-postgres: true
+      redis: true
+      telegram-gateway: false
+      portainer: false
+      journey-tracker: false
+      worldview-dev: false
+      ais-relay: false
+      tetragon: false
+      # New services
+      ai-stack-postgres: true
+      ansible-deployment: true
+      github-runner: true
+      ops-dashboard: true
+      context7-mcp: false
+      google-docs-mcp: false
+      n8n-mcp: false
+      ib-mcp-server: false
+      ibeam: false
+      atlas-charts: false
+      backtrader: false
+      searxng: false
+      deepseek-r1: true
+      llama-3-3-70b: true
+      deepseek-v3: true
+      qwen3-coder: true
+      deepseek-ocr: true
+      qwen3-tts: false
+      ace-step: false
+      qwen-image: false
+      ltx-video: false
+      trellis-3d: false
+
+  media-production:
+    description: "Full creative pipeline — image, video, 3D, music, voice cloning"
+    estimated_cost_per_hour: 7.80
+    stacks:
+      monitoring: "dashboards"
+    services:
+      traefik: true
+      cloudflared: true
+      crowdsec: true
+      postgres: true
+      victoriametrics: true  # always-on data store
+      fail2ban: true
+      node-exporter: true
+      squid: true
+      open-webui: true
+      litellm: true
+      whisper-stt: true
+      kokoro-tts: true
+      authentik-server: true
+      authentik-worker: true
+      authentik-postgres: true
+      redis: true
+      telegram-gateway: true
+      portainer: false
+      journey-tracker: true
+      worldview-dev: true
+      ais-relay: true
+      tetragon: false
+      # New services
+      ai-stack-postgres: true
+      ansible-deployment: true
+      github-runner: true
+      ops-dashboard: true
+      context7-mcp: false
+      google-docs-mcp: false
+      n8n-mcp: false
+      ib-mcp-server: false
+      ibeam: false
+      atlas-charts: false
+      backtrader: false
+      searxng: false
+      deepseek-r1: true
+      llama-3-3-70b: true
+      deepseek-v3: true
+      qwen3-coder: false
+      deepseek-ocr: true
+      qwen3-tts: true
+      ace-step: true
+      qwen-image: true
+      ltx-video: true
+      trellis-3d: true

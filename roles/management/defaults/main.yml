@@ -12,13 +12,24 @@ management:
     port: 9444  # Changed from 9443 (conflict with Authentik)
     data_volume: "portainer-data"
 
-  dockge:
-    enabled: false
-    version: "1"
-    image: "louislam/dockge:1"
-    port: 5001
-    stacks_dir: "/opt/compose"
-    data_volume: "dockge-data"
+  # Ops Dashboard — ops.aicortex.cloud infrastructure status UI.
+  # Source lives at roles/management/files/ops-dashboard/.
+  ops_dashboard:
+    enabled: true
+    image: "localhost/ops-dashboard:latest"
+    memory: "256m"
+    cpu_shares: 512
+    domain: "ops.{{ domain_name }}"
+    port: 8090
+    ssh_host: "10.89.0.1"  # host gateway IP inside enterprise_network
+    ssh_known_hosts: "/root/.ssh/known_hosts_ops"
+    vm_url: "http://metrics-pod:8428"
+
+  # Ansible deployment container — self-hosts the ansible runner.
+  # Depends on a Dockerfile at the repo root. See H3 in the audit.
+  ansible_deployment:
+    enabled: true
+    image: "localhost/ansible-vps:latest"
 
 # Will be overridden by vault
 portainer_password: "VAULT_OVERRIDE"
