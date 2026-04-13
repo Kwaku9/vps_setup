@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Entrepreneur Workspace - Haven on Peachwood</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@300;400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 816px;
+    height: 1056px;
+    font-family: 'Inter', sans-serif;
+    background: #0d0d0d;
+    overflow: hidden;
+  }
+
+  .flyer {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  /* Gold gradient background accent */
+  .bg-accent {
+    position: absolute;
+    top: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 900px;
+    height: 600px;
+    background: radial-gradient(ellipse, rgba(212,175,55,0.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .bg-accent-bottom {
+    position: absolute;
+    bottom: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 700px;
+    height: 500px;
+    background: radial-gradient(ellipse, rgba(212,175,55,0.07) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Top gold bar */
+  .top-bar {
+    width: 100%;
+    height: 6px;
+    background: linear-gradient(90deg, #8B6914, #D4AF37, #F5D77E, #D4AF37, #8B6914);
+  }
+
+  /* Header section */
+  .header {
+    width: 100%;
+    padding: 40px 60px 0;
+    text-align: center;
+    position: relative;
+    z-index: 1;
+  }
+
+  .property-tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: #D4AF37;
+    margin-bottom: 24px;
+  }
+
+  /* Hero image area */
+  .hero {
+    width: calc(100% - 80px);
+    height: 220px;
+    margin: 20px 40px 0;
+    background: linear-gradient(135deg, #1a1400 0%, #2d2200 40%, #1a1400 100%);
+    border: 1px solid rgba(212,175,55,0.3);
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      repeating-linear-gradient(
+        90deg,
+        transparent,
+        transparent 60px,
+        rgba(212,175,55,0.03) 60px,
+        rgba(212,175,55,0.03) 61px
+      ),
+      repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 60px,
+        rgba(212,175,55,0.03) 60px,
+        rgba(212,175,55,0.03) 61px
+      );
+  }
+
+  .hero-icon {
+    font-size: 56px;
+    margin-bottom: 14px;
+    filter: drop-shadow(0 0 20px rgba(212,175,55,0.4));
+  }
+
+  .hero-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 52px;
+    font-weight: 900;
+    color: #ffffff;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    text-shadow: 0 0 40px rgba(212,175,55,0.3);
+    line-height: 1;
+  }
+
+  .hero-title span {
+    color: #D4AF37;
+  }
+
+  .hero-subtitle {
+    font-size: 13px;
+    font-weight: 300;
+    letter-spacing: 6px;
+    color: rgba(212,175,55,0.7);
+    text-transform: uppercase;
+    margin-top: 10px;
+  }
+
+  /* Gold divider */
+  .gold-divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 24px 60px;
+    width: calc(100% - 120px);
+  }
+
+  .gold-divider .line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #D4AF37, transparent);
+  }
+
+  .gold-divider .diamond {
+    width: 8px;
+    height: 8px;
+    background: #D4AF37;
+    transform: rotate(45deg);
+  }
+
+  /* Description */
+  .description {
+    font-size: 13.5px;
+    line-height: 1.8;
+    color: rgba(255,255,255,0.65);
+    text-align: center;
+    max-width: 560px;
+    font-weight: 300;
+    letter-spacing: 0.3px;
+    margin-bottom: 28px;
+  }
+
+  /* Pricing */
+  .pricing-section {
+    width: calc(100% - 80px);
+    display: flex;
+    gap: 20px;
+    margin-bottom: 28px;
+  }
+
+  .price-card {
+    flex: 1;
+    border: 1px solid rgba(212,175,55,0.35);
+    background: linear-gradient(145deg, rgba(212,175,55,0.06), rgba(212,175,55,0.02));
+    padding: 28px 20px;
+    text-align: center;
+    position: relative;
+    border-radius: 2px;
+  }
+
+  .price-card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 2px;
+    background: linear-gradient(90deg, transparent, #D4AF37, transparent);
+  }
+
+  .price-card .badge {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #D4AF37;
+    margin-bottom: 10px;
+  }
+
+  .price-card .amount {
+    font-family: 'Playfair Display', serif;
+    font-size: 54px;
+    font-weight: 700;
+    color: #ffffff;
+    line-height: 1;
+  }
+
+  .price-card .amount sup {
+    font-size: 24px;
+    vertical-align: super;
+    color: #D4AF37;
+  }
+
+  .price-card .duration {
+    font-size: 12px;
+    color: rgba(255,255,255,0.4);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 6px;
+  }
+
+  /* Features */
+  .features-section {
+    width: calc(100% - 80px);
+    margin-bottom: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .feature-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 20px;
+    border-left: 2px solid #D4AF37;
+    background: rgba(212,175,55,0.04);
+  }
+
+  .feature-item .icon {
+    font-size: 18px;
+    width: 28px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .feature-item .text {
+    font-size: 13px;
+    color: rgba(255,255,255,0.75);
+    font-weight: 400;
+    letter-spacing: 0.3px;
+  }
+
+  /* Notice */
+  .notice {
+    width: calc(100% - 80px);
+    border: 1px solid rgba(212,175,55,0.2);
+    background: rgba(212,175,55,0.04);
+    padding: 12px 24px;
+    margin-bottom: 24px;
+    text-align: center;
+    font-size: 11.5px;
+    color: rgba(212,175,55,0.7);
+    letter-spacing: 1px;
+    font-weight: 500;
+    text-transform: uppercase;
+  }
+
+  /* Contact */
+  .contact-section {
+    width: calc(100% - 80px);
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 22px 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    border-radius: 2px;
+  }
+
+  .contact-cta {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    color: #ffffff;
+    font-weight: 700;
+  }
+
+  .contact-cta span {
+    display: block;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 2px;
+    color: #D4AF37;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .contact-details {
+    text-align: right;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .contact-details a {
+    font-size: 13px;
+    color: rgba(255,255,255,0.7);
+    text-decoration: none;
+    font-weight: 400;
+  }
+
+  .contact-details a:hover {
+    color: #D4AF37;
+  }
+
+  .contact-details .icon {
+    color: #D4AF37;
+    margin-right: 6px;
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: auto;
+    font-size: 10px;
+    letter-spacing: 4px;
+    color: rgba(255,255,255,0.2);
+    text-transform: uppercase;
+    padding-bottom: 16px;
+  }
+
+  /* Bottom bar */
+  .bottom-bar {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    height: 6px;
+    background: linear-gradient(90deg, #8B6914, #D4AF37, #F5D77E, #D4AF37, #8B6914);
+  }
+</style>
+</head>
+<body>
+<div class="flyer">
+  <div class="bg-accent"></div>
+  <div class="bg-accent-bottom"></div>
+
+  <div class="top-bar"></div>
+
+  <div class="header">
+    <div class="property-tag">Haven on Peachwood &nbsp;·&nbsp; Exclusive Resident Opportunity</div>
+  </div>
+
+  <div class="hero">
+    <div class="hero-icon">&#128188;</div>
+    <div class="hero-title">Entrepreneur <span>Workspace</span></div>
+    <div class="hero-subtitle">Your Business &nbsp;·&nbsp; Your Space &nbsp;·&nbsp; Your Time</div>
+  </div>
+
+  <div class="gold-divider">
+    <div class="line"></div>
+    <div class="diamond"></div>
+    <div class="line"></div>
+  </div>
+
+  <p class="description">
+    A dedicated professional space for entrepreneurs, freelancers, and small business owners to promote their brand, connect with clients, and grow — right here in your community.
+  </p>
+
+  <div class="pricing-section">
+    <div class="price-card">
+      <div class="badge">Full Day</div>
+      <div class="amount"><sup>$</sup>50</div>
+      <div class="duration">8 Hours</div>
+    </div>
+    <div class="price-card">
+      <div class="badge">Half Day</div>
+      <div class="amount"><sup>$</sup>25</div>
+      <div class="duration">4 Hours</div>
+    </div>
+  </div>
+
+  <div class="features-section">
+    <div class="feature-item">
+      <div class="icon">&#10003;</div>
+      <div class="text">Dedicated space to showcase and promote your business</div>
+    </div>
+    <div class="feature-item">
+      <div class="icon">&#10003;</div>
+      <div class="text">Professional environment available during business hours</div>
+    </div>
+    <div class="feature-item">
+      <div class="icon">&#9733;</div>
+      <div class="text">Food &amp; refreshments available for a small additional fee</div>
+    </div>
+  </div>
+
+  <div class="notice">
+    &#9670; &nbsp; All products &amp; services subject to management approval &nbsp; &#9670;
+  </div>
+
+  <div class="contact-section">
+    <div class="contact-cta">
+      <span>Reserve Your Spot</span>
+      Contact Us Today
+    </div>
+    <div class="contact-details">
+      <a href="mailto:Havenonpeachwood@rpmliving.com">
+        <span class="icon">&#9993;</span>Havenonpeachwood@rpmliving.com
+      </a>
+      <a href="tel:4042356445">
+        <span class="icon">&#9742;</span>404-235-6445
+      </a>
+      <a>
+        <span class="icon">&#9679;</span>Visit us at the leasing office
+      </a>
+    </div>
+  </div>
+
+  <div class="footer">Haven on Peachwood &nbsp;&nbsp;·&nbsp;&nbsp; Management</div>
+
+  <div class="bottom-bar"></div>
+</div>
+</body>
+</html>

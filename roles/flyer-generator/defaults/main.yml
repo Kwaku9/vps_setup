@@ -1,0 +1,10 @@
+---
+# Flyer Generator Role Defaults
+
+flyer_generator:
+  container_name: "flyer-generator"
+  image: "flyer-generator:latest"
+  source_path: "flyers"
+  output_dir: "/opt/podman-data/flyer-output"
+  network: "{{ podman_network_name | default('enterprise_network') }}"
+  memory: "256m"

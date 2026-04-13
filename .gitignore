@@ -143,3 +143,7 @@ roles/mcp-servers/files/mcp-googledocs-server/assets/*.gif
 roles/mcp-servers/files/mcp-googledocs-server/repomix-output.*
 roles/mcp-servers/files/scrapy-mcp/properties.*
 roles/mcp-servers/files/scrapy-mcp/output.*
+
+# Flyer generator runtime output — container writes PDFs here
+flyers/output/*
+!flyers/output/.gitkeep
