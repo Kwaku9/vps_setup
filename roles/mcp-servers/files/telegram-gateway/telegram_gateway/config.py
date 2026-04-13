@@ -23,7 +23,7 @@ APPROVAL_HMAC_SECRET: str = os.environ.get("APPROVAL_HMAC_SECRET", "")
 # Approval timeout in minutes (pending approvals expire after this)
 APPROVAL_TIMEOUT_MINUTES: int = int(os.environ.get("APPROVAL_TIMEOUT_MINUTES", "10"))
 
-DB_HOST: str = os.environ.get("DB_HOST", "postgres")
+DB_HOST: str = os.environ.get("DB_HOST", "shared-db-pod")
 DB_PORT: int = int(os.environ.get("DB_PORT", "5432"))
 DB_NAME: str = os.environ.get("DB_NAME", "enterprise")
 DB_USER: str = os.environ.get("DB_USER", "postgres")

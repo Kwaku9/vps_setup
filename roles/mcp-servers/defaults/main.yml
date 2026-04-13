@@ -30,7 +30,7 @@ mcp_servers:
         TELEGRAM_BOT_TOKEN: "{{ telegram_bot_token | default('') }}"
         TELEGRAM_WEBHOOK_SECRET: "{{ telegram_webhook_secret | default('') }}"
         TELEGRAM_ALLOWED_USER_IDS: "{{ telegram_allowed_user_ids | default('') }}"
-        DB_HOST: "postgres"
+        DB_HOST: "shared-db-pod"
         DB_PORT: "5432"
         DB_NAME: "enterprise"
         DB_USER: "postgres"
