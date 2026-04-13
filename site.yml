@@ -64,15 +64,15 @@
       tags: ['management', 'admin']
       when: management.enabled | default(true)
 
+    - role: authentication
+      tags: ['authentication', 'sso', 'auth']
+      when: authentication.enabled | default(true)
+
     - role: monitoring
       tags: ['monitoring', 'observability']
 
     - role: security
       tags: ['security', 'hardening']
-
-    - role: authentication
-      tags: ['authentication', 'sso', 'auth']
-      when: authentication.enabled | default(true)
 
     - role: ai-stack
       tags: ['ai-stack', 'openwebui', 'searxng']
