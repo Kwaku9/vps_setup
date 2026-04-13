@@ -1,0 +1,13 @@
+diff --git a/node_modules/@mykin-ai/expo-audio-stream/ios/AudioSessionManager.swift b/node_modules/@mykin-ai/expo-audio-stream/ios/AudioSessionManager.swift
+index 512d46f..8aae733 100644
+--- a/node_modules/@mykin-ai/expo-audio-stream/ios/AudioSessionManager.swift
++++ b/node_modules/@mykin-ai/expo-audio-stream/ios/AudioSessionManager.swift
+@@ -336,7 +336,7 @@ class AudioSessionManager {
+     private func restartAudioSessionForPlayback() throws {
+         Logger.debug("Restarting Audio Session")
+         let audioSession = AVAudioSession.sharedInstance()
+-        try audioSession.setCategory(.playback, mode: .voicePrompt)
++        try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
+         try audioSession.setActive(true)
+         Logger.debug("Reattaching the nodes")
+         self.audioEngine = AVAudioEngine()
