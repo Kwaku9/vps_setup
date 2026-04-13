@@ -2,7 +2,7 @@
 # Frontend Role Defaults
 #
 # What this role owns:
-#   - frontend-pod (nginx, atlas-charts, journey-tracker)
+#   - frontend-pod (nginx, journey-tracker)  — atlas-charts now standalone in roles/trading/
 #   - WorldView (geospatial-dashboard) — runs in dev-pod via Vite
 #   - Expo Dev Server (aicortex-chat) — runs in dev-pod via Metro bundler
 #
