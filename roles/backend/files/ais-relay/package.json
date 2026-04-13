@@ -1,0 +1,12 @@
+{
+  "name": "ais-relay",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "ais-relay.js",
+  "scripts": {
+    "start": "node ais-relay.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

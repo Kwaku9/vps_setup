@@ -1,14 +1,21 @@
-﻿---
+---
 # Backend Role Defaults
 
 deploy_backend: true
 
 backend:
+  # ais-relay: WebSocket relay between AIS Stream API and the WorldView globe.
+  # Source lives at roles/backend/files/ais-relay/.
+  ais_relay:
+    enabled: true
+
+  # Pluggable additional API services — add inline below.
   api_services: []
   # Example:
   # api_services:
   #   - name: "my-api"
   #     image: "your-registry/my-api:latest"
+  #     memory: "256m"
   #     env:
   #       DATABASE_URL: "postgresql://postgres:5432/mydb"
   #       API_KEY: "{{ api_key }}"
