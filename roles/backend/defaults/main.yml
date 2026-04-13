@@ -21,3 +21,6 @@ backend:
   #       API_KEY: "{{ api_key }}"
   #     volumes:
   #       - /opt/api-data:/data
+
+# Vault overrides this — empty string means ais-relay starts but can't auth to aisstream.
+aisstream_api_key: ""
