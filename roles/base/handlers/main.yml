@@ -3,3 +3,26 @@
   service:
     name: crond
     state: restarted
+
+# Netavark NAT recovery handler.
+#
+# Background: when Ansible recreates a container or pod with host port mappings,
+# the old netavark DNAT rules in iptables keep pointing at the dead container IP.
+# New rules sometimes don't get written at all, leaving host port forwarding
+# completely broken. Symptom: curl http://127.0.0.1:<port> times out with zero
+# bytes received, even though the container inside the network is healthy.
+# Hit this against Tempo, Grafana, VictoriaMetrics, AI stack, Authentik,
+# Cloudflared — nearly every pod with host-bound ports — during a session of
+# deploys on 2026-04-10.
+#
+# `podman network reload --all` recreates firewall rules for every running
+# container without restarting them. It's idempotent, takes ~3 seconds on a
+# host with ~30 containers, and reliably restores host port forwarding.
+#
+# Tasks that recreate port-mapped containers should `notify: recover netavark NAT`.
+# site.yml also runs this unconditionally in post_tasks as a belt-and-suspenders
+# safety net so no role accidentally ends a play with broken networking.
+- name: recover netavark NAT
+  command: podman network reload --all
+  changed_when: false
+  listen: "podman container recreated"

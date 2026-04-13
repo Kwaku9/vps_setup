@@ -72,6 +72,10 @@ cloudflare_access:
   public_services:
     - "chat"
     - "auth"
+    # otel: public OTLP/HTTP ingest for the mobile app. Auth happens at Traefik
+    # via bearer token in router rule (vault.yml: otel_ingest_token), so CF Access
+    # must NOT challenge it — bypass app overrides the wildcard admin policy.
+    - "otel"
     # hooks removed — orphaned (no Traefik route, no service behind it)
     # otlp removed — internal telemetry uses Podman DNS (logs-pod:4318), public URL now behind CF Access
   ssh_browser:
