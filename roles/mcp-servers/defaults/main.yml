@@ -87,6 +87,7 @@ mcp_servers:
       name: "scrapy"
       container_name: "scrapy-mcp"
       build_name: "scrapy-mcp"
+      build_subdir: "scrapy-mcp-server"  # nested Dockerfile is the real one
       transport: "http"
       port: 8888
       internal_port: 8888
