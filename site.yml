@@ -110,6 +110,10 @@
       tags: ['github-runner', 'cicd']
       when: deploy_github_runner | default(false)
 
+    - role: hermes
+      tags: ['hermes', 'agent']
+      when: hermes.enabled | default(true)
+
   post_tasks:
     # Netavark NAT recovery — always runs at end of play.
     # Reloads firewall rules for every running container. Idempotent, ~3s.
@@ -140,6 +144,7 @@
           - "  frontend-pod: Nginx, Atlas Charts, Journey Tracker, WorldView, Ops Dashboard"
           - "  shared-db-pod: PostgreSQL"
           - "  security-pod: Trivy, Wazuh"
+          - "  hermes-pod: Hermes Agent"
           - ""
           - "HOST SERVICES:"
           - "  node-exporter: Port 9100 (apk install)"

@@ -1,0 +1,36 @@
+---
+# Hermes Agent - Self-improving AI agent framework by Nous Research
+# Multi-platform gateway (Telegram, Discord, etc.) with persistent memory via Honcho
+
+hermes:
+  enabled: true
+  pod_name: "hermes-pod"
+  network: "{{ podman_network_name | default('enterprise_network') }}"
+  data_dir: "/opt/podman-data/hermes"
+
+  agent:
+    name: "hermes-agent"
+    image: "hermes-agent:latest"
+    build: true
+    source_path: "/opt/podman-data/hermes/source"
+    repo_url: "https://github.com/NousResearch/hermes-agent.git"
+    port: 8113           # Host port for webhooks/API
+    internal_port: 8080
+    memory: "512m"
+    cpu_shares: 1024
+    env:
+      # LLM Provider (via LiteLLM proxy on VPS) — DeepSeek R1 reasoning model
+      OPENAI_API_BASE: "http://ai-stack-pod:4000"
+      OPENAI_API_KEY: "{{ litellm_master_key }}"
+      DEFAULT_MODEL: "deepseek-r1"
+
+      # Telegram Gateway (if enabled)
+      TELEGRAM_BOT_TOKEN: "{{ hermes_telegram_bot_token | default('') }}"
+
+      # Agent Configuration
+      HERMES_DATA_DIR: "/opt/data"
+      HERMES_LOG_LEVEL: "info"
+
+      # Observability
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://logs-pod:4318"
+      OTEL_SERVICE_NAME: "hermes-agent"
