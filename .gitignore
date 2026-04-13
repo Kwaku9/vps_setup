@@ -134,3 +134,12 @@ nul
 # ============================================
 .dockerignore             # Only needed locally, not in repo
 expressions.txt
+
+# Build/runtime artifacts under mcp-servers/files (added 2026-04-12)
+roles/mcp-servers/files/mcp-googledocs-server/*.mp4
+roles/mcp-servers/files/mcp-googledocs-server/*.gif
+roles/mcp-servers/files/mcp-googledocs-server/assets/*.mp4
+roles/mcp-servers/files/mcp-googledocs-server/assets/*.gif
+roles/mcp-servers/files/mcp-googledocs-server/repomix-output.*
+roles/mcp-servers/files/scrapy-mcp/properties.*
+roles/mcp-servers/files/scrapy-mcp/output.*

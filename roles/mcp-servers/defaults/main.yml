@@ -10,35 +10,40 @@ mcp_servers:
   network: "{{ podman_network_name | default('enterprise_network') }}"
 
   # MCP Server Definitions
+  # Source code for each MCP server lives at roles/mcp-servers/files/<name>/
+  # and is synced to /opt/compose/mcp-<name>/ on the VPS before image build.
+  # source_path removed — implicit in the role's files/ directory.
   servers:
-    # n8n MCP - Workflow automation integration
-    n8n_mcp:
+    # Telegram Gateway — bidirectional Telegram <-> Claude gateway
+    telegram_gateway:
       enabled: true
-      name: "n8n-mcp"
-      container_name: "n8n-mcp"
-      source_path: "vscode-projects/n8n-mcp"
-      transport: "http"
-      port: 3002  # Avoid conflict with Grafana on 3000
-      internal_port: 3000
-      endpoint: "/mcp"  # MCP endpoint path
-      image: "n8n-mcp:latest"
+      name: "telegram-gateway"
+      container_name: "telegram-gateway"
+      build_name: "telegram-gateway"
+      image: "localhost/telegram-gateway:latest"
       build: true
-      health_endpoint: "/health"
-      requires_auth: true
+      port: 7555
+      internal_port: 7555
       env:
-        MCP_MODE: "http"
-        PORT: "3000"
-        LOG_LEVEL: "info"
-        AUTH_TOKEN: "{{ n8n_mcp_auth_token | default('change-me-in-vault') }}"
-      volumes: []
-      # Note: nodes.db must be copied to data volume after container creation
+        MCP_SERVER_PORT: "7555"
+        AUTH_TOKEN: "{{ telegram_gateway_auth_token | default('') }}"
+        TELEGRAM_BOT_TOKEN: "{{ telegram_bot_token | default('') }}"
+        TELEGRAM_WEBHOOK_SECRET: "{{ telegram_webhook_secret | default('') }}"
+        TELEGRAM_ALLOWED_USER_IDS: "{{ telegram_allowed_user_ids | default('') }}"
+        DB_HOST: "postgres"
+        DB_PORT: "5432"
+        DB_NAME: "enterprise"
+        DB_USER: "postgres"
+        DB_PASSWORD: "{{ postgres_password | default('') }}"
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://logs-pod:4318"
+        OTEL_SERVICE_NAME: "telegram-gateway"
 
     # Google Docs/Drive MCP
     google_docs:
       enabled: true
       name: "google-docs-mcp"
       container_name: "google-docs-mcp"
-      source_path: "vscode-projects/mcp-googledocs-server"
+      build_name: "mcp-googledocs-server"  # matches roles/mcp-servers/files/<name>/
       transport: "stdio"
       port: 9091
       internal_port: 9091
@@ -53,28 +58,13 @@ mcp_servers:
       volumes: []
       credentials_file: "credentials.json"
 
-    # Context7 MCP - Context protocol
-    context7:
-      enabled: true
-      name: "context7"
-      container_name: "context7-mcp"
-      source_path: "vscode-projects/context7-mcp"
-      transport: "http"
-      port: 3001
-      internal_port: 3001
-      image: "context7-mcp:latest"
-      build: true
-      health_endpoint: "/health"
-      env:
-        PORT: "3001"
-      volumes: []
-
     # IB MCP - Interactive Brokers Trading (Web API via IBeam)
     ib_mcp:
       enabled: true
       name: "ib-mcp"
       container_name: "ib-mcp-server"
-      source_path: "pycharm-projects/IB_MCP"
+      build_name: "ib-mcp-server"
+      build_subdir: "mcp_server"  # Dockerfile lives at files/ib-mcp-server/mcp_server/
       transport: "http"
       port: 5002
       internal_port: 5002
@@ -96,7 +86,7 @@ mcp_servers:
       enabled: true
       name: "scrapy"
       container_name: "scrapy-mcp"
-      source_path: "pycharm-projects/ScrapyExtractor"
+      build_name: "scrapy-mcp"
       transport: "http"
       port: 8888
       internal_port: 8888

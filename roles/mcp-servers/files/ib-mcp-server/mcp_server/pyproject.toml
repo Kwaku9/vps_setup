@@ -1,0 +1,22 @@
+[project]
+name = "ib-fastmcp-server"
+version = "0.1.0"
+description = "FastMCP server for Interactive Brokers Web API"
+authors = [
+    {name = "Ruben Contesti", email = "rcontesti@gmail.com"}
+]
+
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp==2.13.0.2",
+    "fastapi==0.116.0",
+    "uvicorn==0.35.0",
+    "httpx==0.28.1",
+    "urllib3==2.5.0",
+    "mcp==1.17.0",
+    "asyncio==3.4.3",
+    "aiohttp==3.12.13",
+]
+
+[dependency-groups]
+dev = []

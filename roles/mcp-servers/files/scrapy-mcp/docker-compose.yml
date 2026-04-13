@@ -1,0 +1,31 @@
+services:
+  # Scrapy MCP Server - Manages Docker-based scraping
+  scrapy-mcp-server:
+    build: ./scrapy-mcp-server
+    container_name: scrapy-mcp-server
+    ports:
+      - "8888:8888"
+    volumes:
+      # Mount Docker socket for Docker-in-Docker capability
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount Scrapy project directory
+      - ./:/workspace
+    environment:
+      - PORT=8888
+      - SCRAPY_PROJECT_PATH=/workspace
+      - SCRAPY_PROJECT_HOST_PATH=/c/Users/swirl/PycharmProjects/ScrapyExtractor
+      - SCRAPY_IMAGE=realestate-scraper:latest
+    networks:
+      - scraper-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "--max-time", "2", "http://localhost:8888/sse"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+networks:
+  scraper-network:
+    name: scraper-network
+    external: true
