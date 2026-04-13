@@ -1,0 +1,174 @@
+{
+  "name": "Real Estate Scraper - MCP + AI Agent (Gemini)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "model": "gemini-1.5-pro",
+        "options": {
+          "temperature": 0.2,
+          "maxTokens": 2000
+        },
+        "text": "You are a web scraping assistant with access to a Scrapy-based real estate scraper.\n\nYour task is to:\n1. Run the scrapy_run_spider tool with limit_pages set to 1 (for testing - this limits scraping to just 1 page)\n2. Wait for the spider to complete successfully\n3. Check the spider status using scrapy_check_status to confirm it finished\n4. Use scrapy_get_results to retrieve 10 properties from the database\n5. Provide a summary of the results including: total properties found, and a brief overview of the first few properties\n\nExecute these steps in order. If any step fails, report the error clearly.\n\nIMPORTANT: For the scrapy_run_spider tool, you MUST pass the argument as: {\"limit_pages\": 1}",
+        "hasOutputParser": true
+      },
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "AI Agent - Scraping Controller",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [450, 300],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "1",
+          "name": "Google AI Studio API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://scrapy-mcp-server:8888/sse",
+        "toolsToInclude": "all",
+        "options": {}
+      },
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "name": "MCP Client - Scrapy Tools",
+      "type": "@n8n/n8n-nodes-langchain.toolMcpClient",
+      "typeVersion": 1,
+      "position": [450, 480]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1",
+              "name": "agent_response",
+              "value": "={{ $json.output }}",
+              "type": "string"
+            },
+            {
+              "id": "2",
+              "name": "execution_time",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d4e5f6a7-b8c9-0123-def1-234567890123",
+      "name": "Format Results",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "1",
+              "leftValue": "={{ $json.agent_response }}",
+              "rightValue": "",
+              "operation": "isNotEmpty"
+            }
+          ]
+        },
+        "combineOperation": "all"
+      },
+      "id": "e5f6a7b8-c9d0-1234-ef12-345678901234",
+      "name": "Check Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "content": "## ✅ Scraping Complete!\n\n**Execution Time:** {{ $json.execution_time }}\n\n**Agent Response:**\n{{ $json.agent_response }}\n\n---\n\n**Next Steps:**\n1. Review the scraped data above\n2. If successful, remove `limit_pages` parameter to scrape all pages\n3. Add export nodes (CSV/JSON) if needed\n4. Configure Google Drive upload for automated storage",
+        "height": 464.79166666666663,
+        "width": 388.4375,
+        "color": 4
+      },
+      "id": "f6a7b8c9-d0e1-2345-f123-456789012345",
+      "name": "Success Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "content": "## ⚠️ Scraping Failed\n\nThe AI Agent encountered an error.\n\nCheck:\n1. MCP server is running: `docker ps | grep scrapy-mcp-server`\n2. Network connectivity: `docker exec n8n-mcp curl http://scrapy-mcp-server:8888/sse`\n3. MCP server logs: `docker logs scrapy-mcp-server`",
+        "height": 340.8333333333333,
+        "width": 388.4375,
+        "color": 5
+      },
+      "id": "a7b8c9d0-e1f2-3456-1234-567890123456",
+      "name": "Error Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1050, 420]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "AI Agent - Scraping Controller",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MCP Client - Scrapy Tools": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent - Scraping Controller",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent - Scraping Controller": {
+      "main": [
+        [
+          {
+            "node": "Format Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Results": {
+      "main": [
+        [
+          {
+            "node": "Check Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-07T00:00:00.000Z",
+  "versionId": "1"
+}

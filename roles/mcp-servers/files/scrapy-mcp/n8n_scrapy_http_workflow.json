@@ -1,0 +1,101 @@
+{
+  "name": "Real Estate Scraper - HTTP Direct (No MCP Client)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger-001",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 340]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://scrapy-mcp-server:8888/tools/scrapy_run_spider",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "limit_pages",
+              "value": "=1"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-run-spider-001",
+      "name": "Run Scrapy Spider",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 340]
+    },
+    {
+      "parameters": {
+        "unit": "seconds",
+        "amount": 10
+      },
+      "id": "wait-001",
+      "name": "Wait for Spider",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [680, 340],
+      "webhookId": "wait-webhook-001"
+    },
+    {
+      "parameters": {
+        "url": "http://scrapy-mcp-server:8888/tools/scrapy_check_status",
+        "options": {}
+      },
+      "id": "http-check-status-001",
+      "name": "Check Spider Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 340]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://scrapy-mcp-server:8888/tools/scrapy_get_results",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "limit",
+              "value": "=10"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-get-results-001",
+      "name": "Get Scraped Results",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 340]
+    }
+  ],
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [[{"node": "Run Scrapy Spider", "type": "main", "index": 0}]]
+    },
+    "Run Scrapy Spider": {
+      "main": [[{"node": "Wait for Spider", "type": "main", "index": 0}]]
+    },
+    "Wait for Spider": {
+      "main": [[{"node": "Check Spider Status", "type": "main", "index": 0}]]
+    },
+    "Check Spider Status": {
+      "main": [[{"node": "Get Scraped Results", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-08T04:45:00.000Z",
+  "versionId": "1"
+}
