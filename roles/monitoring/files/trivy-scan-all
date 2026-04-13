@@ -1,0 +1,40 @@
+#!/bin/bash
+# Trivy Container Vulnerability Scanner
+# Scans all running Podman containers
+
+set -e
+
+echo "================================================"
+echo "Trivy Container Security Scan"
+echo "Started: $(date)"
+echo "================================================"
+
+# Get all running container IDs
+CONTAINERS=$(podman ps --format "{{.ID}}")
+
+if [ -z "$CONTAINERS" ]; then
+    echo "No running containers found."
+    exit 0
+fi
+
+# Scan each container
+for container in $CONTAINERS; do
+    CONTAINER_NAME=$(podman inspect "$container" --format "{{.Name}}")
+    CONTAINER_IMAGE=$(podman inspect "$container" --format "{{.ImageName}}")
+    
+    echo ""
+    echo "Scanning: $CONTAINER_NAME ($CONTAINER_IMAGE)"
+    echo "----------------------------------------"
+    
+    podman run --rm -v trivy-cache:/root/.cache/ docker.io/aquasec/trivy:0.68.2 image "$CONTAINER_IMAGE" \
+        --severity HIGH,CRITICAL \
+        --format table \
+        --no-progress
+    
+    echo "----------------------------------------"
+done
+
+echo ""
+echo "================================================"
+echo "Scan completed: $(date)"
+echo "================================================"
