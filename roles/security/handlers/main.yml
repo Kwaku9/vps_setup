@@ -20,3 +20,10 @@
   service:
     name: squid
     state: restarted
+
+- name: restart tetragon
+  containers.podman.podman_container:
+    name: tetragon
+    state: started
+    force_restart: true
+  failed_when: false  # Tetragon container may not exist yet on first run
