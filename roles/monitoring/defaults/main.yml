@@ -34,7 +34,7 @@ monitoring:
   tempo:
     enabled: true
     version: "2.9.0"
-    memory: "512m"  # Keep at 512m — 384m was too tight (92% at 372MB actual)
+    memory: "1536m"  # 512m wedged the HTTP API at 87%+ usage under normal compaction+query load. 1.5G gives headroom for growing instrumentation.
   alloy:
     enabled: true
     version: "v1.12.2"
