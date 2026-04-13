@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Entrepreneur Workspace - Haven on Peachwood</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=Open+Sans:wght@400;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 8.5in;
+    height: 11in;
+    font-family: 'Open Sans', sans-serif;
+    background: #1a1a2e;
+    color: #ffffff;
+    overflow: hidden;
+  }
+
+  .flyer {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(160deg, #1a1a2e 0%, #16213e 40%, #0f3460 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.6in 0.6in 0.5in;
+    position: relative;
+  }
+
+  /* Decorative accent bars */
+  .accent-top {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 8px;
+    background: linear-gradient(90deg, #e94560, #c77dff, #e94560);
+  }
+
+  .accent-bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 8px;
+    background: linear-gradient(90deg, #e94560, #c77dff, #e94560);
+  }
+
+  /* Decorative circles */
+  .circle-1 {
+    position: absolute;
+    top: -80px;
+    right: -80px;
+    width: 250px;
+    height: 250px;
+    border-radius: 50%;
+    border: 2px solid rgba(233, 69, 96, 0.15);
+  }
+
+  .circle-2 {
+    position: absolute;
+    bottom: -60px;
+    left: -60px;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    border: 2px solid rgba(199, 125, 255, 0.1);
+  }
+
+  .property-name {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #c77dff;
+    margin-bottom: 20px;
+  }
+
+  .main-title {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 52px;
+    font-weight: 900;
+    text-transform: uppercase;
+    text-align: center;
+    line-height: 1.1;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #ffffff 0%, #e0e0e0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    color: #e94560;
+    text-transform: uppercase;
+    margin-bottom: 30px;
+  }
+
+  .divider {
+    width: 80px;
+    height: 3px;
+    background: linear-gradient(90deg, #e94560, #c77dff);
+    border-radius: 2px;
+    margin-bottom: 30px;
+  }
+
+  .description {
+    font-size: 15px;
+    line-height: 1.7;
+    text-align: center;
+    color: #b8c5d6;
+    max-width: 520px;
+    margin-bottom: 35px;
+  }
+
+  /* Pricing Cards */
+  .pricing-row {
+    display: flex;
+    gap: 30px;
+    margin-bottom: 35px;
+  }
+
+  .price-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 28px 40px;
+    text-align: center;
+    backdrop-filter: blur(10px);
+    transition: transform 0.3s;
+  }
+
+  .price-card:hover {
+    transform: translateY(-3px);
+  }
+
+  .price-label {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #c77dff;
+    margin-bottom: 8px;
+  }
+
+  .price-amount {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 42px;
+    font-weight: 900;
+    color: #ffffff;
+  }
+
+  .price-duration {
+    font-size: 13px;
+    color: #8892a4;
+    margin-top: 4px;
+  }
+
+  /* Features */
+  .features {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 35px;
+    width: 100%;
+    max-width: 480px;
+  }
+
+  .feature {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 14px;
+    color: #d0d8e4;
+  }
+
+  .feature-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(233, 69, 96, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  /* Notice */
+  .notice {
+    background: rgba(233, 69, 96, 0.1);
+    border: 1px solid rgba(233, 69, 96, 0.25);
+    border-radius: 10px;
+    padding: 14px 28px;
+    font-size: 13px;
+    color: #e94560;
+    text-align: center;
+    margin-bottom: 30px;
+    font-weight: 600;
+  }
+
+  /* Contact Section */
+  .contact-section {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 22px 40px;
+    text-align: center;
+    width: 100%;
+    max-width: 480px;
+  }
+
+  .contact-title {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #c77dff;
+    margin-bottom: 14px;
+  }
+
+  .contact-info {
+    font-size: 14px;
+    color: #d0d8e4;
+    line-height: 2;
+  }
+
+  .contact-info a {
+    color: #ffffff;
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .footer {
+    margin-top: auto;
+    padding-top: 20px;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: #5a6378;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div class="flyer">
+  <div class="accent-top"></div>
+  <div class="accent-bottom"></div>
+  <div class="circle-1"></div>
+  <div class="circle-2"></div>
+
+  <div class="property-name">Haven on Peachwood Presents</div>
+
+  <h1 class="main-title">Entrepreneur<br>Workspace</h1>
+
+  <div class="subtitle">Your Business. Your Space. Your Time.</div>
+
+  <div class="divider"></div>
+
+  <p class="description">
+    Are you an entrepreneur, freelancer, or small business owner?
+    Reserve a professional space to promote your brand, connect with
+    clients, and grow your business — right here in your community.
+  </p>
+
+  <div class="pricing-row">
+    <div class="price-card">
+      <div class="price-label">Full Day</div>
+      <div class="price-amount">$50</div>
+      <div class="price-duration">8 Hours</div>
+    </div>
+    <div class="price-card">
+      <div class="price-label">Half Day</div>
+      <div class="price-amount">$25</div>
+      <div class="price-duration">4 Hours</div>
+    </div>
+  </div>
+
+  <div class="features">
+    <div class="feature">
+      <div class="feature-icon">&#10003;</div>
+      <span>Dedicated space to showcase your business</span>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">&#10003;</div>
+      <span>Professional environment during business hours</span>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">&#9733;</div>
+      <span>Food &amp; refreshments available for a small additional fee</span>
+    </div>
+  </div>
+
+  <div class="notice">
+    All products and services are subject to management approval
+  </div>
+
+  <div class="contact-section">
+    <div class="contact-title">Ready to Book Your Space?</div>
+    <div class="contact-info">
+      &#9993; <a href="mailto:Havenonpeachwood@rpmliving.com">Havenonpeachwood@rpmliving.com</a><br>
+      &#9742; <a href="tel:4042356445">404-235-6445</a><br>
+      Visit us at the leasing office
+    </div>
+  </div>
+
+  <div class="footer">Haven on Peachwood Management</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Self Care — Haven on Peachwood</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,400&family=Inter:wght@300;400;500;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --gold: #D4AF37;
+    --gold-light: #F5E17A;
+    --gold-dark: #8B6914;
+    --blush: #E8C4B8;
+    --sage: #A8B89C;
+    --deep: #1a1218;
+    --mid: #2d1f2a;
+    --text: #f5f0f0;
+  }
+
+  body {
+    width: 100vw;
+    height: 100vh;
+    background: var(--deep);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* ── Floating particles ── */
+  .particles {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .particle {
+    position: absolute;
+    border-radius: 50%;
+    opacity: 0;
+    animation: float-up linear infinite;
+  }
+
+  @keyframes float-up {
+    0%   { transform: translateY(100vh) scale(0); opacity: 0; }
+    10%  { opacity: 0.6; }
+    90%  { opacity: 0.2; }
+    100% { transform: translateY(-10vh) scale(1.2); opacity: 0; }
+  }
+
+  /* ── Background glow pulses ── */
+  .glow-orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(80px);
+    pointer-events: none;
+    animation: orb-pulse ease-in-out infinite alternate;
+  }
+
+  .glow-orb.blush {
+    width: 500px; height: 500px;
+    background: rgba(232, 196, 184, 0.08);
+    top: -100px; left: -100px;
+    animation-duration: 6s;
+  }
+
+  .glow-orb.sage {
+    width: 400px; height: 400px;
+    background: rgba(168, 184, 156, 0.07);
+    bottom: -100px; right: -50px;
+    animation-duration: 8s;
+    animation-delay: -3s;
+  }
+
+  .glow-orb.gold {
+    width: 300px; height: 300px;
+    background: rgba(212, 175, 55, 0.06);
+    top: 40%; left: 50%;
+    transform: translate(-50%, -50%);
+    animation-duration: 10s;
+    animation-delay: -5s;
+  }
+
+  @keyframes orb-pulse {
+    from { opacity: 0.5; transform: scale(1); }
+    to   { opacity: 1;   transform: scale(1.15); }
+  }
+
+  /* ── Main card ── */
+  .card {
+    width: 420px;
+    min-height: 680px;
+    background: linear-gradient(160deg, rgba(45,31,42,0.95) 0%, rgba(26,18,24,0.98) 100%);
+    border: 1px solid rgba(212,175,55,0.2);
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 36px 36px 32px;
+    position: relative;
+    overflow: hidden;
+    z-index: 1;
+    animation: card-in 1.2s cubic-bezier(0.16,1,0.3,1) forwards;
+    opacity: 0;
+    transform: translateY(40px) scale(0.96);
+  }
+
+  @keyframes card-in {
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  /* Card shimmer border */
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 20px;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(212,175,55,0.5), transparent 40%, rgba(212,175,55,0.2) 60%, transparent);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+    animation: border-spin 6s linear infinite;
+  }
+
+  @keyframes border-spin {
+    0%   { background-position: 0% 50%; }
+    100% { background-position: 200% 50%; }
+  }
+
+  /* ── Top gold line ── */
+  .top-line {
+    width: 60px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    margin-bottom: 20px;
+    animation: expand 1s 0.5s ease forwards;
+    transform: scaleX(0);
+  }
+
+  @keyframes expand {
+    to { transform: scaleX(1); }
+  }
+
+  /* ── Property label ── */
+  .property-label {
+    font-size: 9px;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: var(--gold);
+    opacity: 0;
+    animation: fade-in 0.8s 0.8s ease forwards;
+    margin-bottom: 28px;
+  }
+
+  @keyframes fade-in {
+    to { opacity: 1; }
+  }
+
+  /* ── Animated icon ── */
+  .icon-wrap {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(232,196,184,0.12), rgba(212,175,55,0.06));
+    border: 1px solid rgba(212,175,55,0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 28px;
+    animation: icon-in 1s 0.6s cubic-bezier(0.34,1.56,0.64,1) both, icon-breathe 4s 2s ease-in-out infinite;
+    font-size: 44px;
+    position: relative;
+  }
+
+  .icon-wrap::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    border: 1px solid rgba(212,175,55,0.1);
+    animation: ring-pulse 3s 2s ease-in-out infinite;
+  }
+
+  @keyframes icon-in {
+    from { opacity: 0; transform: scale(0.5) rotate(-10deg); }
+    to   { opacity: 1; transform: scale(1) rotate(0deg); }
+  }
+
+  @keyframes icon-breathe {
+    0%, 100% { transform: scale(1); }
+    50%       { transform: scale(1.05); }
+  }
+
+  @keyframes ring-pulse {
+    0%, 100% { transform: scale(1); opacity: 0.4; }
+    50%       { transform: scale(1.15); opacity: 0; }
+  }
+
+  /* ── Headlines ── */
+  .eyebrow {
+    font-size: 10px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--blush);
+    opacity: 0;
+    animation: slide-up 0.8s 1s ease forwards;
+    margin-bottom: 8px;
+  }
+
+  .main-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 42px;
+    font-weight: 900;
+    color: var(--text);
+    text-align: center;
+    line-height: 1.15;
+    opacity: 0;
+    animation: slide-up 0.8s 1.1s ease forwards;
+    margin-bottom: 6px;
+  }
+
+  .main-title .highlight {
+    color: var(--gold);
+    font-style: italic;
+  }
+
+  .tagline {
+    font-size: 12px;
+    color: rgba(255,255,255,0.35);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    opacity: 0;
+    animation: slide-up 0.8s 1.2s ease forwards;
+    margin-bottom: 28px;
+  }
+
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Divider ── */
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    margin-bottom: 28px;
+    opacity: 0;
+    animation: fade-in 0.8s 1.3s ease forwards;
+  }
+
+  .divider .line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(212,175,55,0.3), transparent);
+  }
+
+  .divider .dot {
+    width: 5px;
+    height: 5px;
+    background: var(--gold);
+    border-radius: 50%;
+    animation: dot-pulse 2s 2s ease-in-out infinite;
+  }
+
+  @keyframes dot-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.6); }
+  }
+
+  /* ── Pillars ── */
+  .pillars {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    width: 100%;
+    margin-bottom: 28px;
+  }
+
+  .pillar {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 12px;
+    padding: 16px 10px;
+    text-align: center;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all 0.3s ease;
+  }
+
+  .pillar:nth-child(1) { animation: slide-up 0.7s 1.4s ease forwards; }
+  .pillar:nth-child(2) { animation: slide-up 0.7s 1.55s ease forwards; }
+  .pillar:nth-child(3) { animation: slide-up 0.7s 1.7s ease forwards; }
+
+  .pillar:hover {
+    background: rgba(212,175,55,0.06);
+    border-color: rgba(212,175,55,0.2);
+    transform: translateY(-3px);
+  }
+
+  .pillar .emoji {
+    font-size: 24px;
+    display: block;
+    margin-bottom: 8px;
+    animation: sway 3s ease-in-out infinite;
+  }
+
+  .pillar:nth-child(2) .emoji { animation-delay: -1s; }
+  .pillar:nth-child(3) .emoji { animation-delay: -2s; }
+
+  @keyframes sway {
+    0%, 100% { transform: rotate(-5deg); }
+    50%       { transform: rotate(5deg); }
+  }
+
+  .pillar .label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--gold);
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .pillar .desc {
+    font-size: 10px;
+    color: rgba(255,255,255,0.4);
+    line-height: 1.4;
+  }
+
+  /* ── CTA Box ── */
+  .cta-box {
+    width: 100%;
+    background: linear-gradient(135deg, rgba(212,175,55,0.1), rgba(232,196,184,0.06));
+    border: 1px solid rgba(212,175,55,0.25);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    opacity: 0;
+    animation: slide-up 0.8s 1.9s ease forwards;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cta-box::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 60%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent);
+    animation: shimmer 4s 3s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0%   { left: -60%; }
+    100% { left: 160%; }
+  }
+
+  .cta-label {
+    font-size: 9px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 10px;
+  }
+
+  .cta-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    color: var(--text);
+    margin-bottom: 14px;
+  }
+
+  .cta-detail {
+    font-size: 12px;
+    color: rgba(255,255,255,0.55);
+    line-height: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .cta-detail span {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .cta-detail .ico {
+    color: var(--gold);
+    font-size: 13px;
+    width: 16px;
+    text-align: center;
+  }
+
+  /* ── Footer ── */
+  .footer-label {
+    font-size: 9px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.18);
+    opacity: 0;
+    animation: fade-in 1s 2.2s ease forwards;
+  }
+
+  /* ── Scrolling ticker ── */
+  .ticker-wrap {
+    width: calc(100% + 72px);
+    overflow: hidden;
+    background: rgba(212,175,55,0.06);
+    border-top: 1px solid rgba(212,175,55,0.15);
+    border-bottom: 1px solid rgba(212,175,55,0.15);
+    padding: 8px 0;
+    margin: 20px -36px;
+    opacity: 0;
+    animation: fade-in 0.8s 1.85s ease forwards;
+  }
+
+  .ticker {
+    display: flex;
+    gap: 0;
+    white-space: nowrap;
+    animation: ticker-scroll 18s linear infinite;
+  }
+
+  .ticker-item {
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: rgba(212,175,55,0.6);
+    padding: 0 30px;
+  }
+
+  .ticker-item .sep {
+    color: rgba(212,175,55,0.3);
+    margin-left: 30px;
+  }
+
+  @keyframes ticker-scroll {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+</style>
+</head>
+<body>
+
+<!-- Ambient glows -->
+<div class="glow-orb blush"></div>
+<div class="glow-orb sage"></div>
+<div class="glow-orb gold"></div>
+
+<!-- Floating particles -->
+<div class="particles" id="particles"></div>
+
+<!-- Main card -->
+<div class="card">
+  <div class="top-line"></div>
+
+  <div class="property-label">Haven on Peachwood</div>
+
+  <div class="icon-wrap">🌸</div>
+
+  <div class="eyebrow">A Community Initiative</div>
+  <h1 class="main-title">You Deserve to<br><span class="highlight">Feel Good</span></h1>
+  <p class="tagline">Mind &nbsp;·&nbsp; Body &nbsp;·&nbsp; Soul</p>
+
+  <div class="divider">
+    <div class="line"></div>
+    <div class="dot"></div>
+    <div class="line"></div>
+  </div>
+
+  <div class="pillars">
+    <div class="pillar">
+      <span class="emoji">🧘</span>
+      <span class="label">Mind</span>
+      <span class="desc">Clarity & calm</span>
+    </div>
+    <div class="pillar">
+      <span class="emoji">💆</span>
+      <span class="label">Body</span>
+      <span class="desc">Rest & restore</span>
+    </div>
+    <div class="pillar">
+      <span class="emoji">✨</span>
+      <span class="label">Soul</span>
+      <span class="desc">Joy & renewal</span>
+    </div>
+  </div>
+
+  <div class="ticker-wrap">
+    <div class="ticker">
+      <!-- repeated for seamless loop -->
+      <span class="ticker-item">Self Care<span class="sep">✦</span></span>
+      <span class="ticker-item">Community Wellness<span class="sep">✦</span></span>
+      <span class="ticker-item">Haven on Peachwood<span class="sep">✦</span></span>
+      <span class="ticker-item">You Deserve It<span class="sep">✦</span></span>
+      <span class="ticker-item">Mind Body Soul<span class="sep">✦</span></span>
+      <span class="ticker-item">Self Care<span class="sep">✦</span></span>
+      <span class="ticker-item">Community Wellness<span class="sep">✦</span></span>
+      <span class="ticker-item">Haven on Peachwood<span class="sep">✦</span></span>
+      <span class="ticker-item">You Deserve It<span class="sep">✦</span></span>
+      <span class="ticker-item">Mind Body Soul<span class="sep">✦</span></span>
+    </div>
+  </div>
+
+  <div class="cta-box">
+    <div class="cta-label">Get In Touch</div>
+    <div class="cta-title">We're here for you 💛</div>
+    <div class="cta-detail">
+      <span><span class="ico">✉</span> Havenonpeachwood@rpmliving.com</span>
+      <span><span class="ico">☎</span> 404-235-6445</span>
+      <span><span class="ico">◆</span> Stop by the leasing office</span>
+    </div>
+  </div>
+
+  <div class="footer-label">Haven on Peachwood &nbsp;·&nbsp; Management</div>
+</div>
+
+<script>
+// Generate floating particles
+const container = document.getElementById('particles');
+const colors = ['#D4AF37','#E8C4B8','#A8B89C','#F5E17A','#ffffff'];
+
+for (let i = 0; i < 35; i++) {
+  const p = document.createElement('div');
+  p.classList.add('particle');
+  const size = Math.random() * 4 + 1;
+  p.style.cssText = `
+    width: ${size}px;
+    height: ${size}px;
+    background: ${colors[Math.floor(Math.random() * colors.length)]};
+    left: ${Math.random() * 100}%;
+    animation-duration: ${Math.random() * 12 + 8}s;
+    animation-delay: ${Math.random() * -15}s;
+    opacity: 0;
+  `;
+  container.appendChild(p);
+}
+</script>
+</body>
+</html>

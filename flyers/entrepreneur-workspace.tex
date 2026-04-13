@@ -1,0 +1,131 @@
+\documentclass[letterpaper]{article}
+\usepackage[margin=0.7in]{geometry}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{fontspec}
+\usepackage{parskip}
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{calc}
+
+% Colors
+\definecolor{darkbg}{HTML}{1A1A2E}
+\definecolor{accent}{HTML}{E94560}
+\definecolor{purple}{HTML}{C77DFF}
+\definecolor{lighttext}{HTML}{B8C5D6}
+\definecolor{cardgray}{HTML}{232740}
+
+% Page setup
+\pagecolor{darkbg}
+\color{white}
+\pagestyle{empty}
+
+% Fonts (requires XeLaTeX or LuaLaTeX)
+\setmainfont{DejaVu Sans}
+\newfontfamily\titlefont{DejaVu Sans}[Scale=1.0]
+
+\hypersetup{
+  colorlinks=true,
+  urlcolor=white,
+  pdfborder={0 0 0}
+}
+
+\begin{document}
+\begin{center}
+
+% Top accent line
+\textcolor{accent}{\rule{\textwidth}{3pt}}
+
+\vspace{18pt}
+
+% Property name
+{\fontsize{10}{12}\selectfont\color{purple}\textls[200]{HAVEN ON PEACHWOOD PRESENTS}}
+
+\vspace{20pt}
+
+% Main title
+{\fontsize{42}{46}\selectfont\bfseries ENTREPRENEUR\\WORKSPACE}
+
+\vspace{12pt}
+
+% Subtitle
+{\fontsize{14}{16}\selectfont\color{accent}\textls[150]{YOUR BUSINESS. YOUR SPACE. YOUR TIME.}}
+
+\vspace{12pt}
+
+% Divider
+\textcolor{purple}{\rule{80pt}{2pt}}
+
+\vspace{16pt}
+
+% Description
+{\fontsize{11}{16}\selectfont\color{lighttext}
+Are you an entrepreneur, freelancer, or small business owner?\\
+Reserve a professional space to promote your brand, connect with\\
+clients, and grow your business --- right here in your community.
+}
+
+\vspace{24pt}
+
+% Pricing boxes
+\begin{tikzpicture}
+  % Full Day card
+  \draw[rounded corners=12pt, fill=cardgray, draw=white!15, line width=0.5pt]
+    (0,0) rectangle (5.5,3.2);
+  \node[color=purple] at (2.75, 2.6) {\fontsize{10}{12}\selectfont\bfseries FULL DAY};
+  \node[color=white] at (2.75, 1.6) {\fontsize{36}{40}\selectfont\bfseries \$50};
+  \node[color=lighttext] at (2.75, 0.6) {\fontsize{10}{12}\selectfont 8 Hours};
+
+  % Half Day card
+  \draw[rounded corners=12pt, fill=cardgray, draw=white!15, line width=0.5pt]
+    (6.5,0) rectangle (12,3.2);
+  \node[color=purple] at (9.25, 2.6) {\fontsize{10}{12}\selectfont\bfseries HALF DAY};
+  \node[color=white] at (9.25, 1.6) {\fontsize{36}{40}\selectfont\bfseries \$25};
+  \node[color=lighttext] at (9.25, 0.6) {\fontsize{10}{12}\selectfont 4 Hours};
+\end{tikzpicture}
+
+\vspace{22pt}
+
+% Features
+\begin{minipage}{0.75\textwidth}
+\fontsize{11}{18}\selectfont
+\color{lighttext}
+\hspace{8pt}\textcolor{accent}{\textbullet}\hspace{10pt}Dedicated space to showcase your business\\[4pt]
+\hspace{8pt}\textcolor{accent}{\textbullet}\hspace{10pt}Professional environment during business hours\\[4pt]
+\hspace{8pt}\textcolor{purple}{\textbullet}\hspace{10pt}Food \& refreshments available for a small additional fee
+\end{minipage}
+
+\vspace{20pt}
+
+% Notice box
+\begin{tikzpicture}
+  \draw[rounded corners=8pt, fill=accent!10, draw=accent!40, line width=0.5pt]
+    (0,0) rectangle (12, 1.0);
+  \node[color=accent] at (6, 0.5) {\fontsize{10}{12}\selectfont\bfseries All products and services are subject to management approval};
+\end{tikzpicture}
+
+\vspace{20pt}
+
+% Contact section
+\begin{tikzpicture}
+  \draw[rounded corners=12pt, fill=cardgray, draw=white!15, line width=0.5pt]
+    (0,0) rectangle (12, 3.4);
+  \node[color=purple] at (6, 2.8) {\fontsize{10}{12}\selectfont\bfseries\textls[200]{READY TO BOOK YOUR SPACE?}};
+  \node[color=white] at (6, 1.9) {\fontsize{11}{14}\selectfont Havenonpeachwood@rpmliving.com};
+  \node[color=white] at (6, 1.2) {\fontsize{11}{14}\selectfont 404-235-6445};
+  \node[color=lighttext] at (6, 0.5) {\fontsize{10}{12}\selectfont Visit us at the leasing office};
+\end{tikzpicture}
+
+\vspace{18pt}
+
+% Footer
+{\fontsize{8}{10}\selectfont\color{lighttext!50}\textls[200]{HAVEN ON PEACHWOOD MANAGEMENT}}
+
+\vspace{8pt}
+
+% Bottom accent line
+\textcolor{accent}{\rule{\textwidth}{3pt}}
+
+\end{center}
+\end{document}
