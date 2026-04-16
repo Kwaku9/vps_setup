@@ -5,4 +5,4 @@ journey_tracker:
   image: "docker.io/library/nginx:1.27-alpine"
   data_dir: "/opt/podman-data/journey-tracker"
   domain: "timeline"
-  internal_port: 80
+  internal_port: 8092
