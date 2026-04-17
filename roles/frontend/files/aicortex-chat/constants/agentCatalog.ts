@@ -25,12 +25,12 @@ export const DOMAIN_MODEL_MAP: Record<string, string> = {
   devops: 'claude-sonnet-4-6',
   research: 'gemini-3-pro',
   creative: 'gpt-4o',
-  finance: 'claude-sonnet-4',
+  finance: 'claude-sonnet-4-6',
   cooking: 'claude-haiku-4-5',
   writing: 'claude-sonnet-4-6',
   data: 'claude-sonnet-4-6',
-  productivity: 'claude-sonnet-4',
-  sales: 'claude-sonnet-4',
+  productivity: 'claude-sonnet-4-6',
+  sales: 'claude-sonnet-4-6',
   general: 'claude-sonnet-4-6',
 };
 
@@ -196,7 +196,7 @@ OUTPUT STANDARDS:
 
   email_triage_agent: {
     name: 'Email Assistant',
-    base_model_id: 'claude-sonnet-4',
+    base_model_id: 'claude-sonnet-4-6',
     meta: {
       description: 'Email drafting & communication',
       capabilities: { code: false },
@@ -227,7 +227,7 @@ OUTPUT STANDARDS:
 
   finance_tracker_agent: {
     name: 'Finance Analyst',
-    base_model_id: 'claude-sonnet-4',
+    base_model_id: 'claude-sonnet-4-6',
     meta: {
       description: 'Financial analysis & tracking',
       capabilities: { code: true },
@@ -320,7 +320,7 @@ OUTPUT STANDARDS:
 
   meeting_prep_agent: {
     name: 'Meeting Prep',
-    base_model_id: 'claude-sonnet-4',
+    base_model_id: 'claude-sonnet-4-6',
     meta: {
       description: 'Meeting preparation & briefs',
       capabilities: { code: false },
@@ -351,7 +351,7 @@ OUTPUT STANDARDS:
 
   schedule_optimizer_agent: {
     name: 'Schedule Optimizer',
-    base_model_id: 'claude-sonnet-4',
+    base_model_id: 'claude-sonnet-4-6',
     meta: {
       description: 'Time management & planning',
       capabilities: { code: false },
@@ -382,7 +382,7 @@ OUTPUT STANDARDS:
 
   sales_pipeline_agent: {
     name: 'Sales Pipeline',
-    base_model_id: 'claude-sonnet-4',
+    base_model_id: 'claude-sonnet-4-6',
     meta: {
       description: 'Sales outreach & deal tracking',
       capabilities: { code: false },
@@ -475,7 +475,7 @@ OUTPUT STANDARDS:
 
   project_manager_agent: {
     name: 'Project Manager',
-    base_model_id: 'claude-sonnet-4',
+    base_model_id: 'claude-sonnet-4-6',
     meta: {
       description: 'Project tracking & coordination',
       capabilities: { code: false },
@@ -538,7 +538,7 @@ OUTPUT STANDARDS:
 
   study_coach_agent: {
     name: 'Study Coach',
-    base_model_id: 'claude-sonnet-4',
+    base_model_id: 'claude-sonnet-4-6',
     meta: {
       description: 'Learning & academic support',
       capabilities: { code: false },

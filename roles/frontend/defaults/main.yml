@@ -47,10 +47,10 @@ expo_dev:
   image: "localhost/expo-dev:latest"
   source_dir: "/opt/compose/aicortex-chat"
   port: 8082
-  memory: "768m"
+  memory: "3g"
   cpu_shares: 512
   domain: "dev.{{ domain_name }}"
-  node_max_old_space: "576"
+  node_max_old_space: "2048"
 
 # Vault overrides these
 worldview_google_maps_api_key: "VAULT_OVERRIDE"

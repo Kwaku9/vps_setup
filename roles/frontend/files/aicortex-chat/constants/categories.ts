@@ -34,7 +34,7 @@ export const CATEGORIES: Category[] = [
       'documentation', 'report', 'email editing', 'email editor',
       'email revision', 'email rephrasing',
     ],
-    defaultModelId: 'claude-sonnet-4',
+    defaultModelId: 'claude-sonnet-4-6',
     description: 'Email editing, content writing, and communication',
   },
   {
@@ -52,7 +52,7 @@ export const CATEGORIES: Category[] = [
       'telegram bot', 'gateway', 'webhook', 'bolt.diy', 'datacenter',
       'circuit', 'connection test',
     ],
-    defaultModelId: 'claude-sonnet-4',
+    defaultModelId: 'claude-sonnet-4-6',
     description: 'DevOps, cloud, containers, and system architecture',
   },
   {
@@ -66,7 +66,7 @@ export const CATEGORIES: Category[] = [
       'crowdsec', 'wazuh', 'ids', 'ips', 'siem', 'malware prevention',
       'cloud identity', 'identity engine',
     ],
-    defaultModelId: 'claude-opus-4',
+    defaultModelId: 'claude-opus-4-6',
     description: 'Cybersecurity, threat analysis, and compliance',
   },
   {
@@ -81,7 +81,7 @@ export const CATEGORIES: Category[] = [
       'repo', 'library', 'sdk', 'framework', 'component',
       'refactor', 'github runners',
     ],
-    defaultModelId: 'claude-sonnet-4',
+    defaultModelId: 'claude-sonnet-4-6',
     description: 'Software development, debugging, and architecture',
   },
   {
@@ -96,7 +96,7 @@ export const CATEGORIES: Category[] = [
       'volatility', 'hedge', 'alpha vantage', 'ticker',
       'dividend', 'earnings',
     ],
-    defaultModelId: 'claude-sonnet-4',
+    defaultModelId: 'claude-sonnet-4-6',
     description: 'Markets, options strategies, and financial analysis',
   },
   {
@@ -127,7 +127,7 @@ export const CATEGORIES: Category[] = [
       'large models', 'specialized ai', 'ai infrastructure',
       'ai session', 'model info',
     ],
-    defaultModelId: 'claude-opus-4',
+    defaultModelId: 'claude-opus-4-6',
     description: 'AI infrastructure, model deployment, and ML ops',
   },
   {
@@ -140,7 +140,7 @@ export const CATEGORIES: Category[] = [
       'investigate', 'review', 'learn', 'explain',
       'weather', 'searxng', 'project progress',
     ],
-    defaultModelId: 'claude-sonnet-4',
+    defaultModelId: 'claude-sonnet-4-6',
     description: 'Research, analysis, and knowledge exploration',
   },
   {
@@ -153,7 +153,7 @@ export const CATEGORIES: Category[] = [
       'accounting', 'invoice', 'salary', 'paycheck',
       'financial', 'bank',
     ],
-    defaultModelId: 'claude-sonnet-4',
+    defaultModelId: 'claude-sonnet-4-6',
     description: 'Payroll, budgeting, and personal finance',
   },
   {
@@ -166,7 +166,7 @@ export const CATEGORIES: Category[] = [
       'sleep', 'mental health', 'meditation', 'exercise', 'recipe',
       'cooking', 'meal', 'vitamin', 'supplement',
     ],
-    defaultModelId: 'claude-sonnet-4',
+    defaultModelId: 'claude-sonnet-4-6',
     description: 'Health, wellness, nutrition, and fitness',
   },
 ];
@@ -178,7 +178,7 @@ export const UNCATEGORIZED: Category = {
   icon: 'chat',
   color: '#8E8E93', // systemGray
   keywords: [],
-  defaultModelId: 'claude-sonnet-4',
+  defaultModelId: 'claude-sonnet-4-6',
   description: 'General conversations and uncategorized chats',
 };
 
