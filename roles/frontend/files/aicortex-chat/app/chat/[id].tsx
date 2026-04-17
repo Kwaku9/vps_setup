@@ -236,7 +236,7 @@ export default function ChatScreen() {
     setStreamingContent('');
 
     // Use agent's custom model ID — Open WebUI routes to base model + injects system prompt
-    const modelId = serverModel ?? agent?.id ?? 'claude-sonnet-4';
+    const modelId = serverModel ?? agent?.id ?? 'claude-sonnet-4-6';
 
     try {
       const controller = new AbortController();
