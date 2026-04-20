@@ -7,7 +7,7 @@ backup:
   # Base backup directory
   backup_dir: /opt/backups
   # Retention: number of daily backups to keep
-  retention_days: 7
+  retention_days: 3
   # S3 sync (optional)
   s3_enabled: false
   s3_bucket: "{{ s3_backups_bucket }}"
