@@ -9,11 +9,8 @@ from .schemas import MetricsSnapshot
 
 
 # Map container names (podman) -> service names (profiles.yaml)
-CONTAINER_TO_SERVICE = {
-    "postgres": "shared-db",
-    "victoriametrics": "victoria-metrics",
-    "ai-stack-postgres": "ai-stack-postgres",
-}
+# Names now match directly after profiles.yaml sync; keep map for future overrides
+CONTAINER_TO_SERVICE = {}
 
 
 class VictoriaMetricsClient:

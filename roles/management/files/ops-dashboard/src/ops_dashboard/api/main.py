@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .dependencies import init_state
+from .dependencies import init_state, refresh_live_containers
 from .routers import actions, metrics, profiles, services, stacks
 from .victoria import VictoriaMetricsClient
 from .ws.metrics_stream import metrics_poll_loop
@@ -41,10 +41,14 @@ async def lifespan(app: FastAPI):
     )
     state._poll_task = poll_task
 
+    # Start live container discovery background task
+    live_discovery_task = asyncio.create_task(refresh_live_containers(state))
+
     yield
 
     # Shutdown
     poll_task.cancel()
+    live_discovery_task.cancel()
     await vm_client.close()
     logger.info("Ops Dashboard API shutdown")
 

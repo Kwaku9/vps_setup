@@ -1,30 +1,20 @@
 import { useMemo } from 'react';
 import { useDashboard } from '../../contexts/DashboardContext';
-import type { Service } from '../../types';
+import { groupServices } from '../../lib/stackGroups';
+import { GlassPanel } from '../ui/GlassPanel';
 
 const statusConfig: Record<string, { dot: string; label: string; bg: string }> = {
-  running: { dot: 'bg-green-500', label: 'Running', bg: 'text-green-400 bg-green-900/40' },
-  stopped: { dot: 'bg-red-700', label: 'Stopped', bg: 'text-red-400 bg-red-900/30' },
-  exited: { dot: 'bg-red-700', label: 'Exited', bg: 'text-red-400 bg-red-900/30' },
-  unknown: { dot: 'bg-gray-600', label: 'Unknown', bg: 'text-gray-500 bg-gray-800/50' },
+  running: { dot: 'bg-[var(--status-green)]', label: 'Running', bg: 'text-emerald-300 bg-emerald-500/10' },
+  stopped: { dot: 'bg-[var(--status-red)]',   label: 'Stopped', bg: 'text-rose-300 bg-rose-500/10' },
+  exited:  { dot: 'bg-[var(--status-red)]',   label: 'Exited',  bg: 'text-rose-300 bg-rose-500/10' },
+  unknown: { dot: 'bg-white/30',              label: 'Unknown', bg: 'text-white/50 bg-white/5' },
 };
 
 const platformBadge: Record<string, { cls: string; label: string }> = {
-  vps: { cls: 'bg-cyan-900/60 text-cyan-400 border-cyan-700/30', label: 'VPS' },
-  azure: { cls: 'bg-blue-900/60 text-blue-400 border-blue-700/30', label: 'AZR' },
-  host: { cls: 'bg-purple-900/60 text-purple-400 border-purple-700/30', label: 'HST' },
+  vps:   { cls: 'text-[color:var(--vps-cyan)]    bg-cyan-400/10 border border-cyan-400/20',    label: 'VPS' },
+  azure: { cls: 'text-[color:var(--azure-blue)]  bg-blue-500/10 border border-blue-500/20',    label: 'AZR' },
+  host:  { cls: 'text-[color:var(--host-purple)] bg-purple-500/10 border border-purple-500/20', label: 'HST' },
 };
-
-const GROUPS = [
-  { key: 'core', title: 'CORE', match: (s: Service) => ['traefik', 'cloudflared', 'shared-db', 'victoria-metrics', 'fail2ban', 'node-exporter', 'iptables', 'crond', 'squid'].includes(s.name) },
-  { key: 'security', title: 'SECURITY', match: (s: Service) => ['crowdsec', 'tetragon'].includes(s.name) },
-  { key: 'auth', title: 'AUTH', match: (s: Service) => ['authentik-server', 'authentik-worker', 'authentik-postgres', 'redis'].includes(s.name) },
-  { key: 'azure-ai', title: 'AZURE AI', match: (s: Service) => ['litellm', 'open-webui', 'whisper-stt', 'kokoro-tts'].includes(s.name) || s.platform === 'azure' },
-  { key: 'monitoring', title: 'MONITORING', match: (s: Service) => ['alloy', 'loki', 'grafana', 'renderer', 'tempo'].includes(s.name) },
-  { key: 'comms', title: 'COMMS', match: (s: Service) => s.name === 'telegram-gateway' },
-  { key: 'frontend', title: 'FRONTEND', match: (s: Service) => ['journey-tracker', 'worldview-dev', 'ais-relay'].includes(s.name) },
-  { key: 'mgmt', title: 'MANAGEMENT', match: (s: Service) => ['portainer', 'ansible-deployment'].includes(s.name) },
-];
 
 export function StatusView() {
   const { services, metrics } = useDashboard();
@@ -36,23 +26,13 @@ export function StatusView() {
     });
   }, [services, metrics]);
 
-  const groups = useMemo(() => {
-    const assigned = new Set<string>();
-    return GROUPS.map((g) => {
-      const matched = enriched.filter((s) => {
-        if (assigned.has(s.name)) return false;
-        if (g.match(s)) { assigned.add(s.name); return true; }
-        return false;
-      });
-      return { ...g, services: matched };
-    }).filter((g) => g.services.length > 0);
-  }, [enriched]);
+  const groups = useMemo(() => groupServices(enriched), [enriched]);
 
   const totalRunning = enriched.filter((s) => (metrics[s.name]?.status ?? s.status) === 'running').length;
   const totalStopped = enriched.length - totalRunning;
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div>
       <div className="flex items-center gap-6 mb-6 text-sm">
         <span><span className="text-green-500 font-bold text-lg">{totalRunning}</span> <span className="text-gray-500">running</span></span>
         <span><span className="text-red-400 font-bold text-lg">{totalStopped}</span> <span className="text-gray-500">stopped</span></span>
@@ -62,24 +42,25 @@ export function StatusView() {
       {groups.map((group) => {
         const running = group.services.filter((s) => (metrics[s.name]?.status ?? s.status) === 'running').length;
         return (
-          <div key={group.key} className="mb-4">
-            <div className="flex items-center gap-2 px-3 py-2 bg-gray-800/60 rounded-t-lg border border-gray-700">
-              <span className="text-sm font-bold text-blue-400">{group.title}</span>
-              <span className="text-xs text-gray-500">
-                {running}/{group.services.length} running
-              </span>
+          <GlassPanel key={group.key} as="section" className="mb-3 overflow-hidden">
+            <div className="flex items-baseline justify-between px-4 pt-3 pb-2">
+              <div>
+                <div className="text-[13px] font-semibold tracking-wide">{group.title}</div>
+                <div className="text-[11px] text-white/50 mt-0.5">{group.subtitle}</div>
+              </div>
+              <span className="glass rounded-full px-2 py-0.5 text-[11px] text-white/70">{running}/{group.services.length}</span>
             </div>
-            <div className="border border-t-0 border-gray-700 rounded-b-lg overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
                 <thead>
-                  <tr className="bg-gray-900/60 text-xs text-gray-400">
+                  <tr className="text-[11px] text-white/40 bg-white/[0.02]">
                     <th className="text-left px-3 py-1.5 w-8"></th>
                     <th className="text-left px-2 py-1.5 w-12">Type</th>
                     <th className="text-left px-2 py-1.5">Service</th>
-                    <th className="text-left px-2 py-1.5">Location</th>
-                    <th className="text-left px-2 py-1.5 w-20">Status</th>
-                    <th className="text-right px-2 py-1.5 w-16">CPU</th>
-                    <th className="text-right px-3 py-1.5 w-16">MEM</th>
+                    <th className="text-left px-2 py-1.5 hidden md:table-cell">Location</th>
+                    <th className="text-left px-2 py-1.5 w-24">Status</th>
+                    <th className="text-right px-2 py-1.5 w-16 hidden sm:table-cell">CPU</th>
+                    <th className="text-right px-3 py-1.5 w-16 hidden sm:table-cell">MEM</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -93,29 +74,29 @@ export function StatusView() {
                     const isRunning = status === 'running';
 
                     return (
-                      <tr key={svc.name} className={`border-t border-gray-800 ${isRunning ? 'hover:bg-gray-800/40' : 'opacity-50'}`}>
+                      <tr key={svc.name} className={`border-t border-white/5 ${isRunning ? 'hover:bg-white/[0.04]' : 'opacity-60'}`}>
                         <td className="px-3 py-1.5">
                           <div className={`w-2.5 h-2.5 rounded-full ${sc.dot}`} />
                         </td>
                         <td className="px-2 py-1.5">
-                          <span className={`px-1 py-0.5 rounded text-[9px] font-bold border ${badge.cls}`}>{badge.label}</span>
+                          <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${badge.cls}`}>{badge.label}</span>
                         </td>
                         <td className="px-2 py-1.5">
                           <span className={`font-medium ${isRunning ? 'text-gray-100' : 'text-gray-500'}`}>{svc.name}</span>
                         </td>
-                        <td className="px-2 py-1.5 text-xs text-gray-500">{svc.pod ?? 'host'}</td>
+                        <td className="px-2 py-1.5 text-xs text-gray-500 hidden md:table-cell">{svc.pod ?? 'host'}</td>
                         <td className="px-2 py-1.5">
                           <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${sc.bg}`}>{sc.label}</span>
                         </td>
-                        <td className="px-2 py-1.5 text-right text-xs text-cyan-400">{isRunning && cpu > 0 ? `${cpu.toFixed(1)}%` : ''}</td>
-                        <td className="px-3 py-1.5 text-right text-xs text-purple-400">{isRunning && mem > 0 ? `${mem.toFixed(1)}%` : ''}</td>
+                        <td className="px-2 py-1.5 text-right text-xs text-[color:var(--vps-cyan)] hidden sm:table-cell">{isRunning && cpu > 0 ? `${cpu.toFixed(1)}%` : ''}</td>
+                        <td className="px-3 py-1.5 text-right text-xs text-[color:var(--host-purple)] hidden sm:table-cell">{isRunning && mem > 0 ? `${mem.toFixed(1)}%` : ''}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
-          </div>
+          </GlassPanel>
         );
       })}
     </div>

@@ -1,0 +1,52 @@
+/* frontend/src/styles/tokens.css */
+:root {
+  /* Base surfaces */
+  --bg-base: #07070a;
+  --bg-base-grad-end: #0c0c12;
+
+  /* Glass */
+  --glass-bg: rgba(255, 255, 255, 0.06);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-highlight: rgba(255, 255, 255, 0.04);
+  --glass-blur: 24px;
+
+  /* Status (Apple system colors) */
+  --status-green:  #30d158;
+  --status-red:    #ff453a;
+  --status-yellow: #ffd60a;
+  --status-orange: #ff9f0a;
+
+  /* Platform accents */
+  --vps-cyan:    #64d2ff;
+  --azure-blue:  #0a84ff;
+  --host-purple: #bf5af2;
+
+  /* Shadows */
+  --shadow-glass: 0 4px 24px rgba(0, 0, 0, 0.35);
+  --shadow-glass-lg: 0 8px 40px rgba(0, 0, 0, 0.50);
+
+  /* Type scale (AICORTEX Chat Dynamic Type) */
+  --fs-11: 11px;
+  --fs-13: 13px;
+  --fs-15: 15px;
+  --fs-17: 17px;
+  --fs-22: 22px;
+  --fs-28: 28px;
+
+  /* Radii */
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+}
+
+@media (max-width: 400px) {
+  :root { --glass-blur: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 120ms !important;
+  }
+}

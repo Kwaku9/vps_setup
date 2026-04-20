@@ -1,52 +1,55 @@
+import { AnimatePresence, motion } from 'framer-motion';
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import type { Service } from '../../types';
+import { uiSpring } from '../../lib/motion';
+import { GlassPanel } from '../ui/GlassPanel';
 import { ServiceCard } from './ServiceCard';
+import type { Service } from '../../types';
+import { useDashboard } from '../../contexts/DashboardContext';
 
 interface Props {
   title: string;
+  subtitle?: string;
   services: Service[];
-  defaultOpen?: boolean;
 }
 
-export function StackGroup({ title, services, defaultOpen = true }: Props) {
-  const [open, setOpen] = useState(defaultOpen);
-  const runningCount = services.filter((s) => s.status === 'running').length;
+export function StackGroup({ title, subtitle, services }: Props) {
+  const [open, setOpen] = useState(true);
+  const { metrics } = useDashboard();
+  const running = services.filter((s) => (metrics[s.name]?.status ?? s.status) === 'running').length;
 
   return (
-    <div className="border border-gray-800 rounded-lg overflow-hidden">
+    <GlassPanel as="section" className="overflow-hidden">
       <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 bg-gray-800/60 hover:bg-gray-800/80
-          text-left transition-colors"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left"
       >
-        <span
-          className={`text-xs text-gray-400 transition-transform duration-150 ${open ? 'rotate-90' : ''}`}
-        >
-          &#9654;
-        </span>
-        <span className="text-sm font-bold text-blue-400">{title}</span>
-        <span className="text-xs text-gray-500 ml-1">
-          ({services.length} services{runningCount > 0 ? `, ${runningCount} running` : ''})
-        </span>
+        <div>
+          <div className="text-[13px] font-semibold tracking-wide">{title}</div>
+          {subtitle && <div className="text-[11px] text-white/50 mt-0.5">{subtitle}</div>}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="glass rounded-full px-2 py-0.5 text-[11px] text-white/70">
+            {running}/{services.length}
+          </span>
+          <motion.span animate={{ rotate: open ? 0 : -90 }} transition={uiSpring} className="text-white/50">▾</motion.span>
+        </div>
       </button>
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {open && (
           <motion.div
+            key="body"
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
+            transition={uiSpring}
+            className="px-2 pb-2"
           >
-            <div className="flex flex-col gap-1 p-2">
-              {services.map((svc) => (
-                <ServiceCard key={svc.name} service={svc} />
-              ))}
+            <div className="flex flex-col gap-1.5">
+              {services.map((s) => <ServiceCard key={s.name} service={s} />)}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </GlassPanel>
   );
 }

@@ -19,6 +19,7 @@ class ServiceSchema(BaseModel):
     cpu_percent: float | None = None
     memory_percent: float | None = None
     stack_group: str | None = None
+    managed: bool = True
 
 
 class StackTierSchema(BaseModel):

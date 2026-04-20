@@ -7,30 +7,32 @@ export function TierRack() {
 
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">Stack Tiers</h3>
+      <div className="text-[11px] font-semibold text-white/50 tracking-wide uppercase mb-2 px-1">Stack Tiers</div>
       {stacks.map((stack) => (
-        <div key={stack.name} className="border border-gray-700 rounded-lg p-3 bg-gray-800/30">
-          <div className="text-sm font-bold text-cyan-400 mb-1">{stack.name.toUpperCase()}</div>
-          <div className="text-[10px] text-gray-500 mb-2">{stack.description}</div>
-          <div className="flex flex-col gap-1">
-            {stack.tier_names.map((tier) => (
-              <button
-                key={tier}
-                onClick={() => setStackTier(stack.name, tier)}
-                className={`text-left px-2 py-1 rounded text-xs transition-colors
-                  ${tier === stack.current_tier
-                    ? 'bg-cyan-900/40 text-cyan-300 border border-cyan-600/40'
-                    : 'text-gray-400 hover:bg-gray-700/50 hover:text-gray-300 border border-transparent'
+        <div key={stack.name} className="flex flex-col gap-1.5">
+          <div className="px-1">
+            <div className="text-[12px] font-semibold text-white/80 tracking-wide">{stack.name.toUpperCase()}</div>
+            <div className="text-[10px] text-white/50 mt-0.5">{stack.description}</div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {stack.tier_names.map((tier) => {
+              const active = tier === stack.current_tier;
+              const svcCount = stack.tiers.find((t) => t.name === tier)?.services.length ?? 0;
+              return (
+                <button
+                  key={tier}
+                  onClick={() => setStackTier(stack.name, tier)}
+                  className={`glass rounded-full px-3 py-2 text-[13px] text-left transition-colors ${
+                    active ? 'bg-white/15 border-white/20' : 'hover:bg-white/10'
                   }`}
-              >
-                {tier === 'off' ? 'Off' : tier}
-                {tier !== 'off' && (
-                  <span className="ml-1 text-gray-600">
-                    ({stack.tiers.find((t) => t.name === tier)?.services.length ?? 0} svc)
-                  </span>
-                )}
-              </button>
-            ))}
+                >
+                  <span className="font-semibold">{tier === 'off' ? 'Off' : tier}</span>
+                  {tier !== 'off' && (
+                    <span className="ml-1 text-white/40 text-[11px]">({svcCount} svc)</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       ))}
