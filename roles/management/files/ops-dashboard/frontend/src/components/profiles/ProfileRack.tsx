@@ -19,29 +19,30 @@ export function ProfileRack() {
   };
 
   return (
-    <div className="flex flex-col gap-2">
-      <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">Profiles</h3>
-      {profiles.map((p) => (
-        <button
-          key={p.name}
-          onClick={() => handleClick(p.name)}
-          className={`text-left px-3 py-2 rounded-lg border transition-all text-sm
-            ${p.name === activeProfile
-              ? 'border-cyan-500/50 bg-cyan-900/20 text-cyan-300'
-              : 'border-gray-700 bg-gray-800/30 text-gray-300 hover:bg-gray-800/60 hover:border-gray-600'
+    <div className="flex flex-col gap-1.5">
+      <div className="text-[11px] font-semibold text-white/50 tracking-wide uppercase mb-2 px-1">Profiles</div>
+      {profiles.map((p) => {
+        const active = p.name === activeProfile;
+        return (
+          <button
+            key={p.name}
+            onClick={() => handleClick(p.name)}
+            className={`glass rounded-full px-3 py-2 text-[13px] text-left transition-colors ${
+              active ? 'bg-white/15 border-white/20' : 'hover:bg-white/10'
             }`}
-        >
-          <div className="font-semibold">{p.name}</div>
-          <div className="text-[10px] text-gray-500 mt-0.5">{p.description}</div>
-          <div className="text-[10px] text-gray-400 mt-1">
-            <span className="text-green-500">{p.enabled_count}</span>
-            <span className="text-gray-600">/{p.enabled_count + p.disabled_count}</span>
-            {p.estimated_cost_per_hour != null && p.estimated_cost_per_hour > 0 && (
-              <span className="ml-2 text-yellow-500">${p.estimated_cost_per_hour.toFixed(2)}/hr</span>
-            )}
-          </div>
-        </button>
-      ))}
+          >
+            <div className="font-semibold">{p.name}</div>
+            <div className="text-[10px] text-white/50 mt-0.5">{p.description}</div>
+            <div className="text-[10px] text-white/60 mt-1">
+              <span className="text-[color:var(--status-green)]">{p.enabled_count}</span>
+              <span className="text-white/40">/{p.enabled_count + p.disabled_count}</span>
+              {p.estimated_cost_per_hour != null && p.estimated_cost_per_hour > 0 && (
+                <span className="ml-2 text-yellow-500">${p.estimated_cost_per_hour.toFixed(2)}/hr</span>
+              )}
+            </div>
+          </button>
+        );
+      })}
 
       {/* Diff confirmation modal */}
       {pendingDiff && (

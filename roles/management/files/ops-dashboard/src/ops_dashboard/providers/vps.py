@@ -48,19 +48,69 @@ class VpsProvider(Provider):
             return ServiceStatus.RUNNING
         return ServiceStatus.STOPPED
 
-    async def start_service(self, service: Service) -> bool:
-        # Start individual container, not the whole pod
-        cmd = f"podman start {service.name}"
-        logger.info(f"Starting service: {service.name}")
-        _, rc = await self._ssh_command(cmd)
-        return rc == 0
+    async def _poll_until(
+        self,
+        service: Service,
+        target: ServiceStatus,
+        attempts: int = 10,
+        interval_s: float = 0.5,
+    ) -> bool:
+        for _ in range(attempts):
+            await asyncio.sleep(interval_s)
+            if await self.get_status(service) == target:
+                return True
+        return False
 
-    async def stop_service(self, service: Service) -> bool:
-        # Stop individual container, not the whole pod
-        cmd = f"podman stop {service.name}"
+    async def _pod_has_restart_policy(self, pod: str) -> bool:
+        out, rc = await self._ssh_command(
+            f"podman pod inspect {pod} --format '{{{{.InfraConfig.RestartPolicy}}}}'",
+            timeout=5,
+        )
+        if rc != 0:
+            return False
+        # podman values: "no" | "on-failure" | "always"
+        return out.strip() in {"always", "on-failure"}
+
+    async def start_service(self, service: Service) -> tuple[bool, str]:
+        logger.info(f"Starting service: {service.name}")
+        _, rc = await self._ssh_command(f"podman start {service.name}", timeout=10)
+        if rc != 0:
+            return False, "podman start failed"
+        if await self._poll_until(service, ServiceStatus.RUNNING):
+            return True, "started"
+        return False, "podman start returned 0 but container did not enter running state"
+
+    async def stop_service(self, service: Service) -> tuple[bool, str]:
         logger.info(f"Stopping service: {service.name}")
-        _, rc = await self._ssh_command(cmd)
-        return rc == 0
+        pod_restart = await self._pod_has_restart_policy(service.pod) if service.pod else False
+
+        _, rc = await self._ssh_command(f"podman stop -t 2 {service.name}", timeout=10)
+        if rc != 0:
+            return False, "podman stop failed"
+
+        if await self._poll_until(service, ServiceStatus.STOPPED):
+            return True, "stopped"
+
+        if pod_restart:
+            return False, (
+                f"Container stopped but pod '{service.pod}' restarted it. "
+                f"Use `podman pod stop {service.pod}` or remove restart policy."
+            )
+        return False, "stop command returned 0 but container is still running"
+
+    async def list_containers(self) -> list[dict]:
+        """Enumerate every podman container on the VPS host (running or stopped)."""
+        out, rc = await self._ssh_command(
+            "podman ps -a --format json", timeout=10,
+        )
+        if rc != 0 or not out:
+            return []
+        try:
+            data = json.loads(out)
+            return data if isinstance(data, list) else []
+        except json.JSONDecodeError:
+            logger.warning("podman ps returned non-JSON output")
+            return []
 
     async def get_metrics(self, service: Service) -> dict:
         name = service.name

@@ -14,13 +14,13 @@ class Provider(ABC):
         ...
 
     @abstractmethod
-    async def start_service(self, service: Service) -> bool:
-        """Start a service. Returns True on success."""
+    async def start_service(self, service: Service) -> tuple[bool, str]:
+        """Start a service. Returns (ok, message)."""
         ...
 
     @abstractmethod
-    async def stop_service(self, service: Service) -> bool:
-        """Stop a service. Returns True on success."""
+    async def stop_service(self, service: Service) -> tuple[bool, str]:
+        """Stop a service. Returns (ok, message)."""
         ...
 
     @abstractmethod

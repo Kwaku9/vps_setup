@@ -5,6 +5,7 @@ export interface Service {
   pod: string | null;
   description: string;
   status: string;
+  managed: boolean;
   cpu_shares: number | null;
   memory_mb: number | null;
   cost_per_hour: number | null;

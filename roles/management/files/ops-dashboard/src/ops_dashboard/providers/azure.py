@@ -48,9 +48,9 @@ class AzureProvider(Provider):
             pass
         return ServiceStatus.UNKNOWN
 
-    async def start_service(self, service: Service) -> bool:
+    async def start_service(self, service: Service) -> tuple[bool, str]:
         if not service.azure_endpoint:
-            return False
+            return False, "service has no azure_endpoint configured"
         # Scale min_replicas from 0 to 1
         cmd = (
             f"az ml online-deployment update "
@@ -62,11 +62,13 @@ class AzureProvider(Provider):
             f"--output none 2>/dev/null"
         )
         _, rc = await self._az_command(cmd)
-        return rc == 0
+        if rc == 0:
+            return True, "started"
+        return False, "az ml online-deployment update (instance_count=1) failed"
 
-    async def stop_service(self, service: Service) -> bool:
+    async def stop_service(self, service: Service) -> tuple[bool, str]:
         if not service.azure_endpoint:
-            return False
+            return False, "service has no azure_endpoint configured"
         # Scale down to 0
         cmd = (
             f"az ml online-deployment update "
@@ -78,7 +80,9 @@ class AzureProvider(Provider):
             f"--output none 2>/dev/null"
         )
         _, rc = await self._az_command(cmd)
-        return rc == 0
+        if rc == 0:
+            return True, "stopped"
+        return False, "az ml online-deployment update (instance_count=0) failed"
 
     async def get_metrics(self, service: Service) -> dict:
         if not service.azure_endpoint:

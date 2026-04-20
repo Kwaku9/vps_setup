@@ -64,17 +64,17 @@ async def switch_profile(req: SwitchProfileRequest, state: DashboardState = Depe
     for svc_name in diff.stopping:
         svc = state.services.get(svc_name)
         if svc and svc.platform.value == "vps":
-            success = await state.vps_provider.stop_service(svc)
-            if not success:
-                errors.append(f"Failed to stop {svc_name}")
+            ok, msg = await state.vps_provider.stop_service(svc)
+            if not ok:
+                errors.append(f"Failed to stop {svc_name}: {msg}")
 
     # Start services
     for svc_name in diff.starting:
         svc = state.services.get(svc_name)
         if svc and svc.platform.value == "vps":
-            success = await state.vps_provider.start_service(svc)
-            if not success:
-                errors.append(f"Failed to start {svc_name}")
+            ok, msg = await state.vps_provider.start_service(svc)
+            if not ok:
+                errors.append(f"Failed to start {svc_name}: {msg}")
 
     state.active_profile_name = req.target_profile
 

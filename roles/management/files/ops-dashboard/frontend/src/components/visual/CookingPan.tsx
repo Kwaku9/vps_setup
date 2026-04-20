@@ -201,11 +201,17 @@ export function CookingPan() {
       </svg>
 
       {/* Legend */}
-      <div className="flex gap-4 mt-2 text-[10px] text-gray-500 flex-wrap justify-center">
-        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-cyan-500 inline-block" /> VPS</span>
-        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rotate-45 bg-blue-500 inline-block" /> Azure</span>
-        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-gray-500 inline-block" /> Host</span>
-        <span className="text-gray-600 ml-2">Shape vibration = live CPU/MEM load</span>
+      <div className="flex gap-4 mt-2 text-[10px] text-white/60 flex-wrap justify-center">
+        <span className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 inline-block" /> VPS
+        </span>
+        <span className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5">
+          <span className="w-2.5 h-2.5 rotate-45 bg-blue-500 inline-block" /> Azure
+        </span>
+        <span className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5">
+          <span className="w-2.5 h-2.5 rounded-sm bg-white/50 inline-block" /> Host
+        </span>
+        <span className="text-white/40 ml-2">Shape vibration = live CPU/MEM load</span>
       </div>
     </div>
   );

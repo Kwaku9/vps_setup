@@ -41,6 +41,7 @@ class Service:
     ansible_tag: str | None = None  # tag to start/stop via Ansible
     azure_endpoint: str | None = None  # Azure endpoint name
     dependencies: list[str] = field(default_factory=list)  # service names this depends on
+    managed: bool = True  # False for containers discovered live on host but not in profiles.yaml
 
 
 @dataclass

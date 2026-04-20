@@ -72,6 +72,12 @@ export function VisualView() {
   const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: 'success' | 'error' | 'info' }>>([]);
   let toastId = 0;
 
+  // Touch-mode detection — used to disable any drag/pan handlers on coarse pointers.
+  // (No onPan handlers are currently wired up in VisualView, but we expose this
+  // for future CookingPan panning and to signal intent.)
+  const isCoarse = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+  void isCoarse;
+
   const addToast = (message: string, type: 'success' | 'error' | 'info') => {
     const id = Date.now() + (toastId++);
     setToasts((prev) => [...prev.slice(-3), { id, message, type }]);
@@ -111,126 +117,139 @@ export function VisualView() {
   };
 
   return (
-    <div className="flex flex-1 overflow-hidden h-full relative">
-      {/* Toast notifications */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 items-center">
-        <AnimatePresence>
-          {toasts.map((t) => (
-            <Toast key={t.id} message={t.message} type={t.type} onDismiss={() => removeToast(t.id)} />
-          ))}
-        </AnimatePresence>
-      </div>
+    <main className="flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-7xl w-full px-4 md:px-6 py-4">
+        <div className="flex gap-3 md:gap-4 min-h-[60dvh] relative">
+          {/* Toast notifications */}
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 items-center">
+            <AnimatePresence>
+              {toasts.map((t) => (
+                <Toast key={t.id} message={t.message} type={t.type} onDismiss={() => removeToast(t.id)} />
+              ))}
+            </AnimatePresence>
+          </div>
 
-      {/* Full-screen loading overlay for profile switches */}
-      <AnimatePresence>
-        {profileLoading && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-40 bg-gray-950/60 flex items-center justify-center"
-          >
-            <div className="flex flex-col items-center gap-3">
-              <svg className="animate-spin h-8 w-8 text-cyan-400" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              <span className="text-cyan-400 text-sm font-semibold">Deploying {profileLoading}...</span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Left: Profile Shapes */}
-      <aside className="w-48 flex-shrink-0 p-3 border-r border-gray-800 overflow-y-auto flex flex-col gap-2">
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Profiles</h3>
-        {profiles.map((p) => {
-          const conf = profileShapes[p.name] ?? { shape: 'circle', color: '#6b7280' };
-          const isActive = activeProfile === p.name;
-          const isLoading = profileLoading === p.name;
-          return (
-            <motion.button
-              key={p.name}
-              onClick={() => handleProfileClick(p.name)}
-              disabled={!!profileLoading}
-              whileHover={profileLoading ? {} : { scale: 1.05 }}
-              whileTap={profileLoading ? {} : { scale: 0.95 }}
-              className={`flex items-center gap-2 p-2 rounded-lg transition-colors w-full text-left
-                ${isActive
-                  ? 'bg-gray-800/80 ring-1 ring-offset-1 ring-offset-gray-950'
-                  : 'bg-gray-900/40 hover:bg-gray-800/50'
-                }
-                ${profileLoading && !isLoading ? 'opacity-30 cursor-not-allowed' : ''}
-                ${isLoading ? 'animate-pulse' : ''}`}
-              style={isActive ? { borderColor: conf.color, borderWidth: 1 } : {}}
-            >
-              <ProfileShape color={conf.color} isActive={isActive || isLoading} />
-              <div className="min-w-0 flex-1">
-                <div className={`text-xs font-bold truncate ${isActive ? 'text-white' : 'text-gray-400'}`}>
-                  {p.name}
+          {/* Full-screen loading overlay for profile switches */}
+          <AnimatePresence>
+            {profileLoading && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-40 rounded-[var(--r-lg)] bg-black/40 backdrop-blur-sm flex items-center justify-center"
+              >
+                <div className="flex flex-col items-center gap-3">
+                  <svg className="animate-spin h-8 w-8 text-cyan-400" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  <span className="text-cyan-400 text-sm font-semibold">Deploying {profileLoading}...</span>
                 </div>
-                <div className="text-[10px] text-gray-600 truncate">{p.enabled_count} services</div>
-                {p.estimated_cost_per_hour != null && p.estimated_cost_per_hour > 0 && (
-                  <div className="text-[10px] text-yellow-500">${p.estimated_cost_per_hour.toFixed(2)}/hr</div>
-                )}
-              </div>
-            </motion.button>
-          );
-        })}
-      </aside>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-      {/* Center: The Cooking Pan */}
-      <main className="flex-1 flex flex-col items-center justify-center p-4 overflow-hidden">
-        <CookingPan />
-        {/* Running count */}
-        <div className="mt-2 text-center">
-          <span className="text-lg font-bold text-gray-300">
-            {Object.values(metrics).filter((m) => m.status === 'running').length}
-          </span>
-          <span className="text-sm text-gray-500 ml-1">services cooking</span>
-        </div>
-      </main>
+          {/* Left: Profile Shapes */}
+          <aside className="hidden md:flex glass rounded-[var(--r-lg)] w-48 flex-shrink-0 p-3 overflow-y-auto flex-col gap-2">
+            <h3 className="text-xs font-bold text-white/50 uppercase tracking-wider mb-1">Profiles</h3>
+            {profiles.map((p) => {
+              const conf = profileShapes[p.name] ?? { shape: 'circle', color: '#6b7280' };
+              const isActive = activeProfile === p.name;
+              const isLoading = profileLoading === p.name;
+              return (
+                <motion.button
+                  key={p.name}
+                  onClick={() => handleProfileClick(p.name)}
+                  disabled={!!profileLoading}
+                  whileHover={profileLoading ? {} : { scale: 1.03 }}
+                  whileTap={profileLoading ? {} : { scale: 0.97 }}
+                  className={`flex items-center gap-2 p-2 rounded-[var(--r-md)] transition-colors w-full text-left border
+                    ${isActive
+                      ? 'bg-white/10 border-white/20'
+                      : 'bg-white/[0.03] border-white/10 hover:bg-white/[0.07]'
+                    }
+                    ${profileLoading && !isLoading ? 'opacity-30 cursor-not-allowed' : ''}
+                    ${isLoading ? 'animate-pulse' : ''}`}
+                >
+                  <ProfileShape color={conf.color} isActive={isActive || isLoading} />
+                  <div className="min-w-0 flex-1">
+                    <div className={`text-xs font-bold truncate ${isActive ? 'text-white' : 'text-white/60'}`}>
+                      {p.name}
+                    </div>
+                    <div className="text-[10px] text-white/40 truncate">{p.enabled_count} services</div>
+                    {p.estimated_cost_per_hour != null && p.estimated_cost_per_hour > 0 && (
+                      <div className="text-[10px] text-yellow-400/90">${p.estimated_cost_per_hour.toFixed(2)}/hr</div>
+                    )}
+                  </div>
+                </motion.button>
+              );
+            })}
+          </aside>
 
-      {/* Right: Stack Tiers */}
-      <aside className="w-52 flex-shrink-0 p-3 border-l border-gray-800 overflow-y-auto flex flex-col gap-3">
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Stack Tiers</h3>
-        {stacks.map((stack) => {
-          const color = stackColors[stack.name] ?? '#6b7280';
-          return (
-            <div key={stack.name} className="flex flex-col gap-1">
-              <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color }}>
-                {stack.name}
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {stack.tier_names.map((tier) => {
-                  const isActive = stack.current_tier === tier;
-                  const tierKey = `${stack.name}:${tier}`;
-                  const isLoading = tierLoading === tierKey;
-                  return (
-                    <motion.button
-                      key={tier}
-                      onClick={() => handleTierClick(stack.name, tier)}
-                      disabled={!!tierLoading || !!profileLoading}
-                      whileHover={tierLoading ? {} : { scale: 1.08 }}
-                      whileTap={tierLoading ? {} : { scale: 0.92 }}
-                      className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors
-                        ${isLoading ? 'animate-pulse' : ''}
-                        ${isActive
-                          ? 'text-white'
-                          : 'text-gray-500 hover:text-gray-300 bg-gray-900/40 hover:bg-gray-800/50'
-                        }
-                        ${(tierLoading || profileLoading) && !isLoading ? 'opacity-30 cursor-not-allowed' : ''}`}
-                      style={isActive || isLoading ? { backgroundColor: color + '33', color, border: `1px solid ${color}66` } : {}}
-                    >
-                      {isLoading ? '...' : tier === 'off' ? 'Off' : tier}
-                    </motion.button>
-                  );
-                })}
+          {/* Center: The Cooking Pan — glass canvas */}
+          <section className="glass rounded-[var(--r-lg)] flex-1 p-4 md:p-6 min-h-[50dvh] relative overflow-hidden flex flex-col items-center justify-center">
+            {/* decorative radial backdrop */}
+            <div
+              className="pointer-events-none absolute inset-0 opacity-60"
+              style={{
+                background:
+                  'radial-gradient(800px 600px at 30% 20%, rgba(100,210,255,0.08), transparent 60%), radial-gradient(600px 400px at 70% 80%, rgba(10,132,255,0.06), transparent 55%)',
+              }}
+            />
+            <div className="relative w-full flex flex-col items-center justify-center">
+              <CookingPan />
+              {/* Running count */}
+              <div className="mt-2 text-center">
+                <span className="text-lg font-bold text-white/80">
+                  {Object.values(metrics).filter((m) => m.status === 'running').length}
+                </span>
+                <span className="text-sm text-white/50 ml-1">services cooking</span>
               </div>
             </div>
-          );
-        })}
-      </aside>
-    </div>
+          </section>
+
+          {/* Right: Stack Tiers (hidden on mobile + tablet) */}
+          <aside className="hidden lg:flex glass rounded-[var(--r-lg)] w-52 flex-shrink-0 p-3 overflow-y-auto flex-col gap-3">
+            <h3 className="text-xs font-bold text-white/50 uppercase tracking-wider mb-1">Stack Tiers</h3>
+            {stacks.map((stack) => {
+              const color = stackColors[stack.name] ?? '#6b7280';
+              return (
+                <div key={stack.name} className="flex flex-col gap-1">
+                  <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color }}>
+                    {stack.name}
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {stack.tier_names.map((tier) => {
+                      const isActive = stack.current_tier === tier;
+                      const tierKey = `${stack.name}:${tier}`;
+                      const isLoading = tierLoading === tierKey;
+                      return (
+                        <motion.button
+                          key={tier}
+                          onClick={() => handleTierClick(stack.name, tier)}
+                          disabled={!!tierLoading || !!profileLoading}
+                          whileHover={tierLoading ? {} : { scale: 1.06 }}
+                          whileTap={tierLoading ? {} : { scale: 0.94 }}
+                          className={`glass rounded-full px-2 py-1 text-[11px] font-semibold transition-colors
+                            ${isLoading ? 'animate-pulse' : ''}
+                            ${isActive
+                              ? 'bg-white/15 border-white/20 text-white'
+                              : 'text-white/70 hover:bg-white/10'
+                            }
+                            ${(tierLoading || profileLoading) && !isLoading ? 'opacity-30 cursor-not-allowed' : ''}`}
+                          style={isActive || isLoading ? { color } : {}}
+                        >
+                          {isLoading ? '...' : tier === 'off' ? 'Off' : tier}
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </aside>
+        </div>
+      </div>
+    </main>
   );
 }

@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
 from dataclasses import dataclass, field
 
 from ..config import load_config, load_profiles, load_services, load_stacks, compute_diff, resolve_profile_stacks
-from ..models import Profile, Service, ServiceStack
+from ..models import EndpointType, Profile, Service, ServicePlatform, ServiceStack
 from ..providers.vps import VpsProvider
 from ..providers.azure import AzureProvider
 from .schemas import MetricsSnapshot
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -72,3 +76,57 @@ def init_state() -> DashboardState:
     global _state
     _state = DashboardState.from_config()
     return _state
+
+
+def _container_name(entry: dict) -> str | None:
+    names = entry.get("Names")
+    if isinstance(names, list) and names:
+        return names[0]
+    if isinstance(names, str):
+        return names
+    return None
+
+
+def merge_live_containers(state: DashboardState, live: list[dict]) -> None:
+    """Merge live `podman ps -a` output into state.services.
+
+    Rules:
+    - Managed services (from profiles.yaml) are never replaced — they stay.
+    - Containers present on host but absent from profiles.yaml become synthetic
+      unmanaged Service entries.
+    - Unmanaged entries from a previous pass that have disappeared are removed.
+    """
+    live_names = {name for entry in live if (name := _container_name(entry))}
+    # Drop unmanaged entries that no longer exist on host.
+    for name in list(state.services):
+        svc = state.services[name]
+        if not svc.managed and name not in live_names:
+            del state.services[name]
+    # Add newly discovered unmanaged containers.
+    for entry in live:
+        name = _container_name(entry)
+        if not name or name in state.services:
+            continue
+        pod = entry.get("Pod") or None
+        state.services[name] = Service(
+            name=name,
+            platform=ServicePlatform.VPS,
+            endpoint_type=EndpointType.POD,
+            pod=pod,
+            description="unclassified",
+            managed=False,
+        )
+
+
+async def refresh_live_containers(state: DashboardState, interval_s: float = 30.0) -> None:
+    """Background task that keeps `state.services` in sync with the VPS host."""
+    if os.environ.get("FEATURE_LIVE_DISCOVERY", "true").lower() != "true":
+        logger.info("Live discovery disabled by FEATURE_LIVE_DISCOVERY env")
+        return
+    while True:
+        try:
+            live = await state.vps_provider.list_containers()
+            merge_live_containers(state, live)
+        except Exception:
+            logger.exception("Live container refresh failed")
+        await asyncio.sleep(interval_s)

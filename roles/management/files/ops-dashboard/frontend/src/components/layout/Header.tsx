@@ -1,21 +1,24 @@
 import { useDashboard } from '../../contexts/DashboardContext';
 
 export function Header() {
-  const { activeProfile, wsConnected } = useDashboard();
-
+  const { wsConnected } = useDashboard();
   return (
-    <header className="flex items-center justify-between px-6 py-3 bg-gray-900 border-b border-gray-800">
-      <div className="flex items-center gap-3">
-        <h1 className="text-lg font-bold text-blue-400">AICORTEX Ops</h1>
-        <span className="text-xs text-gray-500">Infrastructure Control Panel</span>
-      </div>
-      <div className="flex items-center gap-4">
-        <span className="text-sm text-gray-400">
-          Profile: <span className="text-cyan-400 font-semibold">{activeProfile}</span>
-        </span>
-        <div className="flex items-center gap-1.5">
-          <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-          <span className="text-[10px] text-gray-500">{wsConnected ? 'LIVE' : 'OFFLINE'}</span>
+    <header className="safe-top sticky top-0 z-30 backdrop-blur-xl border-b border-white/5 bg-[var(--bg-base)]/80">
+      <div className="mx-auto max-w-7xl px-4 md:px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-400/80 to-blue-600/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]" />
+          <div className="leading-tight">
+            <div className="text-[15px] font-semibold tracking-tight">Ops Dashboard</div>
+            <div className="text-[11px] text-white/50">ops.aicortex.cloud</div>
+          </div>
+        </div>
+        <div
+          className={`glass px-3 py-1.5 rounded-full text-[11px] font-medium flex items-center gap-2 ${
+            wsConnected ? 'text-emerald-300' : 'text-rose-300'
+          }`}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+          {wsConnected ? 'Live' : 'Disconnected'}
         </div>
       </div>
     </header>

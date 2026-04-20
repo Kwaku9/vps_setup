@@ -1,34 +1,34 @@
-import { useMemo } from 'react';
 import { useDashboard } from '../../contexts/DashboardContext';
 
 export function StatusBar() {
-  const { services, metrics } = useDashboard();
-
-  const counts = useMemo(() => {
-    let running = 0;
-    let stopped = 0;
-    for (const svc of services) {
-      const status = metrics[svc.name]?.status ?? svc.status;
-      if (status === 'running') running++;
-      else stopped++;
-    }
-    return { running, stopped, total: services.length };
-  }, [services, metrics]);
-
+  const { services, metrics, activeProfile } = useDashboard();
+  const running = services.filter((s) => (metrics[s.name]?.status ?? s.status) === 'running').length;
+  const stopped = services.length - running;
   return (
-    <div className="flex items-center gap-6 px-6 py-1.5 bg-gray-800/50 border-b border-gray-800 text-xs">
-      <span>
-        <span className="text-green-500 font-bold">{counts.running}</span>
-        <span className="text-gray-500"> running</span>
-      </span>
-      <span>
-        <span className="text-red-400 font-bold">{counts.stopped}</span>
-        <span className="text-gray-500"> stopped</span>
-      </span>
-      <span>
-        <span className="text-gray-400 font-bold">{counts.total}</span>
-        <span className="text-gray-500"> total</span>
-      </span>
+    <div className="mx-auto max-w-7xl w-full px-4 md:px-6 pt-3 pb-1 flex flex-wrap items-center gap-2 text-[12px]">
+      <StatChip color="emerald" label="running" value={running} />
+      <StatChip color="rose"    label="stopped" value={stopped} />
+      <StatChip color="slate"   label="total"   value={services.length} />
+      {activeProfile && activeProfile !== 'none' && (
+        <span className="glass rounded-full px-3 py-1 inline-flex items-center gap-1.5 text-white/80">
+          <span className="text-white/50">profile</span>
+          <span className="font-semibold text-[color:var(--vps-cyan)]">{activeProfile}</span>
+        </span>
+      )}
     </div>
+  );
+}
+
+function StatChip({ color, label, value }: { color: 'emerald' | 'rose' | 'slate'; label: string; value: number }) {
+  const tint = {
+    emerald: 'text-emerald-300',
+    rose:    'text-rose-300',
+    slate:   'text-white/70',
+  }[color];
+  return (
+    <span className="glass rounded-full px-3 py-1 inline-flex items-center gap-1.5">
+      <span className={`font-semibold ${tint}`}>{value}</span>
+      <span className="text-white/50">{label}</span>
+    </span>
   );
 }

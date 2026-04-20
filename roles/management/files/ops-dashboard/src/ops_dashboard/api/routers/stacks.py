@@ -67,17 +67,17 @@ async def set_tier(stack_name: str, req: SetTierRequest, state: DashboardState =
         svc = state.services.get(svc_name)
         if svc and svc.platform.value == "vps":
             logger.info(f"Tier change: stopping {svc_name}")
-            success = await state.vps_provider.stop_service(svc)
-            if not success:
-                errors.append(f"Failed to stop {svc_name}")
+            ok, msg = await state.vps_provider.stop_service(svc)
+            if not ok:
+                errors.append(f"Failed to stop {svc_name}: {msg}")
 
     for svc_name in to_start:
         svc = state.services.get(svc_name)
         if svc and svc.platform.value == "vps":
             logger.info(f"Tier change: starting {svc_name}")
-            success = await state.vps_provider.start_service(svc)
-            if not success:
-                errors.append(f"Failed to start {svc_name}")
+            ok, msg = await state.vps_provider.start_service(svc)
+            if not ok:
+                errors.append(f"Failed to start {svc_name}: {msg}")
 
     message = f"{stack_name} set to {req.tier}"
     if to_start:

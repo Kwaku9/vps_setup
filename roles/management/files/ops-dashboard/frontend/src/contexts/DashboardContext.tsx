@@ -1,9 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api } from '../api/client';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { useToast } from './ToastContext';
 import type { ActionResult, MetricsSnapshot, Profile, Service, Stack, SwitchResult } from '../types';
-
-const ACTION_GRACE_MS = 15_000; // ignore WS overwrites for 15s after an action
 
 interface PendingAction {
   action: 'start' | 'stop';
@@ -34,41 +33,16 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const [stacks, setStacks] = useState<Stack[]>([]);
   const [activeProfile, setActiveProfile] = useState('none');
   const [metrics, setMetrics] = useState<Record<string, MetricsSnapshot>>({});
+  const [pendingActions, setPendingActions] = useState<Record<string, PendingAction>>({});
   const [loading, setLoading] = useState(true);
 
   const { connected: wsConnected, lastMessage } = useWebSocket();
-  const actionTimestamps = useRef<Record<string, number>>({});
-  const [pendingActions, setPendingActions] = useState<Record<string, PendingAction>>({});
+  const { push: pushToast } = useToast();
 
-  // Merge WebSocket metrics into state, but skip services with recent actions
-  // Clear pending once WS confirms the expected status
+  // WS frames apply unconditionally — server is the source of truth.
   useEffect(() => {
     if (lastMessage?.services) {
-      const now = Date.now();
-      setMetrics((prev) => {
-        const merged = { ...prev };
-        for (const [name, snap] of Object.entries(lastMessage.services)) {
-          const actionAt = actionTimestamps.current[name];
-          if (actionAt && now - actionAt < ACTION_GRACE_MS) {
-            // Check if WS now confirms the expected status — if so, clear the pending action
-            const pending = actionTimestamps.current[name] ? true : false;
-            const expectedStatus = pending ? (prev[name]?.status) : undefined;
-            if (expectedStatus && snap.status === expectedStatus) {
-              delete actionTimestamps.current[name];
-              setPendingActions((p) => { const next = { ...p }; delete next[name]; return next; });
-              merged[name] = snap;
-            }
-            continue;
-          }
-          // Grace expired — accept WS data and clear pending
-          if (actionTimestamps.current[name]) {
-            delete actionTimestamps.current[name];
-            setPendingActions((p) => { const next = { ...p }; delete next[name]; return next; });
-          }
-          merged[name] = snap;
-        }
-        return merged;
-      });
+      setMetrics((prev) => ({ ...prev, ...lastMessage.services }));
     }
   }, [lastMessage]);
 
@@ -106,33 +80,36 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     return result;
   }, [fetchAll]);
 
-  const makeSnapshot = (name: string, status: string, prev?: MetricsSnapshot): MetricsSnapshot => ({
-    service_name: name, cpu_percent: 0, memory_percent: 0, memory_usage_mb: 0, timestamp: Date.now() / 1000,
-    ...prev,
-    status,
-  });
-
-  const startService = useCallback(async (name: string) => {
-    const result = await api.post<ActionResult>(`/api/actions/start/${name}`);
-    if (result.success) {
+  const runAction = useCallback(
+    async (action: 'start' | 'stop', name: string): Promise<ActionResult> => {
       const now = Date.now();
-      actionTimestamps.current[name] = now;
-      setPendingActions((p) => ({ ...p, [name]: { action: 'start', timestamp: now } }));
-      setMetrics((prev) => ({ ...prev, [name]: makeSnapshot(name, 'running', prev[name]) }));
-    }
-    return result;
-  }, []);
+      setPendingActions((p) => ({ ...p, [name]: { action, timestamp: now } }));
+      try {
+        const result = await api.post<ActionResult>(`/api/actions/${action}/${name}`);
+        if (!result.success) {
+          pushToast({
+            title: `Failed to ${action} ${name}`,
+            body: result.message,
+            kind: 'error',
+          });
+        }
+        return result;
+      } catch (err) {
+        pushToast({
+          title: `Error calling ${action} on ${name}`,
+          body: err instanceof Error ? err.message : String(err),
+          kind: 'error',
+        });
+        throw err;
+      } finally {
+        setPendingActions((p) => { const next = { ...p }; delete next[name]; return next; });
+      }
+    },
+    [pushToast],
+  );
 
-  const stopService = useCallback(async (name: string) => {
-    const result = await api.post<ActionResult>(`/api/actions/stop/${name}`);
-    if (result.success) {
-      const now = Date.now();
-      actionTimestamps.current[name] = now;
-      setPendingActions((p) => ({ ...p, [name]: { action: 'stop', timestamp: now } }));
-      setMetrics((prev) => ({ ...prev, [name]: makeSnapshot(name, 'stopped', prev[name]) }));
-    }
-    return result;
-  }, []);
+  const startService = useCallback((name: string) => runAction('start', name), [runAction]);
+  const stopService  = useCallback((name: string) => runAction('stop',  name), [runAction]);
 
   const setStackTier = useCallback(async (stack: string, tier: string) => {
     await api.post(`/api/stacks/${stack}/tier`, { tier });
@@ -142,18 +119,9 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   return (
     <DashboardCtx.Provider
       value={{
-        services,
-        profiles,
-        stacks,
-        activeProfile,
-        metrics,
-        pendingActions,
-        wsConnected,
-        loading,
-        switchProfile,
-        startService,
-        stopService,
-        setStackTier,
+        services, profiles, stacks, activeProfile, metrics, pendingActions,
+        wsConnected, loading,
+        switchProfile, startService, stopService, setStackTier,
         refresh: fetchAll,
       }}
     >
