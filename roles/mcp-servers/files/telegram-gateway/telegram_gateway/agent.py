@@ -282,7 +282,7 @@ async def _process_claude_cli(
         full_prompt = f"[Context: {system_prompt}]\n\n{prompt}"
         cli_args.extend(["-p", full_prompt])
 
-    cli_args.extend(["--model", "haiku", "--output-format", "json"])
+    cli_args.extend(["--model", "claude-sonnet-4-6", "--output-format", "json"])
 
     try:
         proc = await asyncio.create_subprocess_exec(
