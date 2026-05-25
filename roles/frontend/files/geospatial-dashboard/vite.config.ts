@@ -195,12 +195,12 @@ export default defineConfig(({ mode }) => {
           },
         },
         "/api/ais": {
-          target: "http://localhost:9100",
+          target: "http://backend-pod:9100",
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/ais/, ""),
         },
         "/api/threats/": {
-          target: "http://monitoring-pod:8428",
+          target: "http://metrics-pod:8428",
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/threats/, "/api/v1"),
         },
