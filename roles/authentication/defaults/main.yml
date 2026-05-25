@@ -5,8 +5,8 @@ authentication:
   enabled: true
   authentik:
     enabled: true
-    version: "2025.10"
-    image: "ghcr.io/goauthentik/server:2025.10"
+    version: "2026.5"
+    image: "ghcr.io/goauthentik/server:2026.5"
     port: 9000
     postgres_db: "authentik"
     postgres_user: "authentik"
