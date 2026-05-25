@@ -60,9 +60,6 @@
       tags: ['mcp-servers', 'mcp']
       when: claude.enabled | default(true)
 
-    - role: voice-hooks
-      tags: ['voice-hooks', 'voice', 'claude']
-      when: voice_hooks.enabled | default(true)
 
     - role: management
       tags: ['management', 'admin']
