@@ -22,8 +22,8 @@ export function TierRack() {
                 <button
                   key={tier}
                   onClick={() => setStackTier(stack.name, tier)}
-                  className={`glass rounded-full px-3 py-2 text-[13px] text-left transition-colors ${
-                    active ? 'bg-white/15 border-white/20' : 'hover:bg-white/10'
+                  className={`glass rounded-2xl px-3.5 py-2.5 text-[13px] text-left transition-colors min-h-[44px] ${
+                    active ? 'bg-white/15 border-white/20' : 'hover:bg-white/10 active:bg-white/15'
                   }`}
                 >
                   <span className="font-semibold">{tier === 'off' ? 'Off' : tier}</span>

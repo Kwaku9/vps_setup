@@ -112,6 +112,66 @@ class VpsProvider(Provider):
             logger.warning("podman ps returned non-JSON output")
             return []
 
+    async def inspect_container(self, name: str) -> dict | None:
+        """Return a small projection of `podman inspect <name>`. None on failure."""
+        out, rc = await self._ssh_command(
+            f"podman inspect {name} --format json", timeout=10,
+        )
+        if rc != 0 or not out:
+            return None
+        try:
+            data = json.loads(out)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(data, list) or not data:
+            return None
+        c = data[0]
+        cfg = c.get("Config", {}) or {}
+        state = c.get("State", {}) or {}
+        host = c.get("HostConfig", {}) or {}
+        netinfo = c.get("NetworkSettings", {}) or {}
+        # IP from the enterprise_network (default) or first network
+        ip = ""
+        networks = netinfo.get("Networks", {}) or {}
+        if "enterprise_network" in networks:
+            ip = networks["enterprise_network"].get("IPAddress", "")
+        elif networks:
+            first = next(iter(networks.values()))
+            ip = first.get("IPAddress", "") if isinstance(first, dict) else ""
+
+        # Redact secrets in env
+        SECRET_HINTS = ("PASSWORD", "TOKEN", "SECRET", "KEY", "API_KEY", "VAULT")
+        env_pairs: list[tuple[str, str]] = []
+        for entry in cfg.get("Env", []) or []:
+            if "=" not in entry:
+                continue
+            k, v = entry.split("=", 1)
+            if any(hint in k.upper() for hint in SECRET_HINTS):
+                v = "***REDACTED***"
+            env_pairs.append((k, v))
+
+        return {
+            "name": name,
+            "image": cfg.get("Image", ""),
+            "command": cfg.get("Cmd") or cfg.get("Entrypoint") or [],
+            "created": c.get("Created", ""),
+            "started_at": state.get("StartedAt", ""),
+            "status": state.get("Status", ""),
+            "exit_code": state.get("ExitCode"),
+            "restart_policy": (host.get("RestartPolicy") or {}).get("Name", "no"),
+            "restart_count": state.get("RestartCount", 0),
+            "ip_address": ip,
+            "ports": cfg.get("ExposedPorts", {}) or {},
+            "port_bindings": host.get("PortBindings", {}) or {},
+            "mounts": [
+                {"source": m.get("Source") or "", "destination": m.get("Destination") or "", "mode": m.get("Mode", "rw")}
+                for m in (c.get("Mounts") or [])
+            ],
+            "env": env_pairs,
+            "labels": cfg.get("Labels", {}) or {},
+            "pod": c.get("Pod") or None,
+        }
+
     async def get_metrics(self, service: Service) -> dict:
         name = service.name
         cmd = f"podman stats --no-stream --format json {name} 2>/dev/null"

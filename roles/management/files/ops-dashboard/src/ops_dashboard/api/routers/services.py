@@ -41,3 +41,15 @@ async def get_service(name: str, state: DashboardState = Depends(get_state)):
         from fastapi import HTTPException
         raise HTTPException(404, f"Service '{name}' not found")
     return _service_to_schema(state, name)
+
+
+@router.get("/{name}/details")
+async def get_service_details(name: str, state: DashboardState = Depends(get_state)):
+    if name not in state.services:
+        from fastapi import HTTPException
+        raise HTTPException(404, f"Service '{name}' not found")
+    details = await state.vps_provider.inspect_container(name)
+    if details is None:
+        from fastapi import HTTPException
+        raise HTTPException(502, f"podman inspect failed for '{name}'")
+    return details

@@ -83,3 +83,31 @@ export interface VibrationParams {
   duration: number;
   intensity: VibrationIntensity;
 }
+
+export type TimeseriesPoint = [number, number]; // [unix_ts, value]
+
+export interface TimeseriesResponse {
+  service_name: string;
+  metric: 'cpu' | 'mem';
+  minutes: number;
+  points: TimeseriesPoint[];
+}
+
+export interface ContainerDetails {
+  name: string;
+  image: string;
+  command: string[];
+  created: string;
+  started_at: string;
+  status: string;
+  exit_code: number | null;
+  restart_policy: string;
+  restart_count: number;
+  ip_address: string;
+  ports: Record<string, unknown>;
+  port_bindings: Record<string, unknown>;
+  mounts: { source: string; destination: string; mode: string }[];
+  env: [string, string][];
+  labels: Record<string, string>;
+  pod: string | null;
+}

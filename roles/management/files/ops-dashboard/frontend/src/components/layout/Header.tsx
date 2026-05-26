@@ -9,7 +9,7 @@ export function Header() {
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-400/80 to-blue-600/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]" />
           <div className="leading-tight">
             <div className="text-[15px] font-semibold tracking-tight">Ops Dashboard</div>
-            <div className="text-[11px] text-white/50">ops.aicortex.cloud</div>
+            <div className="hidden sm:block text-[11px] text-white/50">ops.aicortex.cloud</div>
           </div>
         </div>
         <div
