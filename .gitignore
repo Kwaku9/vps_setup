@@ -155,3 +155,6 @@ flyers/output/*
 /tools/fabric-venv/
 # Rendered from tools/telegram-approval.json.j2 via vault pre_task — never commit
 /tools/telegram-approval.json
+
+# Worktrees (local-only, never committed)
+.worktrees/
