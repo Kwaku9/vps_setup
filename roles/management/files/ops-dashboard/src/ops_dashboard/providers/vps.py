@@ -164,7 +164,7 @@ class VpsProvider(Provider):
             "ports": cfg.get("ExposedPorts", {}) or {},
             "port_bindings": host.get("PortBindings", {}) or {},
             "mounts": [
-                {"source": m.get("Source"), "destination": m.get("Destination"), "mode": m.get("Mode", "rw")}
+                {"source": m.get("Source") or "", "destination": m.get("Destination") or "", "mode": m.get("Mode", "rw")}
                 for m in (c.get("Mounts") or [])
             ],
             "env": env_pairs,

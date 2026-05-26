@@ -55,7 +55,14 @@ async def websocket_metrics(ws: WebSocket, state: DashboardState = Depends(get_s
 
 
 @router.get("/{service_name}/timeseries")
-async def get_timeseries(service_name: str, metric: str = "cpu", minutes: int = 15):
+async def get_timeseries(
+    service_name: str,
+    metric: str = "cpu",
+    minutes: int = 15,
+    state: DashboardState = Depends(get_state),
+):
+    if service_name not in state.services:
+        raise HTTPException(404, f"Service '{service_name}' not found")
     if metric not in _METRIC_TO_PROMQL:
         raise HTTPException(400, f"metric must be one of {list(_METRIC_TO_PROMQL)}")
     if not 1 <= minutes <= 240:

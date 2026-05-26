@@ -147,11 +147,11 @@ export function DetailsModal({ name, onClose }: Props) {
                   <div className="space-y-4">
                     <div>
                       <div className="text-[11px] uppercase tracking-wider text-white/50 mb-1">CPU (60 min)</div>
-                      <Sparkline points={cpuTs.points} width={520} height={60} baselineColor="#64d2ff" />
+                      <Sparkline points={cpuTs.points} width={520} height={60} baselineColor="#64d2ff" responsive />
                     </div>
                     <div>
                       <div className="text-[11px] uppercase tracking-wider text-white/50 mb-1">Memory (60 min)</div>
-                      <Sparkline points={memTs.points} width={520} height={60} baselineColor="#bf5af2" />
+                      <Sparkline points={memTs.points} width={520} height={60} baselineColor="#bf5af2" responsive />
                     </div>
                   </div>
                 )}

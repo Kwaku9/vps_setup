@@ -6,6 +6,7 @@ interface Props {
   width?: number;
   height?: number;
   baselineColor?: string;
+  responsive?: boolean;
 }
 
 function pickColor(latest: number, baseline: string): string {
@@ -19,6 +20,7 @@ export function Sparkline({
   width = 60,
   height = 16,
   baselineColor = '#64d2ff', // vps-cyan
+  responsive = false,
 }: Props) {
   const { d, latest, color } = useMemo(() => {
     if (points.length < 2) return { d: '', latest: 0, color: baselineColor };
@@ -39,11 +41,17 @@ export function Sparkline({
   }, [points, width, height, baselineColor]);
 
   if (!d) {
-    return <div className="inline-block" style={{ width, height }} aria-hidden />;
+    return <div className="inline-block" style={{ width: responsive ? '100%' : width, height }} aria-hidden />;
   }
 
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-label={`sparkline latest ${latest.toFixed(1)}`}>
+    <svg
+      width={responsive ? '100%' : width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      aria-label={`sparkline latest ${latest.toFixed(1)}`}
+    >
       <path d={d} fill="none" stroke={color} strokeWidth={1.25} strokeLinecap="round" strokeLinejoin="round" opacity={0.95} />
     </svg>
   );
