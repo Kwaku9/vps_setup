@@ -105,3 +105,30 @@ class VictoriaMetricsClient:
             pass
 
         return snapshots
+
+    async def query_range(
+        self,
+        promql: str,
+        minutes: int = 15,
+        step_seconds: int = 30,
+    ) -> list[tuple[float, float]]:
+        """Range query — returns [(timestamp, value), ...] sorted by time."""
+        client = await self._get_client()
+        end = time.time()
+        start = end - (minutes * 60)
+        resp = await client.get(
+            "/api/v1/query_range",
+            params={
+                "query": promql,
+                "start": start,
+                "end": end,
+                "step": step_seconds,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        result = data.get("data", {}).get("result", [])
+        if not result:
+            return []
+        # result[0]["values"] is [[ts, "value_str"], ...]
+        return [(float(ts), float(v)) for ts, v in result[0].get("values", [])]
