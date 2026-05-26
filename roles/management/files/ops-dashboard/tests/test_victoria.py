@@ -38,3 +38,50 @@ async def test_memory_percent_computed_from_usage_and_limit():
     assert snapshots["svc-a"].cpu_percent == pytest.approx(12.5)
     assert snapshots["svc-a"].memory_usage_mb == pytest.approx(50.0)
     assert snapshots["svc-a"].status == "running"
+
+
+@pytest.mark.asyncio
+async def test_query_range_returns_typed_tuples():
+    """query_range mocks the httpx call directly and confirms the return shape."""
+    import httpx
+
+    client = VictoriaMetricsClient(base_url="http://example.invalid")
+
+    class _FakeResp:
+        def raise_for_status(self): pass
+        def json(self):
+            return {
+                "data": {
+                    "result": [
+                        {"metric": {"name": "svc-a"}, "values": [
+                            ["1700000000", "12.5"],
+                            ["1700000030", "13.0"],
+                        ]}
+                    ]
+                }
+            }
+
+    class _FakeClient:
+        is_closed = False
+        async def get(self, *a, **kw): return _FakeResp()
+
+    client._client = _FakeClient()  # type: ignore[assignment]
+    points = await client.query_range("any_promql", minutes=15)
+    assert points == [(1700000000.0, 12.5), (1700000030.0, 13.0)]
+    assert all(isinstance(p, tuple) and len(p) == 2 for p in points)
+
+
+@pytest.mark.asyncio
+async def test_query_range_empty_result_returns_empty_list():
+    client = VictoriaMetricsClient(base_url="http://example.invalid")
+
+    class _FakeResp:
+        def raise_for_status(self): pass
+        def json(self): return {"data": {"result": []}}
+
+    class _FakeClient:
+        is_closed = False
+        async def get(self, *a, **kw): return _FakeResp()
+
+    client._client = _FakeClient()  # type: ignore[assignment]
+    assert await client.query_range("any_promql", minutes=15) == []
