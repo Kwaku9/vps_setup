@@ -11,6 +11,7 @@ import { OverviewView } from './components/overview/OverviewView';
 import { ProfileRack } from './components/profiles/ProfileRack';
 import { TierRack } from './components/profiles/TierRack';
 import { VisualView } from './components/visual/VisualView';
+import { MobileNav } from './components/layout/MobileNav';
 import { pop } from './lib/motion';
 
 const TABS = [
@@ -50,7 +51,7 @@ function TabNav({ activeTab, onTabChange }: { activeTab: string; onTabChange: (t
 function ManagerTab() {
   const [sheet, setSheet] = useState<null | 'profiles' | 'tiers'>(null);
   return (
-    <div className="mx-auto max-w-7xl w-full px-4 md:px-6 pb-24 lg:pb-6">
+    <div className="mx-auto max-w-7xl w-full px-4 md:px-6 pb-28 lg:pb-6">
       <div className="lg:grid lg:grid-cols-[13rem_1fr_14rem] lg:gap-4">
         <aside className="hidden lg:block"><ProfileRack /></aside>
         <main className="min-w-0"><ServiceGrid /></main>
@@ -88,7 +89,7 @@ function DashboardLayout() {
   return (
     <div className="min-h-[100dvh] bg-gray-950 text-gray-200 flex flex-col">
       <Header />
-      <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
+      <div className="hidden md:block"><TabNav activeTab={activeTab} onTabChange={setActiveTab} /></div>
       <StatusBar />
 
       {activeTab === 'dashboard' ? (
@@ -102,6 +103,7 @@ function DashboardLayout() {
           <ManagerTab />
         </main>
       )}
+      <MobileNav activeTab={activeTab} onTabChange={setActiveTab} />
     </div>
   );
 }
