@@ -74,18 +74,22 @@ class VictoriaMetricsClient:
         except Exception:
             pass
 
-        # Query memory percent
+        # Query memory percent — computed from usage/limit because podman-exporter
+        # does NOT publish a percent metric directly.
         try:
-            mem_results = await self.query("podman_container_mem_percent")
-            for r in mem_results:
+            mem_pct_results = await self.query(
+                "100 * podman_container_mem_usage_bytes "
+                "/ ignoring(__name__) podman_container_mem_limit_bytes"
+            )
+            for r in mem_pct_results:
                 name = _map_name(r["metric"].get("name", ""))
                 mem = float(r["value"][1])
                 if name in snapshots:
-                    snapshots[name].memory_percent = mem
+                    snapshots[name].memory_percent = round(mem, 2)
         except Exception:
             pass
 
-        # Query memory usage bytes
+        # Memory usage in MB (separate query — used by sparklines and details modal)
         try:
             mem_bytes_results = await self.query("podman_container_mem_usage_bytes")
             for r in mem_bytes_results:
