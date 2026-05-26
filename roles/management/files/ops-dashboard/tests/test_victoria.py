@@ -19,13 +19,14 @@ async def test_memory_percent_computed_from_usage_and_limit():
         if "podman_container_cpu_percent" in promql:
             return [{"metric": {"name": "svc-a"}, "value": ["1700000000", "12.5"]}]
         # The fix: client must compute percent from these two metrics
+        # This branch matches the compound percent expression (usage/limit binary op).
         if "podman_container_mem_usage_bytes" in promql and "podman_container_mem_limit_bytes" in promql:
             # The PromQL expression for the percentage; mocked to return 50.0 directly
             return [{"metric": {"name": "svc-a"}, "value": ["1700000000", "50.0"]}]
         if "podman_container_mem_usage_bytes" in promql:
             return [{"metric": {"name": "svc-a"}, "value": ["1700000000", "52428800"]}]  # 50MB
         # podman_container_mem_percent must NEVER be queried — that's the bug we fixed
-        if promql.strip() == "podman_container_mem_percent":
+        if "podman_container_mem_percent" in promql:
             pytest.fail("Client must not query podman_container_mem_percent — it does not exist")
         return []
 

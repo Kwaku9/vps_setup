@@ -77,10 +77,14 @@ class VictoriaMetricsClient:
         # Query memory percent — computed from usage/limit because podman-exporter
         # does NOT publish a percent metric directly.
         try:
+            # `ignoring(__name__)` is REQUIRED: both vectors share the `name` label but differ
+            # on `__name__`, so the binary operator drops `__name__` from the match set.
             mem_pct_results = await self.query(
                 "100 * podman_container_mem_usage_bytes "
                 "/ ignoring(__name__) podman_container_mem_limit_bytes"
             )
+            # NOTE: containers with mem_limit_bytes == 0 (no limit set) won't have a percent
+            # series; memory_percent stays at its default (0.0) for those.
             for r in mem_pct_results:
                 name = _map_name(r["metric"].get("name", ""))
                 mem = float(r["value"][1])
