@@ -10,9 +10,10 @@ interface Props {
   title: string;
   subtitle?: string;
   services: Service[];
+  onOpenDetails?: (name: string) => void;
 }
 
-export function StackGroup({ title, subtitle, services }: Props) {
+export function StackGroup({ title, subtitle, services, onOpenDetails }: Props) {
   const [open, setOpen] = useState(true);
   const { metrics } = useDashboard();
   const running = services.filter((s) => (metrics[s.name]?.status ?? s.status) === 'running').length;
@@ -45,7 +46,7 @@ export function StackGroup({ title, subtitle, services }: Props) {
             className="px-2 pb-2"
           >
             <div className="flex flex-col gap-1.5">
-              {services.map((s) => <ServiceCard key={s.name} service={s} />)}
+              {services.map((s) => <ServiceCard key={s.name} service={s} onOpenDetails={onOpenDetails} />)}
             </div>
           </motion.div>
         )}

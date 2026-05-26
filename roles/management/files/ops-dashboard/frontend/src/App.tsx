@@ -7,14 +7,14 @@ import { Header } from './components/layout/Header';
 import { StatusBar } from './components/layout/StatusBar';
 import { BottomSheet } from './components/layout/BottomSheet';
 import { ServiceGrid } from './components/dashboard/ServiceGrid';
-import { StatusView } from './components/dashboard/StatusView';
+import { OverviewView } from './components/overview/OverviewView';
 import { ProfileRack } from './components/profiles/ProfileRack';
 import { TierRack } from './components/profiles/TierRack';
 import { VisualView } from './components/visual/VisualView';
 import { pop } from './lib/motion';
 
 const TABS = [
-  { key: 'dashboard', label: 'Dashboard' },
+  { key: 'dashboard', label: 'Overview' },
   { key: 'manager',   label: 'Manager' },
   { key: 'visual',    label: 'Visual' },
 ] as const;
@@ -93,9 +93,7 @@ function DashboardLayout() {
 
       {activeTab === 'dashboard' ? (
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-7xl w-full px-4 md:px-6 py-4">
-            <StatusView />
-          </div>
+          <OverviewView />
         </main>
       ) : activeTab === 'visual' ? (
         <VisualView />
