@@ -1,0 +1,21 @@
+[Unit]
+Description=Daily Claude Code timeline refresh (sync + ingest + classify + deploy)
+Documentation=file:///home/general/.claude/commands/update-timeline.md
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/general/Projects/VScdeProjects/vps_setup/run-daily-timeline.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+# Cap a single run to 30 minutes (extraction + Neo4j ETL can be slow)
+TimeoutStartSec=1800
+# Log to journald in addition to the script's own log file
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-timeline
+
+[Install]
+WantedBy=default.target

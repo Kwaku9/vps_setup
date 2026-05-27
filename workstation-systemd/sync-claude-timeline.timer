@@ -1,0 +1,18 @@
+[Unit]
+Description=Fire the daily Claude timeline pipeline at 04:00 (Persistent so missed runs catch up)
+
+[Timer]
+# 04:00 every day in the system's local timezone (Atlantic on this box).
+# Chosen to run after the VPS's own 03:00 ingest cron, so if the VPS
+# crontab catches new sessions first, we just no-op on idempotent steps.
+OnCalendar=*-*-* 04:00:00
+# If the machine was off/asleep when the timer should have fired,
+# run it at next boot/wake instead of skipping that day.
+Persistent=true
+# Spread bursty network use if many timers fire at the same moment.
+RandomizedDelaySec=300
+# Belt-and-suspenders: cap how late a catch-up run can fire.
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target
