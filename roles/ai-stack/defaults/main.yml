@@ -45,6 +45,17 @@ ai_stack:
     branding:
       logo_url: "https://{{ s3_assets_bucket }}.s3.amazonaws.com/logo4.png"
       assets_base_url: "https://{{ s3_assets_bucket }}.s3.amazonaws.com"
+    # Shared pgvector RAG substrate — OFF by default (env keys are omitted, so OWUI
+    # behaves exactly as today). Enable ONLY after the dump/restore + preflight per
+    # docs/pgvector-owui-changeset.md. Changing embedding_model/vector_dim later
+    # means re-embedding everything — decide once.
+    rag:
+      enabled: false
+      vector_db: "pgvector"
+      embedding_engine: "openai"          # OpenAI-compatible engine = LiteLLM proxy
+      embedding_model: "embeddinggemma"   # EmbeddingGemma-300M, 768-dim, local via Ollama
+      embedding_base_url: "http://127.0.0.1:4000/v1"   # LiteLLM (pod loopback)
+      vector_dim: 768                     # MUST match the embedding model's output dim
 
   # LiteLLM Proxy
   litellm:
@@ -55,6 +66,16 @@ ai_stack:
     config_file: "config.yml"
     env:
       STORE_MODEL_IN_DB: "True"
+
+  # llama.cpp embedding server (EmbeddingGemma-300M) — local embeddings, replaces Ollama.
+  # Tested: serves OpenAI /v1/embeddings, 768-dim, mean pooling. LiteLLM fronts it.
+  llama_embeddings:
+    enabled: true
+    name: "llama-embeddings"
+    image: "ghcr.io/ggml-org/llama.cpp:server"
+    port: 8081
+    model_hf: "ggml-org/embeddinggemma-300M-GGUF:Q8_0"   # tiny model — Q8 keeps quality
+    pooling: "mean"                                       # EmbeddingGemma requires mean pooling
 
   # Fabric API
   fabric_api:
@@ -116,9 +137,14 @@ ai_stack:
   postgres:
     enabled: true
     name: "ai-stack-postgres"
-    image: "docker.io/library/postgres:16-alpine"
+    # pgvector: flip true ONLY during the dump/restore migration runbook (the Alpine→Debian
+    # image swap). Default false keeps postgres:16-alpine — a normal deploy will NOT swap the
+    # image in place (which would risk text-index collation). See docs/pgvector-owui-changeset.md.
+    pgvector: false
+    image: "{{ 'docker.io/pgvector/pgvector:pg16' if (ai_stack.postgres.pgvector | default(false)) else 'docker.io/library/postgres:16-alpine' }}"
     port: 5433  # Different port to avoid conflict with main postgres
     databases:
       - litellm
       - n8n
+      - memory  # vector substrate DB (created idempotently by tasks/pgvector.yml when rag.enabled)
     user: "aistack"
