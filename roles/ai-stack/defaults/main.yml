@@ -41,7 +41,6 @@ ai_stack:
     internal_port: 8080
     env:
       WEBUI_AUTH: "True"
-      OLLAMA_BASE_URL: "http://127.0.0.1:11434"
     branding:
       logo_url: "https://{{ s3_assets_bucket }}.s3.amazonaws.com/logo4.png"
       assets_base_url: "https://{{ s3_assets_bucket }}.s3.amazonaws.com"
@@ -53,7 +52,7 @@ ai_stack:
       enabled: false
       vector_db: "pgvector"
       embedding_engine: "openai"          # OpenAI-compatible engine = LiteLLM proxy
-      embedding_model: "embeddinggemma"   # EmbeddingGemma-300M, 768-dim, local via Ollama
+      embedding_model: "embeddinggemma"   # EmbeddingGemma-300M, 768-dim, local via llama.cpp
       embedding_base_url: "http://127.0.0.1:4000/v1"   # LiteLLM (pod loopback)
       vector_dim: 768                     # MUST match the embedding model's output dim
 
