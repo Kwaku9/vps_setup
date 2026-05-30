@@ -11,11 +11,13 @@ import { OverviewView } from './components/overview/OverviewView';
 import { ProfileRack } from './components/profiles/ProfileRack';
 import { TierRack } from './components/profiles/TierRack';
 import { VisualView } from './components/visual/VisualView';
+import { SessionsView } from './components/sessions/SessionsView';
 import { MobileNav } from './components/layout/MobileNav';
 import { pop } from './lib/motion';
 
 const TABS = [
   { key: 'dashboard', label: 'Overview' },
+  { key: 'sessions',  label: 'Sessions' },
   { key: 'manager',   label: 'Manager' },
   { key: 'visual',    label: 'Visual' },
 ] as const;
@@ -95,6 +97,10 @@ function DashboardLayout() {
       {activeTab === 'dashboard' ? (
         <main className="flex-1 overflow-y-auto">
           <OverviewView />
+        </main>
+      ) : activeTab === 'sessions' ? (
+        <main className="flex-1 overflow-y-auto py-4">
+          <SessionsView />
         </main>
       ) : activeTab === 'visual' ? (
         <VisualView />

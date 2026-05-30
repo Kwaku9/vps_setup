@@ -5,6 +5,7 @@ interface Props {
 
 const ITEMS = [
   { key: 'dashboard', label: 'Overview', icon: '⌂' },
+  { key: 'sessions',  label: 'Sessions', icon: '◈' },
   { key: 'manager',   label: 'Manager',  icon: '☷' },
   { key: 'visual',    label: 'Visual',   icon: '◉' },
 ] as const;
@@ -12,7 +13,7 @@ const ITEMS = [
 export function MobileNav({ activeTab, onTabChange }: Props) {
   return (
     <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 safe-bottom bg-[var(--bg-base)]/85 backdrop-blur-xl border-t border-white/8">
-      <div className="grid grid-cols-3">
+      <div className="grid grid-cols-4">
         {ITEMS.map((it) => {
           const active = activeTab === it.key;
           return (
