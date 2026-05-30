@@ -111,3 +111,34 @@ export interface ContainerDetails {
   labels: Record<string, string>;
   pod: string | null;
 }
+
+export interface LiveSession {
+  session_uuid: string;
+  live_status: 'running' | 'waiting_input' | 'idle' | 'ended';
+  needs_input: boolean;
+  current_stage: string | null;
+  host: string | null;
+  git_branch: string | null;
+  model: string | null;
+  project: string | null;
+  last_event_at: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+}
+
+export interface TranscriptMessage {
+  uuid: string;
+  role: string;
+  type: string;
+  content_text: string | null;
+  sequence_num: number;
+  timestamp: string | null;
+}
+
+export interface SessionUpdate {
+  type: 'session_update';
+  session_uuid: string;
+  live_status?: string;
+  needs_input?: boolean;
+  current_stage?: string | null;
+}

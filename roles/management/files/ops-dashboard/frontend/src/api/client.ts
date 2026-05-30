@@ -1,4 +1,5 @@
 import type { TimeseriesResponse, ContainerDetails } from '../types';
+import type { LiveSession, TranscriptMessage } from '../types';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '';
 
@@ -33,3 +34,8 @@ export const fetchTimeseries = (
 
 export const fetchDetails = (name: string) =>
   api.get<ContainerDetails>(`/api/services/${encodeURIComponent(name)}/details`);
+
+export const fetchActiveSessions = () => api.get<LiveSession[]>('/api/sessions/active');
+
+export const fetchTranscript = (uuid: string, since = 0) =>
+  api.get<TranscriptMessage[]>(`/api/sessions/${encodeURIComponent(uuid)}/transcript?since=${since}`);

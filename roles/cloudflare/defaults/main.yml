@@ -69,6 +69,11 @@ cloudflare_access:
   enabled: true
   admin_email: "{{ cf_email }}"
   session_duration: "24h"
+  # Opt-in: create the session-ingest service token + path-scoped Access app so
+  # off-VPS hosts can POST to /api/sessions/ingest through Cloudflare. Requires
+  # the CF API token to have "Access: Service Tokens" Edit permission. VPS
+  # sessions ingest internally and do not need this.
+  session_ingest_enabled: false
   public_services:
     - "chat"
     - "auth"
@@ -76,8 +81,14 @@ cloudflare_access:
     # via bearer token in router rule (vault.yml: otel_ingest_token), so CF Access
     # must NOT challenge it — bypass app overrides the wildcard admin policy.
     - "otel"
-    # hooks removed — orphaned (no Traefik route, no service behind it)
+    # telegram-bot: webhook receiver. Auth at the app level via
+    # X-Telegram-Bot-Api-Secret-Token header + TELEGRAM_ALLOWED_USER_IDS
+    # allowlist. CF Access can't gate this — Telegram has no human OAuth flow.
+    - "telegram-bot"
+    # hooks removed — orphaned (no Traefik route, no service behind it).
+    # The CF Access app was also deleted 2026-05-26.
     # otlp removed — internal telemetry uses Podman DNS (logs-pod:4318), public URL now behind CF Access
+    # dev removed 2026-05-26 — Expo Metro now Tailscale-only, public URL deleted.
   ssh_browser:
     enabled: true
     subdomain: "ssh"

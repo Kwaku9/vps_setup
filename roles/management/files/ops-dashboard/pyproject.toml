@@ -16,7 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 azure = ["azure-mgmt-machinelearningservices", "azure-identity"]
-api = ["fastapi", "uvicorn[standard]", "websockets", "httpx", "pydantic>=2.0"]
+api = ["fastapi", "uvicorn[standard]", "websockets", "httpx", "pydantic>=2.0", "asyncpg>=0.29"]
 dev = ["pytest", "pytest-asyncio", "ruff"]
 
 [project.scripts]
