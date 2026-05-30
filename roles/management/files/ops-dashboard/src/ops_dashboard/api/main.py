@@ -13,6 +13,7 @@ from .dependencies import init_state, refresh_live_containers
 from .routers import actions, metrics, profiles, services, stacks
 from .routers import ingest as ingest_router
 from .routers import sessions as sessions_router
+from .routers import approvals as approvals_router
 from .routers.metrics import vm_client as router_vm_client
 from .victoria import VictoriaMetricsClient
 from .ws.metrics_stream import metrics_poll_loop
@@ -99,6 +100,7 @@ app.include_router(actions.router)
 app.include_router(metrics.router)
 app.include_router(ingest_router.router)
 app.include_router(sessions_router.router)
+app.include_router(approvals_router.router)
 
 
 @app.get("/api/health")
