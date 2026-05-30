@@ -32,7 +32,7 @@ DB_PASSWORD: str = os.environ.get("DB_PASSWORD", "")
 # LiteLLM gateway (fallback backend)
 LITELLM_BASE_URL: str = os.environ.get("LITELLM_BASE_URL", "http://ai-stack-pod:4000")
 LITELLM_API_KEY: str = os.environ.get("LITELLM_API_KEY", "")
-LITELLM_DEFAULT_MODEL: str = os.environ.get("LITELLM_DEFAULT_MODEL", "claude-sonnet-4-20250514")
+LITELLM_DEFAULT_MODEL: str = os.environ.get("LITELLM_DEFAULT_MODEL", "claude-haiku-4-5")
 
 # Claude Code CLI (default backend)
 CLAUDE_CLI_PATH: str = os.environ.get("CLAUDE_CLI_PATH", "/usr/local/bin/claude")

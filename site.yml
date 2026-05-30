@@ -41,9 +41,12 @@
       tags: ['claude-prep', 'claude']
       when: claude.enabled | default(true)
 
-    - role: gemini-prep
-      tags: ['gemini-prep', 'gemini']
-      when: gemini.enabled | default(true)
+    # gemini-prep removed 2026-05-26 — Gemini CLI no longer used.
+    # Role tasks remain under roles/gemini-prep/ for reference but are not invoked.
+    # To fully uninstall: ssh root@vps && npm uninstall -g @google/gemini-cli
+    # - role: gemini-prep
+    #   tags: ['gemini-prep', 'gemini']
+    #   when: gemini.enabled | default(true)
 
     - role: cloudflared
       tags: ['cloudflared', 'tunnel']
@@ -74,6 +77,14 @@
 
     - role: security
       tags: ['security', 'hardening']
+
+    # tailscale must run AFTER security: the security role's configure-firewall.sh
+    # flushes the INPUT chain on every run, which would wipe any tailscale ACCEPT
+    # rule inserted earlier. Tailscale's role re-adds the rule (and persists it
+    # via /etc/local.d/firewall.start for next boot).
+    - role: tailscale
+      tags: ['tailscale']
+      when: tailscale.enabled | default(true)
 
     - role: ai-stack
       tags: ['ai-stack', 'openwebui', 'searxng']
@@ -114,6 +125,14 @@
     - role: hermes
       tags: ['hermes', 'agent']
       when: hermes.enabled | default(true)
+
+    # boot-services MUST be last: it generates OpenRC init scripts that
+    # reference the pods/containers other roles created. If it ran earlier,
+    # `rc-update add <name>` would fail because the service file is generated
+    # but the pod might not exist yet.
+    - role: boot-services
+      tags: ['boot-services']
+      when: boot_services.enabled | default(true)
 
   post_tasks:
     # Netavark NAT recovery — always runs at end of play.

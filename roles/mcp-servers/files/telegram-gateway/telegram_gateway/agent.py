@@ -133,7 +133,7 @@ async def process_command(command_id: int):
             )
         else:
             await _process_claude_cli(
-                command_id, cmd, agent_type, system_prompt
+                command_id, cmd, agent_type, system_prompt, model
             )
 
         # TTS: synthesize voice and send after text responses
@@ -257,6 +257,7 @@ async def _process_claude_cli(
     cmd,
     agent_type: str,
     system_prompt: str,
+    model: str,
 ):
     """Run the message through Claude Code CLI with session continuity.
 
@@ -282,7 +283,7 @@ async def _process_claude_cli(
         full_prompt = f"[Context: {system_prompt}]\n\n{prompt}"
         cli_args.extend(["-p", full_prompt])
 
-    cli_args.extend(["--model", "claude-sonnet-4-6", "--output-format", "json"])
+    cli_args.extend(["--model", model, "--output-format", "json"])
 
     try:
         proc = await asyncio.create_subprocess_exec(
