@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "SessionStart":     [{ "hooks": [{ "type": "command", "command": "node ~/.claude/hooks/session-event-hook.js" }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "node ~/.claude/hooks/session-event-hook.js" }] }],
+    "PreToolUse":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "node ~/.claude/hooks/session-event-hook.js" }] }],
+    "PostToolUse":      [{ "matcher": "*", "hooks": [{ "type": "command", "command": "node ~/.claude/hooks/session-event-hook.js" }] }],
+    "Notification":     [{ "hooks": [{ "type": "command", "command": "node ~/.claude/hooks/session-event-hook.js" }] }],
+    "Stop":             [{ "hooks": [{ "type": "command", "command": "node ~/.claude/hooks/session-event-hook.js" }] }],
+    "SubagentStop":     [{ "hooks": [{ "type": "command", "command": "node ~/.claude/hooks/session-event-hook.js" }] }],
+    "SessionEnd":       [{ "hooks": [{ "type": "command", "command": "node ~/.claude/hooks/session-event-hook.js" }] }]
+  }
+}
