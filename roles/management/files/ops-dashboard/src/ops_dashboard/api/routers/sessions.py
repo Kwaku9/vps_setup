@@ -17,11 +17,22 @@ async def active_sessions(request: Request):
         rows = await conn.fetch(
             """SELECT s.session_uuid, s.live_status, s.needs_input, s.current_stage,
                       s.host, s.git_branch, s.model, s.last_event_at,
-                      s.input_tokens, s.output_tokens, p.display_name AS project
+                      s.input_tokens, s.output_tokens, p.display_name AS project,
+                      a.id AS approval_id,
+                      a.prompt_text AS approval_prompt,
+                      a.metadata->>'tool_name' AS approval_tool,
+                      (a.id IS NOT NULL) AS needs_approval
                  FROM sessions.sessions s
                  LEFT JOIN sessions.projects p ON p.id = s.project_id
+                 LEFT JOIN LATERAL (
+                     SELECT id, prompt_text, metadata
+                       FROM gateway.approvals
+                      WHERE status = 'pending' AND expires_at > now()
+                        AND metadata->>'session_id' = s.session_uuid
+                      ORDER BY created_at DESC LIMIT 1
+                 ) a ON true
                 WHERE s.live_status IS NOT NULL AND s.live_status <> 'ended'
-                ORDER BY s.needs_input DESC, s.last_event_at DESC""",
+                ORDER BY (a.id IS NOT NULL) DESC, s.needs_input DESC, s.last_event_at DESC""",
         )
     return [dict(r) for r in rows]
 
