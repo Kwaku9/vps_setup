@@ -22,4 +22,3 @@ domain: "{{ domain_name }}"
 
 # Will be overridden by vault
 postgres_password: "VAULT_OVERRIDE"
-crowdsec_bouncer_api_key: "VAULT_OVERRIDE"
