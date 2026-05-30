@@ -199,15 +199,6 @@ services:
     ansible_tag: mcp
     dependencies: [postgres, traefik]
 
-  context7-mcp:
-    platform: vps
-    endpoint_type: pod
-    pod: mcp-pod
-    description: "Context7 MCP server"
-    memory_mb: 256
-    ansible_tag: mcp
-    dependencies: []
-
   google-docs-mcp:
     platform: vps
     endpoint_type: pod
@@ -555,7 +546,6 @@ profiles:
       ansible-deployment: true
       github-runner: true
       ops-dashboard: true
-      context7-mcp: false
       google-docs-mcp: false
       n8n-mcp: false
       ib-mcp-server: false
@@ -612,7 +602,6 @@ profiles:
       ansible-deployment: true
       github-runner: true
       ops-dashboard: true
-      context7-mcp: false
       google-docs-mcp: false
       n8n-mcp: false
       ib-mcp-server: false
@@ -662,7 +651,6 @@ profiles:
       ansible-deployment: true
       github-runner: true
       ops-dashboard: true
-      context7-mcp: true
       google-docs-mcp: true
       n8n-mcp: true
       ib-mcp-server: false
@@ -716,7 +704,6 @@ profiles:
       ansible-deployment: true
       github-runner: true
       ops-dashboard: true
-      context7-mcp: false
       google-docs-mcp: false
       n8n-mcp: false
       ib-mcp-server: false
@@ -768,7 +755,6 @@ profiles:
       ansible-deployment: true
       github-runner: true
       ops-dashboard: true
-      context7-mcp: false
       google-docs-mcp: false
       n8n-mcp: false
       ib-mcp-server: false
