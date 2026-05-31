@@ -124,6 +124,18 @@ export interface LiveSession {
   last_event_at: string | null;
   input_tokens: number | null;
   output_tokens: number | null;
+  needs_approval?: boolean;
+  approval_id?: number | null;
+  approval_tool?: string | null;
+  approval_prompt?: string | null;
+}
+
+export interface PendingApproval {
+  id: number;
+  prompt_text: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  expires_at: string;
 }
 
 export interface TranscriptMessage {

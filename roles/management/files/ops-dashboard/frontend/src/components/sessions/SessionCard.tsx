@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import type { LiveSession } from '../../types';
+import { ApprovalControls } from './ApprovalControls';
 
 const STATUS_COLOR: Record<string, string> = {
   running: 'bg-emerald-400',
@@ -16,7 +17,7 @@ export function SessionCard({ s, onOpen }: { s: LiveSession; onOpen: (uuid: stri
       onClick={() => onOpen(s.session_uuid)}
       className="glass rounded-2xl p-4 text-left w-full relative overflow-hidden"
     >
-      {s.needs_input && (
+      {s.needs_input && !s.needs_approval && (
         <motion.span
           className="absolute right-3 top-3 text-[10px] font-bold text-amber-300"
           animate={{ opacity: [1, 0.3, 1] }}
@@ -36,6 +37,9 @@ export function SessionCard({ s, onOpen }: { s: LiveSession; onOpen: (uuid: stri
         {s.model && <span>{s.model}</span>}
         {tokens > 0 && <span>{(tokens / 1000).toFixed(1)}k tok</span>}
       </div>
+      {s.needs_approval && s.approval_id != null && (
+        <ApprovalControls id={s.approval_id} tool={s.approval_tool} prompt={s.approval_prompt} />
+      )}
     </motion.button>
   );
 }

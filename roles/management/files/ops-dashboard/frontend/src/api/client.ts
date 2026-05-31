@@ -39,3 +39,13 @@ export const fetchActiveSessions = () => api.get<LiveSession[]>('/api/sessions/a
 
 export const fetchTranscript = (uuid: string, since = 0) =>
   api.get<TranscriptMessage[]>(`/api/sessions/${encodeURIComponent(uuid)}/transcript?since=${since}`);
+
+// Approvals
+export const fetchPendingApprovals = () =>
+  api.get<import('../types').PendingApproval[]>('/api/approvals/pending');
+
+export const decideApproval = (id: number, decision: 'approve' | 'deny') =>
+  api.post<{ ok: boolean; id: number; status: string }>(
+    `/api/approvals/${id}/decide`,
+    { decision },
+  );

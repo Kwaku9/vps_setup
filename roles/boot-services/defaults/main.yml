@@ -1,0 +1,50 @@
+# Boot-Services Role Defaults
+#
+# Generates one OpenRC init script per pod/container so the platform
+# auto-starts in dependency order after a reboot. Without this, pods
+# stay in Exited state after the kernel boots and require manual
+# `podman pod start <name>` for each one.
+#
+# Each entry produces /etc/init.d/<name> with:
+#   - depend()  → after-only ordering against dependencies + `after local`
+#                 (so /etc/local.d/firewall.start runs first)
+#   - start()   → podman pod start <name>  (or podman start <name>)
+#   - stop()    → graceful stop on shutdown
+#   - status()  → checks podman state
+#
+# Setting enabled: false on an entry SKIPS init script generation entirely
+# (the service stays manually controllable but doesn't auto-start).
+
+boot_services:
+  enabled: true
+  # Sleep between each service start. Avoids thundering-herd on disk/CPU
+  # when many pods come up at once. 0 disables.
+  delay_between_starts: 1
+
+  # Podman pods (state = "pod start" / "pod stop")
+  pods:
+    - { name: shared-db-pod,            enabled: true,  depends_on: [] }
+    - { name: logs-pod,                  enabled: true,  depends_on: [shared-db-pod] }
+    - { name: tempo-pod,                 enabled: true,  depends_on: [] }
+    - { name: monitoring-pod,            enabled: true,  depends_on: [logs-pod] }
+    - { name: authentication-pod,        enabled: true,  depends_on: [shared-db-pod] }
+    - { name: authentication-worker-pod, enabled: true,  depends_on: [authentication-pod] }
+    - { name: ai-stack-pod,              enabled: true,  depends_on: [authentication-pod, shared-db-pod] }
+    - { name: management-pod,            enabled: true,  depends_on: [authentication-pod] }
+    - { name: backend-pod,               enabled: true,  depends_on: [shared-db-pod] }
+    - { name: frontend-pod,              enabled: true,  depends_on: [backend-pod] }
+    - { name: dev-pod,                    enabled: true,  depends_on: [] }
+    - { name: security-pod,              enabled: true,  depends_on: [] }
+    # hermes-pod intentionally not auto-started — disabled in app config and
+    # marked as "stopped on purpose" in project memory.
+    - { name: hermes-pod,                enabled: false, depends_on: [] }
+
+  # Standalone containers (state = "start" / "stop", not "pod start")
+  containers:
+    - { name: postgres,         enabled: true, depends_on: [] }
+    - { name: redis,            enabled: true, depends_on: [] }
+    - { name: crowdsec,         enabled: true, depends_on: [] }
+    - { name: traefik,          enabled: true, depends_on: [crowdsec] }
+    - { name: cloudflared,      enabled: true, depends_on: [traefik] }
+    - { name: telegram-gateway, enabled: true, depends_on: [ai-stack-pod] }
+    - { name: google-docs-mcp,  enabled: true, depends_on: [] }
