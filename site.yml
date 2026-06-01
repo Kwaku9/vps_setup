@@ -68,6 +68,10 @@
       tags: ['management', 'admin']
       when: management.enabled | default(true)
 
+    - role: neo4j
+      tags: ['neo4j', 'graph']
+      when: neo4j.enabled | default(true)
+
     - role: authentication
       tags: ['authentication', 'sso', 'auth']
       when: authentication.enabled | default(true)
