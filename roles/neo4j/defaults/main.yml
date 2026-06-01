@@ -37,6 +37,15 @@ neo4j:
     # (cross-pod clients like the telegram-gateway). Default allows localhost only.
     allowed_hosts: "127.0.0.1:18080,127.0.0.1,localhost,neo4j-pod:8080,neo4j-pod"
 
+  # Idempotent sessions-graph loader (Claude Code session history + Telegram-queryable).
+  # Heavy (~226k messages) -> runs via nightly cron, not on every deploy.
+  sessions_graph:
+    enabled: true
+    script_dir: "/opt/compose/sessions-graph"
+    cron_hour: "3"
+    cron_minute: "30"          # after the 03:00 session-ingestion cron
+    run_on_deploy: false       # set true (or use --tags sessions-graph-run) to load during deploy
+
   # Load docs/service-map.cypher into the graph after the DB is ready.
   # Idempotent (MERGE-based) — safe to re-run on every deploy.
   load_service_map: true
