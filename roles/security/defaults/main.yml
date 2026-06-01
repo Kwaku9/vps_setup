@@ -16,6 +16,7 @@ security:
 
   tetragon:
     enabled: false  # eBPF requires kernel support - enable in all.yml
+    enforce: false  # safe default: alert-only unless all.yml opts into Sigkill
     version: "v1.6.0"
 
   trivy:
