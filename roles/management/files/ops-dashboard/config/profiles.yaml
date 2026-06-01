@@ -226,16 +226,6 @@ services:
     ansible_tag: mcp
     dependencies: []
 
-  # === VPS: management-pod ===
-  portainer:
-    platform: vps
-    endpoint_type: pod
-    pod: management-pod
-    description: "Container management UI"
-    memory_mb: 128
-    ansible_tag: management
-    dependencies: [traefik]
-
   # === VPS: frontend-pod ===
   journey-tracker:
     platform: vps
@@ -545,7 +535,6 @@ profiles:
       authentik-postgres: false
       redis: false
       telegram-gateway: false
-      portainer: false
       journey-tracker: false
       worldview-dev: false
       ais-relay: false
@@ -602,7 +591,6 @@ profiles:
       deepseek-v3: true
       # Extras off
       telegram-gateway: false
-      portainer: false
       journey-tracker: false
       worldview-dev: false
       ais-relay: false
@@ -652,7 +640,6 @@ profiles:
       authentik-postgres: true
       redis: true
       telegram-gateway: true
-      portainer: true
       journey-tracker: true
       worldview-dev: true
       ais-relay: true
@@ -706,7 +693,6 @@ profiles:
       authentik-postgres: true
       redis: true
       telegram-gateway: false
-      portainer: false
       journey-tracker: false
       worldview-dev: false
       ais-relay: false
@@ -758,7 +744,6 @@ profiles:
       authentik-postgres: true
       redis: true
       telegram-gateway: true
-      portainer: false
       journey-tracker: true
       worldview-dev: true
       ais-relay: true
