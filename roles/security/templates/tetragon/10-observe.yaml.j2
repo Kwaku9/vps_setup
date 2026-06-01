@@ -1,0 +1,112 @@
+# Tetragon detection floor - ALERT ONLY (action: Post)
+# Always loaded. Behavior-based and identity-agnostic.
+# Managed by Ansible - do not edit on the VPS.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: observe-security
+spec:
+  kprobes:
+    # 1. Reverse shell / C2 — a shell binary makes an outbound TCP connection
+    - call: "tcp_connect"
+      syscall: false
+      args:
+        - index: 0
+          type: "sock"
+      selectors:
+        - matchBinaries:
+            - operator: "In"
+              values:
+                - "/bin/sh"
+                - "/bin/bash"
+                - "/bin/busybox"
+                - "/bin/ash"
+          matchActions:
+            - action: Post
+
+    # 2. Container escape — mount() syscall (rare at steady state; breakout primitive)
+    - call: "__x64_sys_mount"
+      syscall: true
+      args:
+        - index: 0
+          type: "string"
+      selectors:
+        - matchActions:
+            - action: Post
+
+    # 3. File-based detections (one hook, multiple selectors)
+    - call: "security_file_open"
+      syscall: false
+      args:
+        - index: 0
+          type: "file"
+        - index: 1
+          type: "int"
+      selectors:
+        # 3a. Container escape — open the podman/docker control socket
+        - matchArgs:
+            - index: 0
+              operator: "Prefix"
+              values:
+                - "/run/podman/podman.sock"
+                - "/run/user/"
+                - "/var/run/docker.sock"
+          matchActions:
+            - action: Post
+        # 3b. Credential / secret theft — read crown jewels, excluding legit readers
+        - matchArgs:
+            - index: 0
+              operator: "Postfix"
+              values:
+                - "vault.yml"
+                - ".credentials.json"
+                - "/etc/shadow"
+                - "id_rsa"
+                - "id_ed25519"
+          matchBinaries:
+            - operator: "NotIn"
+              values:
+                - "/usr/bin/ansible"
+                - "/usr/bin/ansible-playbook"
+                - "/usr/bin/python3"
+                - "/usr/sbin/sshd"
+                - "/bin/su"
+                - "/bin/login"
+                - "/usr/bin/passwd"
+          matchActions:
+            - action: Post
+        # 3c. Persistence — writes to cron/init/security-tool dirs
+        - matchArgs:
+            - index: 0
+              operator: "Prefix"
+              values:
+                - "/etc/crontabs/"
+                - "/etc/periodic/"
+                - "/etc/init.d/"
+                - "/etc/conf.d/"
+                - "/opt/compose/tetragon/"
+                - "/opt/compose/crowdsec/"
+            - index: 1
+              operator: "Mask"
+              values:
+                - "1"    # O_WRONLY
+                - "2"    # O_RDWR
+                - "64"   # O_CREAT
+          matchActions:
+            - action: Post
+        # 3d. Persistence — writes to authorized_keys / shell rc files
+        - matchArgs:
+            - index: 0
+              operator: "Postfix"
+              values:
+                - "authorized_keys"
+                - ".bashrc"
+                - ".profile"
+            - index: 1
+              operator: "Mask"
+              values:
+                - "1"
+                - "2"
+                - "64"
+          matchActions:
+            - action: Post
