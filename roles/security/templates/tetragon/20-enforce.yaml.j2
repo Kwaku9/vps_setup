@@ -1,0 +1,102 @@
+# Tetragon enforcement layer - SIGKILL (action: Sigkill)
+# Loaded only when security.tetragon.enforce is true.
+# Same conditions as observe; kills the offending process in-kernel.
+# Managed by Ansible - do not edit on the VPS.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: enforce-security
+spec:
+  kprobes:
+    # Reverse shell / C2 — kill a shell that dials out
+    - call: "tcp_connect"
+      syscall: false
+      args:
+        - index: 0
+          type: "sock"
+      selectors:
+        - matchBinaries:
+            - operator: "In"
+              values:
+                - "/bin/sh"
+                - "/bin/bash"
+                - "/bin/busybox"
+                - "/bin/ash"
+          matchActions:
+            - action: Sigkill
+
+    - call: "security_file_open"
+      syscall: false
+      args:
+        - index: 0
+          type: "file"
+        - index: 1
+          type: "int"
+      selectors:
+        # Container escape — kill anything opening the container control socket
+        - matchArgs:
+            - index: 0
+              operator: "Prefix"
+              values:
+                - "/run/podman/podman.sock"
+                - "/run/user/"
+                - "/var/run/docker.sock"
+          matchActions:
+            - action: Sigkill
+        # Credential theft — kill non-allowlisted reader of crown jewels
+        - matchArgs:
+            - index: 0
+              operator: "Postfix"
+              values:
+                - "vault.yml"
+                - ".credentials.json"
+                - "/etc/shadow"
+                - "id_rsa"
+                - "id_ed25519"
+          matchBinaries:
+            - operator: "NotIn"
+              values:
+                - "/usr/bin/ansible"
+                - "/usr/bin/ansible-playbook"
+                - "/usr/bin/python3"
+                - "/usr/sbin/sshd"
+                - "/bin/su"
+                - "/bin/login"
+                - "/usr/bin/passwd"
+          matchActions:
+            - action: Sigkill
+        # Persistence — kill writes to cron/init/security-tool dirs
+        - matchArgs:
+            - index: 0
+              operator: "Prefix"
+              values:
+                - "/etc/crontabs/"
+                - "/etc/periodic/"
+                - "/etc/init.d/"
+                - "/etc/conf.d/"
+                - "/opt/compose/tetragon/"
+                - "/opt/compose/crowdsec/"
+            - index: 1
+              operator: "Mask"
+              values:
+                - "1"
+                - "2"
+                - "64"
+          matchActions:
+            - action: Sigkill
+        # Persistence — kill writes to authorized_keys / shell rc files
+        - matchArgs:
+            - index: 0
+              operator: "Postfix"
+              values:
+                - "authorized_keys"
+                - ".bashrc"
+                - ".profile"
+            - index: 1
+              operator: "Mask"
+              values:
+                - "1"
+                - "2"
+                - "64"
+          matchActions:
+            - action: Sigkill
