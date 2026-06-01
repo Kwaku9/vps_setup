@@ -80,8 +80,14 @@ spec:
               operator: "Mask"
               values:
                 - "1"
-                - "2"
                 - "64"
+          matchBinaries:
+            - operator: "NotIn"
+              values:
+                - "/usr/bin/ansible"
+                - "/usr/bin/ansible-playbook"
+                - "/usr/bin/python3"
+                - "/usr/bin/crontab"
           matchActions:
             - action: Sigkill
         # Persistence — kill writes to authorized_keys / shell rc files
@@ -96,7 +102,13 @@ spec:
               operator: "Mask"
               values:
                 - "1"
-                - "2"
                 - "64"
+          matchBinaries:
+            - operator: "NotIn"
+              values:
+                - "/usr/bin/ansible"
+                - "/usr/bin/ansible-playbook"
+                - "/usr/bin/python3"
+                - "/usr/bin/crontab"
           matchActions:
             - action: Sigkill

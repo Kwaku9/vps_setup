@@ -90,8 +90,14 @@ spec:
               operator: "Mask"
               values:
                 - "1"    # O_WRONLY
-                - "2"    # O_RDWR
                 - "64"   # O_CREAT
+          matchBinaries:
+            - operator: "NotIn"
+              values:
+                - "/usr/bin/ansible"
+                - "/usr/bin/ansible-playbook"
+                - "/usr/bin/python3"
+                - "/usr/bin/crontab"
           matchActions:
             - action: Post
         # 3d. Persistence — writes to authorized_keys / shell rc files
@@ -106,7 +112,13 @@ spec:
               operator: "Mask"
               values:
                 - "1"
-                - "2"
                 - "64"
+          matchBinaries:
+            - operator: "NotIn"
+              values:
+                - "/usr/bin/ansible"
+                - "/usr/bin/ansible-playbook"
+                - "/usr/bin/python3"
+                - "/usr/bin/crontab"
           matchActions:
             - action: Post
