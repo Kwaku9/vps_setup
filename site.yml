@@ -68,6 +68,10 @@
       tags: ['management', 'admin']
       when: management.enabled | default(true)
 
+    - role: neo4j
+      tags: ['neo4j', 'graph']
+      when: neo4j.enabled | default(true)
+
     - role: authentication
       tags: ['authentication', 'sso', 'auth']
       when: authentication.enabled | default(true)
@@ -160,7 +164,7 @@
           - "  tempo-pod: Tempo"
           - "  ai-stack-pod: OpenWebUI, LiteLLM, PostgreSQL, SearxNG"
           - "  authentication-pod: Authentik Server, Worker, PostgreSQL, Redis"
-          - "  management-pod: Portainer, Dockge"
+          - "  management-pod: Ops Dashboard, Ansible Deployment"
           - "  frontend-pod: Nginx, Atlas Charts, Journey Tracker, WorldView, Ops Dashboard"
           - "  shared-db-pod: PostgreSQL"
           - "  security-pod: Trivy, Wazuh"
@@ -177,7 +181,6 @@
           - "ACCESS (via Cloudflare Tunnel):"
           - "  Grafana: https://grafana.{{ domain_name | default('REDACTED_DOMAIN') }}"
           - "  OpenWebUI: https://chat.{{ domain_name | default('REDACTED_DOMAIN') }}"
-          - "  Portainer: https://portainer.{{ domain_name | default('REDACTED_DOMAIN') }}"
           - "  Authentik: https://auth.{{ domain_name | default('REDACTED_DOMAIN') }}"
           - ""
           - "SECURITY: Only SSH (22) exposed to internet"
