@@ -5,13 +5,6 @@
 management:
   enabled: true
 
-  portainer:
-    enabled: true
-    version: "2.33.6"
-    image: "portainer/portainer-ce:2.33.6"
-    port: 9444  # Changed from 9443 (conflict with Authentik)
-    data_volume: "portainer-data"
-
   # Ops Dashboard — ops.aicortex.cloud infrastructure status UI.
   # Source lives at roles/management/files/ops-dashboard/.
   ops_dashboard:
@@ -33,5 +26,3 @@ management:
     enabled: true
     image: "localhost/ansible-vps:latest"
 
-# Will be overridden by vault
-portainer_password: "VAULT_OVERRIDE"
