@@ -32,6 +32,10 @@ neo4j:
     package_version: "0.6.0"      # mcp-neo4j-cypher pin (see files/neo4j-mcp/Dockerfile)
     http_bind: "127.0.0.1:18080"  # MCP streamable-http endpoint (Claude connects here)
     database: "neo4j"
+    # DNS-rebinding allow-list for the streamable-http transport. Must include every
+    # Host header clients send: 127.0.0.1:18080 (host-loopback session) AND neo4j-pod:8080
+    # (cross-pod clients like the telegram-gateway). Default allows localhost only.
+    allowed_hosts: "127.0.0.1:18080,127.0.0.1,localhost,neo4j-pod:8080,neo4j-pod"
 
   # Load docs/service-map.cypher into the graph after the DB is ready.
   # Idempotent (MERGE-based) — safe to re-run on every deploy.

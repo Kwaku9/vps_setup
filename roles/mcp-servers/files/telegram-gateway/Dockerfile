@@ -39,6 +39,11 @@ RUN uv sync
 
 COPY telegram_gateway/ /app/telegram_gateway/
 
+# Dedicated MCP config for the in-container Claude CLI (neo4j graph, reachable
+# cross-pod). Used via --mcp-config + --strict-mcp-config so it ignores the
+# shared host ~/.claude.json (whose neo4j URL is host-loopback-only).
+COPY neo4j-mcp.json /app/neo4j-mcp.json
+
 ENV PYTHONPATH=/app
 ENV SHELL=/bin/bash
 

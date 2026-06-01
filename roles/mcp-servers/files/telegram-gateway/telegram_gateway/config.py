@@ -37,6 +37,12 @@ LITELLM_DEFAULT_MODEL: str = os.environ.get("LITELLM_DEFAULT_MODEL", "claude-hai
 # Claude Code CLI (default backend)
 CLAUDE_CLI_PATH: str = os.environ.get("CLAUDE_CLI_PATH", "/usr/local/bin/claude")
 CLAUDE_CLI_TIMEOUT: int = int(os.environ.get("CLAUDE_CLI_TIMEOUT", "300"))
+# Optional: give the in-container Claude CLI a dedicated MCP config (e.g. the neo4j
+# service-map graph at neo4j-pod:8080). Empty = no extra MCP servers.
+# CLAUDE_ALLOWED_TOOLS is a comma-separated allowlist so headless `claude -p` may
+# call those MCP tools without an interactive approval prompt.
+CLAUDE_MCP_CONFIG: str = os.environ.get("CLAUDE_MCP_CONFIG", "")
+CLAUDE_ALLOWED_TOOLS: str = os.environ.get("CLAUDE_ALLOWED_TOOLS", "")
 
 OTEL_EXPORTER_OTLP_ENDPOINT: str = os.environ.get(
     "OTEL_EXPORTER_OTLP_ENDPOINT", "http://monitoring-pod:4318"
