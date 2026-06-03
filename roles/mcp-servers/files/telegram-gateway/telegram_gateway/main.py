@@ -23,6 +23,7 @@ from telegram_gateway.formatter import format_for_telegram, format_stderr
 from telegram_gateway.queue import job_queue
 from telegram_gateway.tools.send import router as send_router
 from telegram_gateway.tools.commands import router as commands_router
+from telegram_gateway.tools.permission import router as permission_router
 from telegram_gateway.tracing import init_tracing
 
 logging.basicConfig(
@@ -176,6 +177,7 @@ async def auth_middleware(request: Request, call_next):
 app.include_router(bot_router)
 app.include_router(send_router)
 app.include_router(commands_router)
+app.include_router(permission_router)
 
 
 @app.get("/health")
