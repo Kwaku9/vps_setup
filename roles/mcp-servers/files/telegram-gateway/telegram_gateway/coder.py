@@ -7,8 +7,6 @@ import os
 from datetime import datetime, timezone
 from dataclasses import dataclass
 
-from telegram_gateway import db
-from telegram_gateway.bot import send_telegram_message
 from telegram_gateway.config import (
     CLAUDE_CLI_PATH, CODER_APPROVER_MCP_CONFIG, CODER_AUTO_ALLOW_TOOLS,
     CODER_HEARTBEAT_MINUTES, CODER_MODEL,
@@ -127,6 +125,7 @@ async def cancel_coder(chat_id: int) -> bool:
 
 
 async def _render(chat_id: int, item: FeedItem) -> None:
+    from telegram_gateway.bot import send_telegram_message
     if item.kind == "text":
         await send_telegram_message(chat_id, item.text)
     elif item.kind == "tool_use":
@@ -140,6 +139,7 @@ async def _render(chat_id: int, item: FeedItem) -> None:
 
 
 async def _heartbeat(chat_id: int, started: float) -> None:
+    from telegram_gateway.bot import send_telegram_message
     if CODER_HEARTBEAT_MINUTES <= 0:
         return
     while True:
@@ -150,6 +150,8 @@ async def _heartbeat(chat_id: int, started: float) -> None:
 
 async def process_coder_command(command_id: int) -> None:
     """JobQueue handler: run one coder turn, streaming a progress feed."""
+    from telegram_gateway import db
+    from telegram_gateway.bot import send_telegram_message
     global _active_chat_id
     pool = await db.get_pool()
     cmd = await pool.fetchrow("SELECT * FROM gateway.commands WHERE id=$1", command_id)
