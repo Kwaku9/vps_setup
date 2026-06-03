@@ -58,3 +58,27 @@ def test_node_to_params_flattens_meta():
     pt = icg.node_to_params(tbl)
     assert pt["props"]["knowledge_category"] == "data"
     assert pt["props"]["knowledge_wikilinks"] == ["[[messages]]"]
+
+
+def test_rel_type():
+    assert icg.rel_type("imports") == "IMPORTS"
+    assert icg.rel_type("depends_on") == "DEPENDS_ON"
+
+
+def test_edge_to_params():
+    g = icg.load_graph(str(FIXTURE))
+    e = next(x for x in g["edges"] if x["source"] == "f1")
+    p = icg.edge_to_params(e)
+    assert p["source"] == "f1"
+    assert p["target"] == "fn1"
+    assert p["rel"] == "CONTAINS"
+    assert p["props"]["weight"] == 1.0
+    assert p["props"]["direction"] == "forward"
+    assert p["props"]["description"] == "file has fn"
+
+
+def test_edge_to_params_drops_missing_description():
+    g = icg.load_graph(str(FIXTURE))
+    e = next(x for x in g["edges"] if x["source"] == "fn1" and x["target"] == "svc1")
+    p = icg.edge_to_params(e)
+    assert "description" not in p["props"]
