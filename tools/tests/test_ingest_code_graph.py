@@ -120,3 +120,9 @@ def test_find_link_candidates_substring_and_whitelist():
     assert cands[0]["code_id"] == "svc9"
     assert cands[0]["basis"] == "substring"
     assert cands[0]["confidence"] == "low"
+
+
+def test_tour_step_id_uses_order_then_index():
+    assert icg.tour_step_id({"order": 3}, 0) == "tour-step-3"
+    assert icg.tour_step_id({}, 5) == "tour-step-5"
+    assert icg.tour_step_id({"order": None}, 2) == "tour-step-2"
