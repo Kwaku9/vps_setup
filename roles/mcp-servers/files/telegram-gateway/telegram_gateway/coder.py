@@ -71,3 +71,18 @@ def parse_stream_event(event: dict) -> list[FeedItem]:
         return [FeedItem(kind="result", text=str(event.get("result") or ""))]
 
     return []
+
+
+def build_permission_prompt(tool_name: str, tool_input: dict) -> str:
+    """Human-readable approval text shown on the Telegram Approve/Deny card."""
+    summary = _summarize_input(tool_input)
+    return f"Run {tool_name}?\n{summary}" if summary else f"Run {tool_name}?"
+
+
+def decide_from_status(status: str) -> dict:
+    """Map a gateway.approvals status to the CLI permission-prompt contract."""
+    if status == "approved":
+        return {"behavior": "allow"}
+    if status == "expired":
+        return {"behavior": "deny", "message": "Approval request expired."}
+    return {"behavior": "deny", "message": "Denied by operator."}
