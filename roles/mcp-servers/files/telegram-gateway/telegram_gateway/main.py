@@ -130,6 +130,17 @@ async def lifespan(app: FastAPI):
     global _listen_task
     # Startup
     await db.init_pool()
+    from telegram_gateway.config import (
+        BOT_MODE, CODER_APPROVER_MCP_CONFIG, MCP_SERVER_PORT)
+    if BOT_MODE == "coder":
+        # The in-container CLI reaches THIS app's permission tool over HTTP MCP.
+        cfg = {"mcpServers": {"approver": {
+            "type": "http",
+            "url": f"http://localhost:{MCP_SERVER_PORT}/mcp/"}}}
+        with open(CODER_APPROVER_MCP_CONFIG, "w") as f:
+            json.dump(cfg, f)
+        job_queue.semaphore = asyncio.Semaphore(1)  # one coder session at a time
+        logger.info("Coder mode: wrote approver mcp-config, concurrency=1")
     _listen_task = asyncio.create_task(_listen_responses())
     logger.info("Telegram Gateway started")
     yield
