@@ -51,10 +51,13 @@ async def permission_prompt(req: PermissionPromptRequest) -> dict:
         chat_id=chat_id, prompt_text=prompt_text, approval_id=approval_id,
         hmac_token=hmac_token, requested_by="coder",
     )
-    if result.get("ok"):
-        msg_id = result.get("result", {}).get("message_id")
-        if msg_id:
-            await db.update_approval_message_id(approval_id, msg_id)
+    if not result.get("ok"):
+        logger.warning("Failed to send approval card for %s: %s", req.tool_name, result)
+        await db.update_approval_status(approval_id, "denied", 0, "system")
+        return {"behavior": "deny", "message": "Failed to send approval card."}
+    msg_id = result.get("result", {}).get("message_id")
+    if msg_id:
+        await db.update_approval_message_id(approval_id, msg_id)
 
     # Poll until decided or expired (the callback handler flips status).
     deadline = APPROVAL_TIMEOUT_MINUTES * 60
