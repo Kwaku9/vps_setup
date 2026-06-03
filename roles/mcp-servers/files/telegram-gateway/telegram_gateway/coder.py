@@ -1,6 +1,21 @@
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
+import os
+from datetime import datetime, timezone
 from dataclasses import dataclass
+
+from telegram_gateway import db
+from telegram_gateway.bot import send_telegram_message
+from telegram_gateway.config import (
+    CLAUDE_CLI_PATH, CODER_APPROVER_MCP_CONFIG, CODER_AUTO_ALLOW_TOOLS,
+    CODER_HEARTBEAT_MINUTES, CODER_MODEL,
+)
+from telegram_gateway.formatter import format_tool_use, format_tool_result
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -86,3 +101,110 @@ def decide_from_status(status: str) -> dict:
     if status == "expired":
         return {"behavior": "deny", "message": "Approval request expired."}
     return {"behavior": "deny", "message": "Denied by operator."}
+
+
+# --- Active-session registry (one global coder session at a time) ---
+_active_chat_id: int | None = None
+_active_procs: dict[int, asyncio.subprocess.Process] = {}
+
+
+def active_coder_chat() -> int | None:
+    """Chat ID of the currently running coder session, or None."""
+    return _active_chat_id
+
+
+def is_running(chat_id: int) -> bool:
+    return chat_id in _active_procs
+
+
+async def cancel_coder(chat_id: int) -> bool:
+    """Terminate the running subprocess for a chat. Returns True if one existed."""
+    proc = _active_procs.get(chat_id)
+    if proc and proc.returncode is None:
+        proc.terminate()
+        return True
+    return False
+
+
+async def _render(chat_id: int, item: FeedItem) -> None:
+    if item.kind == "text":
+        await send_telegram_message(chat_id, item.text)
+    elif item.kind == "tool_use":
+        await send_telegram_message(
+            chat_id, format_tool_use(item.text, item.detail), parse_mode="HTML")
+    elif item.kind == "tool_result":
+        await send_telegram_message(
+            chat_id, format_tool_result(item.text), parse_mode="HTML")
+    elif item.kind == "result":
+        await send_telegram_message(chat_id, item.text or "Done.")
+
+
+async def _heartbeat(chat_id: int, started: float) -> None:
+    if CODER_HEARTBEAT_MINUTES <= 0:
+        return
+    while True:
+        await asyncio.sleep(CODER_HEARTBEAT_MINUTES * 60)
+        mins = int((asyncio.get_event_loop().time() - started) / 60)
+        await send_telegram_message(chat_id, f"⏳ still working — {mins} min elapsed")
+
+
+async def process_coder_command(command_id: int) -> None:
+    """JobQueue handler: run one coder turn, streaming a progress feed."""
+    global _active_chat_id
+    pool = await db.get_pool()
+    cmd = await pool.fetchrow("SELECT * FROM gateway.commands WHERE id=$1", command_id)
+    if not cmd:
+        return
+    chat_id = cmd["telegram_chat_id"]
+    prompt = cmd["message"]
+
+    session = await db.get_session(chat_id)
+    session_id = session["session_id"] if session else None
+
+    # Build CLI args. --resume must be its own flag pair (mirrors agent.py).
+    if session_id:
+        args = [CLAUDE_CLI_PATH, "--resume", session_id, "-p", prompt]
+    else:
+        args = [CLAUDE_CLI_PATH, "-p", prompt]
+    args += ["--model", CODER_MODEL, "--output-format", "stream-json", "--verbose",
+             "--mcp-config", CODER_APPROVER_MCP_CONFIG,
+             "--permission-prompt-tool", "mcp__approver__permission_prompt",
+             "--allowedTools", CODER_AUTO_ALLOW_TOOLS]
+
+    _active_chat_id = chat_id
+    started = asyncio.get_event_loop().time()
+    hb = asyncio.create_task(_heartbeat(chat_id, started))
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            cwd="/workspace", env={**os.environ})
+        _active_procs[chat_id] = proc
+
+        assert proc.stdout is not None
+        async for raw in proc.stdout:
+            line = raw.decode("utf-8", errors="replace").strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            for item in parse_stream_event(event):
+                if item.kind == "session" and item.text:
+                    # Persist session_id IMMEDIATELY so /cancel keeps resumability.
+                    await db.upsert_session(chat_id, item.text, "coder")
+                else:
+                    await _render(chat_id, item)
+
+        await proc.wait()
+        if proc.returncode not in (0, None):
+            err = (await proc.stderr.read()).decode("utf-8", "replace")[-500:]
+            await send_telegram_message(chat_id, f"⚠ coder exited {proc.returncode}\n{err}")
+        await db.update_command_status(
+            command_id, "completed",
+            completed_at=datetime.now(timezone.utc),
+        )
+    finally:
+        hb.cancel()
+        _active_procs.pop(chat_id, None)
+        _active_chat_id = None
