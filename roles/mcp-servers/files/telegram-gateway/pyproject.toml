@@ -16,3 +16,6 @@ dependencies = [
     "opentelemetry-instrumentation-httpx>=0.46b0",
     "opentelemetry-instrumentation-asyncpg>=0.46b0",
 ]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
