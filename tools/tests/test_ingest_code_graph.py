@@ -82,3 +82,41 @@ def test_edge_to_params_drops_missing_description():
     e = next(x for x in g["edges"] if x["source"] == "fn1" and x["target"] == "svc1")
     p = icg.edge_to_params(e)
     assert "description" not in p["props"]
+
+
+def test_normalize_name():
+    assert icg.normalize_name("Telegram_Gateway") == "telegram-gateway"
+    assert icg.normalize_name("  chat.aicortex.cloud ") == "chat-aicortex-cloud"
+
+
+def test_find_link_candidates_exact():
+    g = icg.load_graph(str(FIXTURE))
+    sm = [
+        {"label": "Container", "name": "telegram-gateway"},
+        {"label": "Route", "name": "chat.aicortex.cloud"},
+        {"label": "Database", "name": "enterprise"},
+        {"label": "Pod", "name": "ai-stack-pod"},
+    ]
+    cands = icg.find_link_candidates(g["nodes"], sm)
+    # svc1->Container and ep1->Route are exact; tbl1 'sessions' matches nothing.
+    keys = {(c["code_id"], c["target_label"], c["basis"]) for c in cands}
+    assert ("svc1", "Container", "exact") in keys
+    assert ("ep1", "Route", "exact") in keys
+    assert all(c["code_type"] in ("service", "endpoint", "table") for c in cands)
+    assert all(c["approved"] is False for c in cands)
+    # exact entries are ordered before substring entries
+    bases = [c["basis"] for c in cands]
+    assert bases == sorted(bases, key=lambda b: 0 if b == "exact" else 1)
+
+
+def test_find_link_candidates_substring_and_whitelist():
+    code = [
+        {"id": "svc9", "type": "service", "name": "telegram-gateway-bot"},
+        {"id": "fn9", "type": "function", "name": "telegram-gateway"},  # not whitelisted
+    ]
+    sm = [{"label": "Container", "name": "telegram-gateway"}]
+    cands = icg.find_link_candidates(code, sm)
+    assert len(cands) == 1
+    assert cands[0]["code_id"] == "svc9"
+    assert cands[0]["basis"] == "substring"
+    assert cands[0]["confidence"] == "low"
