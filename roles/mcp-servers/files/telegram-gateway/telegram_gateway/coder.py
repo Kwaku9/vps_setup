@@ -120,6 +120,7 @@ async def cancel_coder(chat_id: int) -> bool:
     proc = _active_procs.get(chat_id)
     if proc and proc.returncode is None:
         proc.terminate()
+        # proc.wait()/reaping is handled by process_coder_command's finally
         return True
     return False
 
@@ -144,7 +145,7 @@ async def _heartbeat(chat_id: int, started: float) -> None:
         return
     while True:
         await asyncio.sleep(CODER_HEARTBEAT_MINUTES * 60)
-        mins = int((asyncio.get_event_loop().time() - started) / 60)
+        mins = int((asyncio.get_running_loop().time() - started) / 60)
         await send_telegram_message(chat_id, f"⏳ still working — {mins} min elapsed")
 
 
@@ -173,14 +174,24 @@ async def process_coder_command(command_id: int) -> None:
              "--permission-prompt-tool", "mcp__approver__permission_prompt",
              "--allowedTools", CODER_AUTO_ALLOW_TOOLS]
 
-    _active_chat_id = chat_id
-    started = asyncio.get_event_loop().time()
+    logger.info("coder command %d started for chat %d", command_id, chat_id)
+    started = asyncio.get_running_loop().time()
     hb = asyncio.create_task(_heartbeat(chat_id, started))
     try:
         proc = await asyncio.create_subprocess_exec(
             *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             cwd="/workspace", env={**os.environ})
         _active_procs[chat_id] = proc
+        _active_chat_id = chat_id           # set AFTER registering proc for consistency
+
+        stderr_chunks: list[bytes] = []
+
+        async def _drain_stderr() -> None:
+            assert proc.stderr is not None
+            async for line in proc.stderr:
+                stderr_chunks.append(line)
+
+        drain_task = asyncio.create_task(_drain_stderr())
 
         assert proc.stdout is not None
         async for raw in proc.stdout:
@@ -198,9 +209,11 @@ async def process_coder_command(command_id: int) -> None:
                 else:
                     await _render(chat_id, item)
 
+        await drain_task
         await proc.wait()
+        logger.info("coder command %d exit=%s", command_id, proc.returncode)
         if proc.returncode not in (0, None):
-            err = (await proc.stderr.read()).decode("utf-8", "replace")[-500:]
+            err = b"".join(stderr_chunks).decode("utf-8", "replace")[-500:]
             await send_telegram_message(chat_id, f"⚠ coder exited {proc.returncode}\n{err}")
         await db.update_command_status(
             command_id, "completed",
