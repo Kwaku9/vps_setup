@@ -19,7 +19,7 @@ def test_assistant_tool_use_block():
     items = parse_stream_event(ev)
     assert items[0].kind == "tool_use"
     assert items[0].text == "Bash"
-    assert "npm test" in items[0].detail
+    assert items[0].detail == "command: npm test"
 
 
 def test_user_tool_result_block():
@@ -37,3 +37,18 @@ def test_final_result_event():
 
 def test_unknown_event_ignored():
     assert parse_stream_event({"type": "system", "subtype": "other"}) == []
+
+
+def test_user_tool_result_list_content():
+    ev = {"type": "user", "message": {"content": [
+        {"type": "tool_result", "content": [
+            {"type": "text", "text": "line one"}, {"type": "text", "text": "line two"}]}]}}
+    items = parse_stream_event(ev)
+    assert items[0].kind == "tool_result"
+    assert "line one" in items[0].text and "line two" in items[0].text
+
+
+def test_malformed_blocks_do_not_raise():
+    ev = {"type": "assistant", "message": {"content": ["notadict",
+        {"type": "text", "text": "ok"}]}}
+    assert parse_stream_event(ev) == [FeedItem(kind="text", text="ok")]

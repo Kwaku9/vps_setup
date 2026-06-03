@@ -14,11 +14,17 @@ class FeedItem:
 def _summarize_input(tool_input: dict) -> str:
     """Compact one-line-ish summary of a tool's input for the feed."""
     if not isinstance(tool_input, dict):
-        return str(tool_input)
-    for key in ("command", "file_path", "path", "pattern", "query"):
-        if key in tool_input:
-            return f"{key}: {tool_input[key]}"
-    return ", ".join(f"{k}: {v}" for k, v in list(tool_input.items())[:3])
+        result = str(tool_input)
+    else:
+        for key in ("command", "file_path", "path", "pattern", "query"):
+            if key in tool_input:
+                result = f"{key}: {tool_input[key]}"
+                break
+        else:
+            result = ", ".join(f"{k}: {v}" for k, v in list(tool_input.items())[:3])
+    if len(result) > 200:
+        result = result[:200] + "…"
+    return result
 
 
 def parse_stream_event(event: dict) -> list[FeedItem]:
@@ -35,6 +41,8 @@ def parse_stream_event(event: dict) -> list[FeedItem]:
     if etype == "assistant":
         items: list[FeedItem] = []
         for block in event.get("message", {}).get("content", []):
+            if not isinstance(block, dict):
+                continue
             btype = block.get("type")
             if btype == "text" and block.get("text", "").strip():
                 items.append(FeedItem(kind="text", text=block["text"].strip()))
@@ -49,6 +57,8 @@ def parse_stream_event(event: dict) -> list[FeedItem]:
     if etype == "user":
         items = []
         for block in event.get("message", {}).get("content", []):
+            if not isinstance(block, dict):
+                continue
             if block.get("type") == "tool_result":
                 content = block.get("content", "")
                 if isinstance(content, list):  # content can be a block list
@@ -58,6 +68,6 @@ def parse_stream_event(event: dict) -> list[FeedItem]:
         return items
 
     if etype == "result":
-        return [FeedItem(kind="result", text=str(event.get("result", "")))]
+        return [FeedItem(kind="result", text=str(event.get("result") or ""))]
 
     return []
