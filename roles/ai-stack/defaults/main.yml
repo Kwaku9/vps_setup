@@ -92,7 +92,7 @@ ai_stack:
     model_file: "embeddinggemma-300M-Q8_0.gguf"
     model_url: "https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf"
     ctx_size: 2048                  # EmbeddingGemma max context
-    memory: "768m"
+    memory: "2g"
 
   # Claude Monitor Backend
   claude_monitor_backend:
