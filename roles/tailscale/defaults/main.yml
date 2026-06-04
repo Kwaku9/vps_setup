@@ -1,0 +1,27 @@
+# Tailscale Role Defaults
+# Provides Tailscale VPN client on Alpine + tailnet-only socat forwarders
+# for development services (currently: Expo Metro for the mobile dev build).
+
+tailscale:
+  enabled: true
+  # Hostname this node registers under in the tailnet
+  hostname: "alpine-vps"
+  # Stable tailnet IP for this node — codified after first enrollment so
+  # downstream services (socat, expo packager env) can target it.
+  ip: "100.121.252.38"
+  # Auth key from vault.yml; used only on first enrollment
+  authkey: "{{ vault_tailscale_authkey | default('') }}"
+  # OpenRC service name created by Alpine's tailscale package
+  service: "tailscale"
+
+# Tailnet-only socat forwarders.
+# Each entry exposes a container port on the tailnet IP via socat.
+# Used for development services that have to be HTTP (no TLS) — iOS
+# dev clients accept HTTP only via NSAppTransportSecurity exceptions
+# bound to the specific tailnet IP.
+tailscale_forwarders:
+  - name: expo-tailnet
+    listen_port: 19000
+    target_host: "10.89.0.30"  # dev-pod infra IP on enterprise_network
+    target_port: 8082          # Metro listens here inside the pod
+    description: "Expo Metro bundler for aicortex-chat iOS dev build"

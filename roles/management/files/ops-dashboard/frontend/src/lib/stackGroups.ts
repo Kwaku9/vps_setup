@@ -52,7 +52,7 @@ export const STACK_GROUPS: StackGroup[] = [
     key: 'mgmt',
     title: 'Management',
     subtitle: 'Container & infra tools',
-    match: (s) => ['portainer', 'ansible-deployment'].includes(s.name),
+    match: (s) => ['ansible-deployment'].includes(s.name),
   },
   {
     key: 'comms',

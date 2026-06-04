@@ -33,8 +33,8 @@ mcp_servers:
         DB_HOST: "shared-db-pod"
         DB_PORT: "5432"
         DB_NAME: "enterprise"
-        DB_USER: "postgres"
-        DB_PASSWORD: "{{ postgres_password | default('') }}"
+        DB_USER: "telegram_gw"
+        DB_PASSWORD: "{{ pg_telegram_gw_password | default('') }}"
         OTEL_EXPORTER_OTLP_ENDPOINT: "http://logs-pod:4318"
         OTEL_SERVICE_NAME: "telegram-gateway"
 

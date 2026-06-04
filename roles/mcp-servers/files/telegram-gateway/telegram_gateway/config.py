@@ -32,17 +32,46 @@ DB_PASSWORD: str = os.environ.get("DB_PASSWORD", "")
 # LiteLLM gateway (fallback backend)
 LITELLM_BASE_URL: str = os.environ.get("LITELLM_BASE_URL", "http://ai-stack-pod:4000")
 LITELLM_API_KEY: str = os.environ.get("LITELLM_API_KEY", "")
-LITELLM_DEFAULT_MODEL: str = os.environ.get("LITELLM_DEFAULT_MODEL", "claude-sonnet-4-20250514")
+LITELLM_DEFAULT_MODEL: str = os.environ.get("LITELLM_DEFAULT_MODEL", "claude-haiku-4-5")
 
 # Claude Code CLI (default backend)
 CLAUDE_CLI_PATH: str = os.environ.get("CLAUDE_CLI_PATH", "/usr/local/bin/claude")
 CLAUDE_CLI_TIMEOUT: int = int(os.environ.get("CLAUDE_CLI_TIMEOUT", "300"))
+# Optional: give the in-container Claude CLI a dedicated MCP config (e.g. the neo4j
+# service-map graph at neo4j-pod:8080). Empty = no extra MCP servers.
+# CLAUDE_ALLOWED_TOOLS is a comma-separated allowlist so headless `claude -p` may
+# call those MCP tools without an interactive approval prompt.
+CLAUDE_MCP_CONFIG: str = os.environ.get("CLAUDE_MCP_CONFIG", "")
+CLAUDE_ALLOWED_TOOLS: str = os.environ.get("CLAUDE_ALLOWED_TOOLS", "")
 
 OTEL_EXPORTER_OTLP_ENDPOINT: str = os.environ.get(
     "OTEL_EXPORTER_OTLP_ENDPOINT", "http://monitoring-pod:4318"
 )
 
 AUTH_TOKEN: str = os.environ.get("AUTH_TOKEN", "")
+
+# --- Coder bot (BOT_MODE=coder) ---
+# Selects the bot persona/runtime. "gateway" = existing ops/APM bot (default,
+# unchanged). "coder" = autonomous streaming coding agent with approval gating.
+BOT_MODE: str = os.environ.get("BOT_MODE", "gateway")
+
+# Model the coder's headless `claude -p` runs as. Coding-only, no agent split.
+CODER_MODEL: str = os.environ.get("CODER_MODEL", "claude-opus-4-8")
+
+# Generated at startup (Task 7): an --mcp-config file pointing the in-container
+# CLI at this app's own permission-prompt MCP tool.
+CODER_APPROVER_MCP_CONFIG: str = os.environ.get(
+    "CODER_APPROVER_MCP_CONFIG", "/app/coder-approver-mcp.json"
+)
+
+# Soft "still working" heartbeat cadence, minutes. 0 disables.
+CODER_HEARTBEAT_MINUTES: int = int(os.environ.get("CODER_HEARTBEAT_MINUTES", "3"))
+
+# Tools the coder may run WITHOUT an approval prompt (read-only).
+CODER_AUTO_ALLOW_TOOLS: str = os.environ.get(
+    "CODER_AUTO_ALLOW_TOOLS", "Read,Grep,Glob"
+)
+
 RATE_LIMIT_PER_MINUTE: int = int(os.environ.get("RATE_LIMIT_PER_MINUTE", "20"))
 MCP_SERVER_PORT: int = int(os.environ.get("MCP_SERVER_PORT", "7555"))
 

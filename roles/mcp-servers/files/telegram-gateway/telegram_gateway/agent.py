@@ -13,8 +13,10 @@ import httpx
 from opentelemetry import trace
 
 from telegram_gateway.config import (
+    CLAUDE_ALLOWED_TOOLS,
     CLAUDE_CLI_PATH,
     CLAUDE_CLI_TIMEOUT,
+    CLAUDE_MCP_CONFIG,
     KOKORO_TTS_URL,
     LITELLM_API_KEY,
     LITELLM_BASE_URL,
@@ -133,7 +135,7 @@ async def process_command(command_id: int):
             )
         else:
             await _process_claude_cli(
-                command_id, cmd, agent_type, system_prompt
+                command_id, cmd, agent_type, system_prompt, model
             )
 
         # TTS: synthesize voice and send after text responses
@@ -257,6 +259,7 @@ async def _process_claude_cli(
     cmd,
     agent_type: str,
     system_prompt: str,
+    model: str,
 ):
     """Run the message through Claude Code CLI with session continuity.
 
@@ -282,7 +285,17 @@ async def _process_claude_cli(
         full_prompt = f"[Context: {system_prompt}]\n\n{prompt}"
         cli_args.extend(["-p", full_prompt])
 
-    cli_args.extend(["--model", "claude-sonnet-4-6", "--output-format", "json"])
+    cli_args.extend(["--model", model, "--output-format", "json"])
+
+    # Optional dedicated MCP config (e.g. the neo4j service-map graph). --mcp-config
+    # is variadic so it must precede --strict-mcp-config; --allowed-tools is variadic
+    # too, so it goes last (it consumes the trailing tool names).
+    if CLAUDE_MCP_CONFIG:
+        cli_args.extend(["--mcp-config", CLAUDE_MCP_CONFIG, "--strict-mcp-config"])
+        tools = [t.strip() for t in CLAUDE_ALLOWED_TOOLS.split(",") if t.strip()]
+        if tools:
+            cli_args.append("--allowed-tools")
+            cli_args.extend(tools)
 
     try:
         proc = await asyncio.create_subprocess_exec(

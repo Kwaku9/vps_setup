@@ -83,3 +83,74 @@ export interface VibrationParams {
   duration: number;
   intensity: VibrationIntensity;
 }
+
+export type TimeseriesPoint = [number, number]; // [unix_ts, value]
+
+export interface TimeseriesResponse {
+  service_name: string;
+  metric: 'cpu' | 'mem';
+  minutes: number;
+  points: TimeseriesPoint[];
+}
+
+export interface ContainerDetails {
+  name: string;
+  image: string;
+  command: string[];
+  created: string;
+  started_at: string;
+  status: string;
+  exit_code: number | null;
+  restart_policy: string;
+  restart_count: number;
+  ip_address: string;
+  ports: Record<string, unknown>;
+  port_bindings: Record<string, unknown>;
+  mounts: { source: string; destination: string; mode: string }[];
+  env: [string, string][];
+  labels: Record<string, string>;
+  pod: string | null;
+}
+
+export interface LiveSession {
+  session_uuid: string;
+  live_status: 'running' | 'waiting_input' | 'idle' | 'ended';
+  needs_input: boolean;
+  current_stage: string | null;
+  host: string | null;
+  git_branch: string | null;
+  model: string | null;
+  project: string | null;
+  last_event_at: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  needs_approval?: boolean;
+  approval_id?: number | null;
+  approval_tool?: string | null;
+  approval_prompt?: string | null;
+}
+
+export interface PendingApproval {
+  id: number;
+  prompt_text: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface TranscriptMessage {
+  uuid: string;
+  role: string;
+  type: string;
+  content_text: string | null;
+  sequence_num: number;
+  timestamp: string | null;
+}
+
+export interface SessionUpdate {
+  type: 'session_update';
+  session_uuid: string;
+  live_status?: string;
+  needs_input?: boolean;
+  current_stage?: string | null;
+}

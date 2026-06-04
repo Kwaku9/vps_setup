@@ -11,8 +11,7 @@ docs/
 CLAUDE.md
 GEMINI.md
 *.md
-# Keep README files for deployment / setup notes
-!README.md
+!README.md                    # Keep main README for deployment notes
 
 # ============================================
 # Utility Scripts (Non-Deployment)
@@ -21,11 +20,6 @@ scripts/
 *.sh
 *.ps1
 !entrypoint.sh                # Exception: needed for container
-# Referenced by ~/.claude/commands/update-timeline.md (do not gitignore)
-!sync-sessions-to-vps.sh
-# Workstation automation (referenced by run-daily-timeline.sh)
-!run-daily-timeline.sh
-!workstation-systemd/
 
 # ============================================
 # Claude/AI Instructions
@@ -161,3 +155,9 @@ flyers/output/*
 /tools/fabric-venv/
 # Rendered from tools/telegram-approval.json.j2 via vault pre_task — never commit
 /tools/telegram-approval.json
+
+# Worktrees (local-only, never committed)
+.worktrees/
+!run-daily-timeline.sh
+!sync-sessions-to-vps.sh
+!workstation-systemd/

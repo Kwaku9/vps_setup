@@ -5,13 +5,6 @@
 management:
   enabled: true
 
-  portainer:
-    enabled: true
-    version: "2.33.6"
-    image: "portainer/portainer-ce:2.33.6"
-    port: 9444  # Changed from 9443 (conflict with Authentik)
-    data_volume: "portainer-data"
-
   # Ops Dashboard — ops.aicortex.cloud infrastructure status UI.
   # Source lives at roles/management/files/ops-dashboard/.
   ops_dashboard:
@@ -24,6 +17,8 @@ management:
     ssh_host: "10.89.0.1"  # host gateway IP inside enterprise_network
     ssh_known_hosts: "/root/.ssh/known_hosts_ops"
     vm_url: "http://metrics-pod:8428"
+    db_host: "postgres"          # fallback only; real value resolved at deploy via podman inspect (name doesn't resolve cross-pod)
+    stale_minutes: 10            # staleness sweeper threshold for live sessions
 
   # Ansible deployment container — self-hosts the ansible runner.
   # Depends on a Dockerfile at the repo root. See H3 in the audit.
@@ -31,5 +26,3 @@ management:
     enabled: true
     image: "localhost/ansible-vps:latest"
 
-# Will be overridden by vault
-portainer_password: "VAULT_OVERRIDE"

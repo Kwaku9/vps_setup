@@ -1,3 +1,6 @@
+import type { TimeseriesResponse, ContainerDetails } from '../types';
+import type { LiveSession, TranscriptMessage } from '../types';
+
 const BASE_URL = import.meta.env.VITE_API_URL || '';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -20,3 +23,29 @@ export const api = {
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
 };
+
+export const fetchTimeseries = (
+  name: string,
+  metric: 'cpu' | 'mem' = 'cpu',
+  minutes = 15,
+) => api.get<TimeseriesResponse>(
+  `/api/metrics/${encodeURIComponent(name)}/timeseries?metric=${metric}&minutes=${minutes}`,
+);
+
+export const fetchDetails = (name: string) =>
+  api.get<ContainerDetails>(`/api/services/${encodeURIComponent(name)}/details`);
+
+export const fetchActiveSessions = () => api.get<LiveSession[]>('/api/sessions/active');
+
+export const fetchTranscript = (uuid: string, since = 0) =>
+  api.get<TranscriptMessage[]>(`/api/sessions/${encodeURIComponent(uuid)}/transcript?since=${since}`);
+
+// Approvals
+export const fetchPendingApprovals = () =>
+  api.get<import('../types').PendingApproval[]>('/api/approvals/pending');
+
+export const decideApproval = (id: number, decision: 'approve' | 'deny') =>
+  api.post<{ ok: boolean; id: number; status: string }>(
+    `/api/approvals/${id}/decide`,
+    { decision },
+  );

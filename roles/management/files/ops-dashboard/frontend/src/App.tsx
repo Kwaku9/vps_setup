@@ -7,14 +7,17 @@ import { Header } from './components/layout/Header';
 import { StatusBar } from './components/layout/StatusBar';
 import { BottomSheet } from './components/layout/BottomSheet';
 import { ServiceGrid } from './components/dashboard/ServiceGrid';
-import { StatusView } from './components/dashboard/StatusView';
+import { OverviewView } from './components/overview/OverviewView';
 import { ProfileRack } from './components/profiles/ProfileRack';
 import { TierRack } from './components/profiles/TierRack';
 import { VisualView } from './components/visual/VisualView';
+import { SessionsView } from './components/sessions/SessionsView';
+import { MobileNav } from './components/layout/MobileNav';
 import { pop } from './lib/motion';
 
 const TABS = [
-  { key: 'dashboard', label: 'Dashboard' },
+  { key: 'dashboard', label: 'Overview' },
+  { key: 'sessions',  label: 'Sessions' },
   { key: 'manager',   label: 'Manager' },
   { key: 'visual',    label: 'Visual' },
 ] as const;
@@ -50,7 +53,7 @@ function TabNav({ activeTab, onTabChange }: { activeTab: string; onTabChange: (t
 function ManagerTab() {
   const [sheet, setSheet] = useState<null | 'profiles' | 'tiers'>(null);
   return (
-    <div className="mx-auto max-w-7xl w-full px-4 md:px-6 pb-24 lg:pb-6">
+    <div className="mx-auto max-w-7xl w-full px-4 md:px-6 pb-28 lg:pb-6">
       <div className="lg:grid lg:grid-cols-[13rem_1fr_14rem] lg:gap-4">
         <aside className="hidden lg:block"><ProfileRack /></aside>
         <main className="min-w-0"><ServiceGrid /></main>
@@ -88,14 +91,16 @@ function DashboardLayout() {
   return (
     <div className="min-h-[100dvh] bg-gray-950 text-gray-200 flex flex-col">
       <Header />
-      <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
+      <div className="hidden md:block"><TabNav activeTab={activeTab} onTabChange={setActiveTab} /></div>
       <StatusBar />
 
       {activeTab === 'dashboard' ? (
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-7xl w-full px-4 md:px-6 py-4">
-            <StatusView />
-          </div>
+          <OverviewView />
+        </main>
+      ) : activeTab === 'sessions' ? (
+        <main className="flex-1 overflow-y-auto py-4">
+          <SessionsView />
         </main>
       ) : activeTab === 'visual' ? (
         <VisualView />
@@ -104,6 +109,7 @@ function DashboardLayout() {
           <ManagerTab />
         </main>
       )}
+      <MobileNav activeTab={activeTab} onTabChange={setActiveTab} />
     </div>
   );
 }

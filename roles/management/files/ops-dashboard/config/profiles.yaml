@@ -199,6 +199,15 @@ services:
     ansible_tag: mcp
     dependencies: [postgres, traefik]
 
+  context7-mcp:
+    platform: vps
+    endpoint_type: pod
+    pod: mcp-pod
+    description: "Context7 MCP server"
+    memory_mb: 256
+    ansible_tag: mcp
+    dependencies: []
+
   google-docs-mcp:
     platform: vps
     endpoint_type: pod
@@ -216,16 +225,6 @@ services:
     memory_mb: 256
     ansible_tag: mcp
     dependencies: []
-
-  # === VPS: management-pod ===
-  portainer:
-    platform: vps
-    endpoint_type: pod
-    pod: management-pod
-    description: "Container management UI"
-    memory_mb: 128
-    ansible_tag: management
-    dependencies: [traefik]
 
   # === VPS: frontend-pod ===
   journey-tracker:
@@ -536,7 +535,6 @@ profiles:
       authentik-postgres: false
       redis: false
       telegram-gateway: false
-      portainer: false
       journey-tracker: false
       worldview-dev: false
       ais-relay: false
@@ -546,6 +544,7 @@ profiles:
       ansible-deployment: true
       github-runner: true
       ops-dashboard: true
+      context7-mcp: false
       google-docs-mcp: false
       n8n-mcp: false
       ib-mcp-server: false
@@ -592,7 +591,6 @@ profiles:
       deepseek-v3: true
       # Extras off
       telegram-gateway: false
-      portainer: false
       journey-tracker: false
       worldview-dev: false
       ais-relay: false
@@ -602,6 +600,7 @@ profiles:
       ansible-deployment: true
       github-runner: true
       ops-dashboard: true
+      context7-mcp: false
       google-docs-mcp: false
       n8n-mcp: false
       ib-mcp-server: false
@@ -641,7 +640,6 @@ profiles:
       authentik-postgres: true
       redis: true
       telegram-gateway: true
-      portainer: true
       journey-tracker: true
       worldview-dev: true
       ais-relay: true
@@ -651,6 +649,7 @@ profiles:
       ansible-deployment: true
       github-runner: true
       ops-dashboard: true
+      context7-mcp: true
       google-docs-mcp: true
       n8n-mcp: true
       ib-mcp-server: false
@@ -694,7 +693,6 @@ profiles:
       authentik-postgres: true
       redis: true
       telegram-gateway: false
-      portainer: false
       journey-tracker: false
       worldview-dev: false
       ais-relay: false
@@ -704,6 +702,7 @@ profiles:
       ansible-deployment: true
       github-runner: true
       ops-dashboard: true
+      context7-mcp: false
       google-docs-mcp: false
       n8n-mcp: false
       ib-mcp-server: false
@@ -745,7 +744,6 @@ profiles:
       authentik-postgres: true
       redis: true
       telegram-gateway: true
-      portainer: false
       journey-tracker: true
       worldview-dev: true
       ais-relay: true
@@ -755,6 +753,7 @@ profiles:
       ansible-deployment: true
       github-runner: true
       ops-dashboard: true
+      context7-mcp: false
       google-docs-mcp: false
       n8n-mcp: false
       ib-mcp-server: false

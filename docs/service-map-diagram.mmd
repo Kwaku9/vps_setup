@@ -1,0 +1,136 @@
+%%{init: {'theme':'dark','flowchart':{'curve':'basis','nodeSpacing':40,'rankSpacing':55}}}%%
+flowchart TB
+    %% ---------------- Edge / Ingress ----------------
+    internet([Internet / Users]):::ext
+    cfedge{{Cloudflare Edge + Access}}:::ext
+    subgraph EDGE["🌐 Ingress edge (standalone)"]
+        direction LR
+        cfd[cloudflared<br/>tunnel]:::edge
+        tf[traefik v3.7<br/>:80/:443]:::edge
+        cs[crowdsec<br/>LAPI :8180]:::sec
+    end
+    internet --> cfedge -->|"*.aicortex.cloud<br/>(20 hostnames)"| cfd -->|https| tf
+    tf -. bouncer .-> cs
+
+    %% ---------------- AI stack ----------------
+    subgraph AI["🤖 ai-stack-pod"]
+        direction TB
+        owui[open-webui<br/>:8080]:::app
+        llm[litellm<br/>:4000]:::app
+        kok[kokoro-tts<br/>:8880]:::svc
+        sxng[searxng]:::svc
+        gtts[gemini-tts-proxy]:::svc
+        n8n[n8n-claude<br/>:5678]:::svc
+        aspg[(ai-stack-postgres<br/>litellm · n8n · memory⚠)]:::db
+    end
+    owui --> llm
+    owui --> kok
+    owui --> sxng
+    llm --> gtts
+    llm --> aspg
+    n8n --> aspg
+
+    %% ---------------- Auth ----------------
+    subgraph AUTH["🔐 authentication-pod (+worker pod)"]
+        direction TB
+        aks[authentik-server<br/>:9000]:::auth
+        akw[authentik-worker]:::auth
+        akpg[(authentik-postgres)]:::db
+        rds[(redis ⚠no-auth)]:::db
+    end
+    aks --> akpg
+    aks --> rds
+    akw --> akpg
+    akw --> rds
+    aks <--> akw
+    akprox[authentik-proxy<br/>standby/unwired]:::auth -.-> aks
+
+    %% ---------------- Shared data ----------------
+    subgraph DATA["🗄 shared-db-pod"]
+        pg[(postgres / enterprise<br/>sessions·gateway·trading)]:::db
+    end
+
+    %% ---------------- Observability ----------------
+    subgraph OBS["📊 monitoring (metrics / logs / tempo pods)"]
+        direction TB
+        vm[(victoriametrics<br/>:8428 · 20y)]:::obs
+        vma[vmalert<br/>BLACKHOLE]:::obs
+        graf[grafana<br/>:3000]:::app
+        rend[renderer]:::svc
+        loki[(loki :3100<br/>14d)]:::obs
+        alloy[alloy<br/>collector :4317/8]:::obs
+        tempo[(tempo :3200<br/>traces 7d)]:::obs
+    end
+    alloy --> loki
+    alloy --> tempo
+    alloy --> vm
+    vma --> vm
+    vm -. scrapes .-> llm & aks & cs & tf & loki & graf & cfd
+    graf --> vm
+    graf --> loki
+    graf --> tempo
+    graf --> pg
+    graf --> rend
+
+    %% ---------------- Apps / frontend ----------------
+    subgraph FE["🖥 frontend-pod"]
+        direction LR
+        ngx[nginx<br/>portal]:::fe
+        wv[worldview-dev<br/>:5173]:::fe
+        atl[atlas-charts]:::fe
+        jt[journey-tracker]:::fe
+    end
+    atl --> vm
+
+    %% ---------------- Mgmt / integration / security ----------------
+    subgraph MGMT["🛠 management + integration + security"]
+        direction TB
+        port[portainer]:::mgmt
+        ops[ops-dashboard<br/>:8090]:::app
+        tg[telegram-gateway<br/>:7555]:::app
+        gdocs[google-docs-mcp]:::mcp
+        scrapy[scrapy-mcp]:::mcp
+        hp[honeypot]:::sec
+        tm[threat-map]:::sec
+        ais[ais-relay]:::svc
+    end
+    ops --> pg
+    ops --> vm
+    tg --> pg
+    tg --> llm
+    tg --> kok
+    tg --> graf
+    tm --> cs
+    tm --> loki
+
+    %% ---------------- OTLP fan-in ----------------
+    owui & llm & kok & n8n & tg & tf -. otlp .-> alloy
+
+    %% ---------------- OIDC ----------------
+    graf & owui & port & tm -. OIDC .-> aks
+
+    %% ---------------- Traefik routes (representative) ----------------
+    tf --> owui & llm & kok & n8n & graf & vm & aks & port & ops & ngx & wv & atl & jt & tg & tm & hp
+
+    %% ---------------- Host / SSH edges ----------------
+    host[(alpine-vps host)]:::host
+    tg -. ssh .-> host
+    ops -. ssh .-> host
+
+    %% ---------------- External ----------------
+    llm -. api .-> extllm([LLM providers:<br/>OpenAI·Anthropic·Vertex·Groq·xAI...]):::ext
+    tg -. api .-> exttg([api.telegram.org]):::ext
+    ais -. wss .-> extais([aisstream.io]):::ext
+
+    classDef edge fill:#1f3a5f,stroke:#5b9bd5,color:#fff;
+    classDef app fill:#2d4a22,stroke:#7cb342,color:#fff;
+    classDef svc fill:#3a3a1f,stroke:#c0ca33,color:#fff;
+    classDef db fill:#4a2d3a,stroke:#ec407a,color:#fff;
+    classDef obs fill:#1f3a3a,stroke:#26c6da,color:#fff;
+    classDef auth fill:#3a2d4a,stroke:#ab47bc,color:#fff;
+    classDef sec fill:#4a2d2d,stroke:#ef5350,color:#fff;
+    classDef fe fill:#2d3a4a,stroke:#42a5f5,color:#fff;
+    classDef mgmt fill:#3a3320,stroke:#ffa726,color:#fff;
+    classDef mcp fill:#20323a,stroke:#4dd0e1,color:#fff;
+    classDef ext fill:#2a2a2a,stroke:#9e9e9e,color:#ccc;
+    classDef host fill:#333,stroke:#888,color:#fff;

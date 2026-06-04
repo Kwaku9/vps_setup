@@ -1,0 +1,33 @@
+{
+  "version": "1.0",
+  "kind": "codebase",
+  "project": {
+    "name": "sample-proj",
+    "languages": ["python"],
+    "frameworks": ["fastapi"],
+    "description": "Sample graph for tests",
+    "analyzedAt": "2026-06-03T00:00:00Z",
+    "gitCommitHash": "abc123"
+  },
+  "nodes": [
+    {"id":"f1","type":"file","name":"app.py","filePath":"app.py","lineRange":[1,40],"summary":"entry","tags":["entry"],"complexity":"simple"},
+    {"id":"fn1","type":"function","name":"handler","filePath":"app.py","lineRange":[10,20],"summary":"request handler","tags":[],"complexity":"moderate"},
+    {"id":"svc1","type":"service","name":"telegram-gateway","summary":"tg service","tags":[],"complexity":"complex",
+      "domainMeta":{"entryType":"http","entryPoint":"/webhook","entities":["Message"],"businessRules":["rule1"]}},
+    {"id":"ep1","type":"endpoint","name":"chat.aicortex.cloud","summary":"chat route","tags":[],"complexity":"simple"},
+    {"id":"tbl1","type":"table","name":"sessions","summary":"sessions table","tags":[],"complexity":"simple",
+      "knowledgeMeta":{"category":"data","content":"rows","wikilinks":["[[messages]]"]}}
+  ],
+  "edges": [
+    {"source":"f1","target":"fn1","type":"contains","direction":"forward","description":"file has fn","weight":1.0},
+    {"source":"fn1","target":"svc1","type":"calls","direction":"forward","weight":0.5},
+    {"source":"fn1","target":"ghost","type":"calls","direction":"forward","weight":0.2}
+  ],
+  "layers": [
+    {"id":"L1","name":"API","description":"api layer","nodeIds":["f1","fn1"]}
+  ],
+  "tour": [
+    {"order":1,"title":"Start","description":"begin here","nodeIds":["f1"],"languageLesson":"python imports"},
+    {"order":2,"title":"Handler","description":"the handler","nodeIds":["fn1"]}
+  ]
+}

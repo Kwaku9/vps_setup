@@ -27,18 +27,20 @@ export function ProfileRack() {
           <button
             key={p.name}
             onClick={() => handleClick(p.name)}
-            className={`glass rounded-full px-3 py-2 text-[13px] text-left transition-colors ${
-              active ? 'bg-white/15 border-white/20' : 'hover:bg-white/10'
+            className={`block rounded-2xl px-3.5 py-2.5 text-[13px] text-left transition-colors min-h-[64px] glass ${
+              active ? 'bg-white/15 border-white/20 ring-1 ring-white/10' : 'hover:bg-white/10 active:bg-white/15'
             }`}
           >
-            <div className="font-semibold">{p.name}</div>
-            <div className="text-[10px] text-white/50 mt-0.5">{p.description}</div>
-            <div className="text-[10px] text-white/60 mt-1">
-              <span className="text-[color:var(--status-green)]">{p.enabled_count}</span>
-              <span className="text-white/40">/{p.enabled_count + p.disabled_count}</span>
-              {p.estimated_cost_per_hour != null && p.estimated_cost_per_hour > 0 && (
-                <span className="ml-2 text-yellow-500">${p.estimated_cost_per_hour.toFixed(2)}/hr</span>
-              )}
+            <div className="space-y-0.5">
+              <div className="font-semibold leading-tight">{p.name}</div>
+              <div className="text-[10px] text-white/55 leading-snug truncate">{p.description}</div>
+              <div className="text-[10px] text-white/65">
+                <span className="text-[color:var(--status-green)]">{p.enabled_count}</span>
+                <span className="text-white/40">/{p.enabled_count + p.disabled_count}</span>
+                {p.estimated_cost_per_hour != null && p.estimated_cost_per_hour > 0 && (
+                  <span className="ml-2 text-yellow-500">${p.estimated_cost_per_hour.toFixed(2)}/hr</span>
+                )}
+              </div>
             </div>
           </button>
         );

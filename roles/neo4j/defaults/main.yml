@@ -1,0 +1,55 @@
+---
+# Neo4j graph database + MCP server.
+# Holds the infrastructure service-map graph (docs/SERVICE-MAP.md -> docs/service-map.cypher).
+#
+# Pod-first per the future-Kubernetes migration: neo4j-db + neo4j-mcp-server share neo4j-pod,
+# so the MCP server reaches the DB over localhost (bolt://localhost:7687) and the whole unit
+# maps cleanly to a single Kubernetes Pod (`podman generate kube`).
+#
+# Secret: requires `neo4j_password` in vault.yml (ansible-vault edit vault.yml).
+
+neo4j:
+  enabled: true
+  pod_name: "neo4j-pod"
+  data_dir: "/opt/podman-data/neo4j"
+  network: "{{ podman_network_name | default('enterprise_network') }}"
+
+  db:
+    container_name: "neo4j-db"
+    image: "docker.io/library/neo4j:5-community"
+    memory: "2g"
+    heap_initial: "512m"
+    heap_max: "1G"
+    pagecache: "512m"
+    # All binds loopback-only; access via Cloudflare-tunnel/Traefik or SSH tunnel, never public.
+    http_bind: "127.0.0.1:7474"   # Neo4j Browser
+    bolt_bind: "127.0.0.1:7687"   # Bolt protocol
+    # "Anonymous usage data" (UDC, Neo4j 5.20+) phones home to udc.neo4j.com on a timer.
+    # Visible in Squid logs as sni=udc.neo4j.com. Off by default; set true to allow reporting.
+    usage_report: false
+
+  mcp:
+    container_name: "neo4j-mcp-server"
+    image: "localhost/neo4j-mcp:latest"
+    build: true
+    package_version: "0.6.0"      # mcp-neo4j-cypher pin (see files/neo4j-mcp/Dockerfile)
+    http_bind: "127.0.0.1:18080"  # MCP streamable-http endpoint (Claude connects here)
+    database: "neo4j"
+    # DNS-rebinding allow-list for the streamable-http transport. Must include every
+    # Host header clients send: 127.0.0.1:18080 (host-loopback session) AND neo4j-pod:8080
+    # (cross-pod clients like the telegram-gateway). Default allows localhost only.
+    allowed_hosts: "127.0.0.1:18080,127.0.0.1,localhost,neo4j-pod:8080,neo4j-pod"
+
+  # Idempotent sessions-graph loader (Claude Code session history + Telegram-queryable).
+  # Heavy (~226k messages) -> runs via nightly cron, not on every deploy.
+  sessions_graph:
+    enabled: true
+    script_dir: "/opt/compose/sessions-graph"
+    cron_hour: "3"
+    cron_minute: "30"          # after the 03:00 session-ingestion cron
+    run_on_deploy: false       # set true (or use --tags sessions-graph-run) to load during deploy
+
+  # Load docs/service-map.cypher into the graph after the DB is ready.
+  # Idempotent (MERGE-based) — safe to re-run on every deploy.
+  load_service_map: true
+  cypher_file: "service-map.cypher"   # sourced from repo docs/ at deploy time

@@ -88,8 +88,12 @@ export function StatusView() {
                         <td className="px-2 py-1.5">
                           <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${sc.bg}`}>{sc.label}</span>
                         </td>
-                        <td className="px-2 py-1.5 text-right text-xs text-[color:var(--vps-cyan)] hidden sm:table-cell">{isRunning && cpu > 0 ? `${cpu.toFixed(1)}%` : ''}</td>
-                        <td className="px-3 py-1.5 text-right text-xs text-[color:var(--host-purple)] hidden sm:table-cell">{isRunning && mem > 0 ? `${mem.toFixed(1)}%` : ''}</td>
+                        <td className={`px-2 py-1.5 text-right text-xs hidden sm:table-cell ${isRunning && cpu > 0 ? 'text-[color:var(--vps-cyan)]' : 'text-white/25'}`}>
+                          {isRunning ? `${cpu.toFixed(1)}%` : ''}
+                        </td>
+                        <td className={`px-3 py-1.5 text-right text-xs hidden sm:table-cell ${isRunning && mem > 0 ? 'text-[color:var(--host-purple)]' : 'text-white/25'}`}>
+                          {isRunning ? `${mem.toFixed(1)}%` : ''}
+                        </td>
                       </tr>
                     );
                   })}

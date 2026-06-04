@@ -513,6 +513,40 @@ async def _handle_callback_query(callback_query: dict) -> dict:
     return {"ok": True}
 
 
+async def _handle_coder_message(user_id: int, chat_id: int, text: str) -> dict:
+    """Coder-mode message handling: /new, /cancel, else run a coding turn."""
+    from telegram_gateway.coder import (
+        cancel_coder, is_running, process_coder_command)
+
+    is_admin = not TELEGRAM_ALLOWED_USER_IDS or user_id in TELEGRAM_ALLOWED_USER_IDS
+    if not is_admin:
+        return {"ok": True}
+    if not _check_rate_limit(user_id):
+        await send_telegram_message(chat_id, "Rate limit exceeded. Please wait.")
+        return {"ok": True}
+
+    if text.startswith("/cancel"):
+        cancelled = await cancel_coder(chat_id)
+        await send_telegram_message(
+            chat_id, "\U0001f6d1 Cancelled." if cancelled else "Nothing running.")
+        return {"ok": True}
+
+    if text.startswith("/new"):
+        await db.delete_session(chat_id)
+        await send_telegram_message(chat_id, "Session reset. Next message starts fresh.")
+        return {"ok": True}
+
+    if is_running(chat_id):
+        await send_telegram_message(
+            chat_id, "A session is already running — /cancel it first.")
+        return {"ok": True}
+
+    command_id = await db.insert_command(user_id, chat_id, "coder", text)
+    await job_queue.enqueue(command_id, process_coder_command)
+    await send_telegram_message(chat_id, "\U0001f9e0 On it…")
+    return {"ok": True}
+
+
 @router.post("/webhook")
 async def telegram_webhook(
     request: Request,
@@ -551,6 +585,10 @@ async def telegram_webhook(
 
     if not user_id or not chat_id or not text:
         return {"ok": True}
+
+    from telegram_gateway.config import BOT_MODE
+    if BOT_MODE == "coder":
+        return await _handle_coder_message(user_id, chat_id, text)
 
     # Handle special commands before agent parsing
     stripped_text = text.strip()

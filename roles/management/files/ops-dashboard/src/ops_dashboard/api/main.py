@@ -11,8 +11,14 @@ from fastapi.staticfiles import StaticFiles
 
 from .dependencies import init_state, refresh_live_containers
 from .routers import actions, metrics, profiles, services, stacks
+from .routers import ingest as ingest_router
+from .routers import sessions as sessions_router
+from .routers import approvals as approvals_router
+from .routers.metrics import vm_client as router_vm_client
 from .victoria import VictoriaMetricsClient
 from .ws.metrics_stream import metrics_poll_loop
+from .ws.sessions_stream import staleness_sweeper
+from ..sessions.db import create_pool
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +50,27 @@ async def lifespan(app: FastAPI):
     # Start live container discovery background task
     live_discovery_task = asyncio.create_task(refresh_live_containers(state))
 
+    # Sessions DB pool (best-effort — dashboard still serves metrics if DB is down)
+    try:
+        app.state.db_pool = await create_pool()
+    except Exception:
+        logger.exception("sessions DB pool init failed; ingest disabled")
+        app.state.db_pool = None
+
+    sweeper_task = asyncio.create_task(
+        staleness_sweeper(app.state.db_pool, ingest_router.ws_manager)
+    )
+
     yield
 
     # Shutdown
     poll_task.cancel()
     live_discovery_task.cancel()
+    sweeper_task.cancel()
+    if app.state.db_pool is not None:
+        await app.state.db_pool.close()
     await vm_client.close()
+    await router_vm_client.close()
     logger.info("Ops Dashboard API shutdown")
 
 
@@ -77,6 +98,9 @@ app.include_router(profiles.router)
 app.include_router(stacks.router)
 app.include_router(actions.router)
 app.include_router(metrics.router)
+app.include_router(ingest_router.router)
+app.include_router(sessions_router.router)
+app.include_router(approvals_router.router)
 
 
 @app.get("/api/health")

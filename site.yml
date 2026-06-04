@@ -41,9 +41,12 @@
       tags: ['claude-prep', 'claude']
       when: claude.enabled | default(true)
 
-    - role: gemini-prep
-      tags: ['gemini-prep', 'gemini']
-      when: gemini.enabled | default(true)
+    # gemini-prep removed 2026-05-26 — Gemini CLI no longer used.
+    # Role tasks remain under roles/gemini-prep/ for reference but are not invoked.
+    # To fully uninstall: ssh root@vps && npm uninstall -g @google/gemini-cli
+    # - role: gemini-prep
+    #   tags: ['gemini-prep', 'gemini']
+    #   when: gemini.enabled | default(true)
 
     - role: cloudflared
       tags: ['cloudflared', 'tunnel']
@@ -65,6 +68,10 @@
       tags: ['management', 'admin']
       when: management.enabled | default(true)
 
+    - role: neo4j
+      tags: ['neo4j', 'graph']
+      when: neo4j.enabled | default(true)
+
     - role: authentication
       tags: ['authentication', 'sso', 'auth']
       when: authentication.enabled | default(true)
@@ -74,6 +81,14 @@
 
     - role: security
       tags: ['security', 'hardening']
+
+    # tailscale must run AFTER security: the security role's configure-firewall.sh
+    # flushes the INPUT chain on every run, which would wipe any tailscale ACCEPT
+    # rule inserted earlier. Tailscale's role re-adds the rule (and persists it
+    # via /etc/local.d/firewall.start for next boot).
+    - role: tailscale
+      tags: ['tailscale']
+      when: tailscale.enabled | default(true)
 
     - role: ai-stack
       tags: ['ai-stack', 'openwebui', 'searxng']
@@ -115,6 +130,14 @@
       tags: ['hermes', 'agent']
       when: hermes.enabled | default(true)
 
+    # boot-services MUST be last: it generates OpenRC init scripts that
+    # reference the pods/containers other roles created. If it ran earlier,
+    # `rc-update add <name>` would fail because the service file is generated
+    # but the pod might not exist yet.
+    - role: boot-services
+      tags: ['boot-services']
+      when: boot_services.enabled | default(true)
+
   post_tasks:
     # Netavark NAT recovery — always runs at end of play.
     # Reloads firewall rules for every running container. Idempotent, ~3s.
@@ -141,7 +164,7 @@
           - "  tempo-pod: Tempo"
           - "  ai-stack-pod: OpenWebUI, LiteLLM, PostgreSQL, SearxNG"
           - "  authentication-pod: Authentik Server, Worker, PostgreSQL, Redis"
-          - "  management-pod: Portainer, Dockge"
+          - "  management-pod: Ops Dashboard, Ansible Deployment"
           - "  frontend-pod: Nginx, Atlas Charts, Journey Tracker, WorldView, Ops Dashboard"
           - "  shared-db-pod: PostgreSQL"
           - "  security-pod: Trivy, Wazuh"
@@ -158,7 +181,6 @@
           - "ACCESS (via Cloudflare Tunnel):"
           - "  Grafana: https://grafana.{{ domain_name | default('REDACTED_DOMAIN') }}"
           - "  OpenWebUI: https://chat.{{ domain_name | default('REDACTED_DOMAIN') }}"
-          - "  Portainer: https://portainer.{{ domain_name | default('REDACTED_DOMAIN') }}"
           - "  Authentik: https://auth.{{ domain_name | default('REDACTED_DOMAIN') }}"
           - ""
           - "SECURITY: Only SSH (22) exposed to internet"

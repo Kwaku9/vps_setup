@@ -15,7 +15,7 @@ monitoring:
     version: "12.3.1-ubuntu"
     port: 3000
     admin_user: "admin"
-    memory: "300m"  # Reduced from 384m — stable at 221MB
+    memory: "512m"  # Was 300m — OOM-killed 2026-05-26 during crowdsec-threats dashboard query burst; 512m matches Grafana's recommended baseline
   node_exporter:
     enabled: true
     version: "v1.10.2"

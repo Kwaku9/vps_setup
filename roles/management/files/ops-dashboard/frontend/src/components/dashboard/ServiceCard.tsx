@@ -2,6 +2,8 @@ import { useDashboard } from '../../contexts/DashboardContext';
 import type { Service } from '../../types';
 import { computeVibration } from '../../utils/vibration';
 import { VibrationWrapper } from '../animations/VibrationWrapper';
+import { Sparkline } from '../charts/Sparkline';
+import { useTimeseries } from '../../hooks/useTimeseries';
 
 const statusConfig: Record<string, { dot: string; label: string; labelColor: string }> = {
   running:  { dot: 'bg-[var(--status-green)] shadow-[0_0_0_2px_rgba(48,209,88,0.15)]', label: 'Running',   labelColor: 'text-emerald-300 bg-emerald-500/10' },
@@ -23,9 +25,10 @@ const platformBadge: Record<string, { cls: string; label: string }> = {
 
 interface Props {
   service: Service;
+  onOpenDetails?: (name: string) => void;
 }
 
-export function ServiceCard({ service }: Props) {
+export function ServiceCard({ service, onOpenDetails }: Props) {
   const { metrics, pendingActions, startService, stopService } = useDashboard();
   const m = metrics[service.name];
   const cpu = m?.cpu_percent ?? service.cpu_percent ?? 0;
@@ -37,6 +40,9 @@ export function ServiceCard({ service }: Props) {
     ? (pending.action === 'start' ? 'starting' : 'stopping')
     : baseStatus;
   const isRunning = baseStatus === 'running';
+
+  const { points: cpuPoints } = useTimeseries(service.name, 'cpu', 15, isRunning);
+  const { points: memPoints } = useTimeseries(service.name, 'mem', 15, isRunning);
 
   const vibration = isRunning ? computeVibration(cpu, mem) : computeVibration(0, 0);
   const badge = platformBadge[service.platform] ?? platformBadge.vps;
@@ -53,7 +59,7 @@ export function ServiceCard({ service }: Props) {
   return (
     <VibrationWrapper params={vibration}>
       <div
-        className={`flex items-center gap-3 px-3 py-2.5 rounded-[var(--r-md)]
+        className={`relative flex items-center gap-3 px-3 py-2.5 rounded-[var(--r-md)]
           glass hover:bg-white/[0.08] transition-colors
           ${!isRunning ? 'opacity-60' : ''}`}
       >
@@ -67,9 +73,13 @@ export function ServiceCard({ service }: Props) {
 
         {/* Name + description */}
         <div className="flex-1 min-w-0">
-          <span className={`text-sm font-semibold ${isRunning ? 'text-gray-100' : 'text-gray-400'}`}>
+          <button
+            type="button"
+            onClick={() => onOpenDetails?.(service.name)}
+            className={`text-sm font-semibold text-left ${isRunning ? 'text-gray-100 hover:text-cyan-300' : 'text-gray-400'} truncate`}
+          >
             {service.name}
-          </span>
+          </button>
           {service.pod && (
             <span className="ml-2 text-[10px] text-gray-600">{service.pod}</span>
           )}
@@ -83,11 +93,17 @@ export function ServiceCard({ service }: Props) {
           {sc.label}
         </span>
 
-        {/* Metrics */}
-        {isRunning && (cpu > 0 || mem > 0) && (
-          <div className="text-[10px] flex-shrink-0 hidden md:flex gap-2">
-            <span className="text-[color:var(--vps-cyan)]">CPU {cpu.toFixed(1)}%</span>
-            <span className="text-[color:var(--host-purple)]">MEM {mem.toFixed(1)}%</span>
+        {/* Metrics — show 0.0% as dim when idle so user knows it's measured */}
+        {isRunning && (
+          <div className="flex-shrink-0 hidden md:flex items-center gap-2 text-[10px]">
+            <span className={cpu > 0 ? 'text-[color:var(--vps-cyan)]' : 'text-white/30'}>
+              CPU {cpu.toFixed(1)}%
+            </span>
+            <Sparkline points={cpuPoints} baselineColor="#64d2ff" />
+            <span className={mem > 0 ? 'text-[color:var(--host-purple)]' : 'text-white/30'}>
+              MEM {mem.toFixed(1)}%
+            </span>
+            <Sparkline points={memPoints} baselineColor="#bf5af2" />
           </div>
         )}
 
@@ -125,6 +141,26 @@ export function ServiceCard({ service }: Props) {
           >
             INFRA
           </span>
+        )}
+        {isRunning && (
+          <div className="absolute bottom-0 left-0 right-0 h-[2px] flex pointer-events-none rounded-b-[var(--r-md)] overflow-hidden">
+            <div
+              className="h-full transition-all duration-500"
+              style={{
+                width: `${Math.min(cpu, 100)}%`,
+                background: cpu > 80 ? 'var(--status-red)' : cpu > 50 ? 'var(--status-yellow)' : 'var(--vps-cyan)',
+                opacity: 0.65,
+              }}
+            />
+            <div
+              className="h-full transition-all duration-500"
+              style={{
+                width: `${Math.min(mem, 100)}%`,
+                background: mem > 80 ? 'var(--status-red)' : mem > 50 ? 'var(--status-yellow)' : 'var(--host-purple)',
+                opacity: 0.55,
+              }}
+            />
+          </div>
         )}
       </div>
     </VibrationWrapper>
