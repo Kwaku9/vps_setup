@@ -80,6 +80,20 @@ ai_stack:
     image: "ghcr.io/remsky/kokoro-fastapi-cpu:latest"
     port: 8880
 
+  # EmbeddingGemma served via llama.cpp for OWUI RAG (routed through LiteLLM).
+  # Own pod (pods-first / k8s migration). MEAN pooling is mandatory for EmbeddingGemma.
+  llama_embed:
+    enabled: true
+    pod_name: "llama-embed-pod"
+    container_name: "llama-embed"
+    image: "ghcr.io/ggml-org/llama.cpp:server"
+    port: 8090                      # internal listen port (cross-pod via pod DNS)
+    data_dir: "/opt/podman-data/llama-embed"
+    model_file: "embeddinggemma-300M-Q8_0.gguf"
+    model_url: "https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf"
+    ctx_size: 2048                  # EmbeddingGemma max context
+    memory: "768m"
+
   # Claude Monitor Backend
   claude_monitor_backend:
     enabled: true
