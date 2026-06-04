@@ -108,7 +108,7 @@ cf_external_ip: "{{ external_ip | default(ansible_default_ipv4.address) }}"
 # Service routing - Traefik subdomain routing table
 # Tunnel sends all traffic to Traefik via wildcard; Traefik routes subdomains to services
 # Auth strategy: Native OIDC per service (no outpost/forward-auth)
-#   - grafana, portainer, openwebui: native OIDC with Authentik
+#   - grafana, openwebui: native OIDC with Authentik
 #   - n8n: built-in user management
 #   - prometheus, checkmk, litellm, traefik, kokoro-tts: internal only (bound to 127.0.0.1)
 cloudflare_exposed_services:
@@ -118,7 +118,6 @@ cloudflare_exposed_services:
   #   metrics-pod:       grafana, prometheus, victoriametrics, image-renderer
   #   logs-pod:          loki, alloy (OTEL gateway)
   #   tempo-pod:         tempo
-  #   management-pod:    portainer
   #   ai-stack-pod:      open-webui, n8n-claude, litellm, kokoro-tts, ollama
   #   authentication-pod: authentik-server, authentik-worker
   #   frontend-pod:      nginx
@@ -127,11 +126,6 @@ cloudflare_exposed_services:
     host: "grafana.{{ cf_domain }}"
     service_url: "http://metrics-pod:3000"
     enabled: "{{ monitoring.grafana.enabled | default(true) }}"
-  - name: portainer
-    host: "portainer.{{ cf_domain }}"
-    service_url: "https://management-pod:9443"
-    enabled: "{{ management.portainer.enabled | default(true) }}"
-    tls_skip_verify: true
   - name: n8n
     host: "n8n.{{ cf_domain }}"
     service_url: "http://ai-stack-pod:5678"

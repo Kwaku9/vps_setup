@@ -49,6 +49,29 @@ OTEL_EXPORTER_OTLP_ENDPOINT: str = os.environ.get(
 )
 
 AUTH_TOKEN: str = os.environ.get("AUTH_TOKEN", "")
+
+# --- Coder bot (BOT_MODE=coder) ---
+# Selects the bot persona/runtime. "gateway" = existing ops/APM bot (default,
+# unchanged). "coder" = autonomous streaming coding agent with approval gating.
+BOT_MODE: str = os.environ.get("BOT_MODE", "gateway")
+
+# Model the coder's headless `claude -p` runs as. Coding-only, no agent split.
+CODER_MODEL: str = os.environ.get("CODER_MODEL", "claude-opus-4-8")
+
+# Generated at startup (Task 7): an --mcp-config file pointing the in-container
+# CLI at this app's own permission-prompt MCP tool.
+CODER_APPROVER_MCP_CONFIG: str = os.environ.get(
+    "CODER_APPROVER_MCP_CONFIG", "/app/coder-approver-mcp.json"
+)
+
+# Soft "still working" heartbeat cadence, minutes. 0 disables.
+CODER_HEARTBEAT_MINUTES: int = int(os.environ.get("CODER_HEARTBEAT_MINUTES", "3"))
+
+# Tools the coder may run WITHOUT an approval prompt (read-only).
+CODER_AUTO_ALLOW_TOOLS: str = os.environ.get(
+    "CODER_AUTO_ALLOW_TOOLS", "Read,Grep,Glob"
+)
+
 RATE_LIMIT_PER_MINUTE: int = int(os.environ.get("RATE_LIMIT_PER_MINUTE", "20"))
 MCP_SERVER_PORT: int = int(os.environ.get("MCP_SERVER_PORT", "7555"))
 

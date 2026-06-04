@@ -1,0 +1,23 @@
+# Tetragon PANIC BUTTON - dormant. Armed via /usr/local/bin/claude-killswitch.
+# Kills any execve of a program path ending in "claude".
+# Managed by Ansible - do not edit on the VPS.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: panic-claude
+spec:
+  kprobes:
+    - call: "__x64_sys_execve"
+      syscall: true
+      args:
+        - index: 0
+          type: "string"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Postfix"
+              values:
+                - "claude"
+                - "/claude/cli.js"
+          matchActions:
+            - action: Sigkill
