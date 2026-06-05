@@ -31,11 +31,15 @@ RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-code-linux-x64
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 
-ENV UV_CACHE_DIR=/tmp/uv-cache
 ENV UV_PYTHON_PREFERENCE=only-system
-RUN uv sync
+# The image build runs on enterprise_network (set in the podman_image task), so
+# uv resolves DNS and fetches through Squid; podman's default 10.88.0.0/16 build
+# net is firewalled off (this — not uv — was the original failure). --frozen
+# installs the exact uv.lock closure (versions + hashes, platform markers
+# honored); --no-dev keeps test-only deps (pytest) out of the runtime image.
+RUN uv sync --frozen --no-dev
 
 COPY telegram_gateway/ /app/telegram_gateway/
 

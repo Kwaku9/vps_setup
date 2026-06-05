@@ -85,6 +85,10 @@ cloudflare_access:
     # X-Telegram-Bot-Api-Secret-Token header + TELEGRAM_ALLOWED_USER_IDS
     # allowlist. CF Access can't gate this — Telegram has no human OAuth flow.
     - "telegram-bot"
+    # telegram-coder: second Telegram webhook receiver (autonomous coding bot,
+    # BOT_MODE=coder). Same rationale as telegram-bot — secret-token + allowlist
+    # auth at the app; CF Access must bypass so Telegram can POST the webhook.
+    - "telegram-coder"
     # hooks removed — orphaned (no Traefik route, no service behind it).
     # The CF Access app was also deleted 2026-05-26.
     # otlp removed — internal telemetry uses Podman DNS (logs-pod:4318), public URL now behind CF Access
