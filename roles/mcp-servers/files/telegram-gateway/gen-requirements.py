@@ -1,52 +1,27 @@
 #!/usr/bin/env python3
-"""Generate a hash-pinned requirements.txt from uv.lock — offline, no network.
+"""How requirements.txt is generated (hash-pinned, with environment markers).
 
-Why this exists: the container build installs deps with pip (not uv), because
-uv's bundled DNS resolver hangs on this host's unreachable IPv6 nameserver in the
-build sandbox. To keep supply-chain integrity (exact versions + hashes) while
-using pip, we transcribe uv.lock's resolved closure into a pip requirements file
-with --hash lines. pip then installs with --require-hashes --no-deps.
+The container build installs deps with pip (not uv): uv runs fine, but we want a
+plain pip install so the build needs no uv at runtime, and the image build runs
+on enterprise_network (10.89.0.0/24) so DNS resolves and downloads route through
+Squid (the default 10.88.0.0/16 build net is firewalled off).
 
-Regenerate after changing dependencies / re-locking:
+requirements.txt is produced by `uv export` — NOT by hand-parsing uv.lock. An
+earlier hand parser dropped the per-package environment markers, which made pip
+try to install Windows-only packages (e.g. pywin32) on Linux. `uv export`
+preserves markers AND hashes, so pip skips non-matching platforms correctly.
 
-    python3 gen-requirements.py    # requires Python 3.11+ (tomllib)
+Regenerate after changing/re-locking dependencies (run on enterprise_network so
+DNS works), from this directory:
 
-Reads ./uv.lock, writes ./requirements.txt.
+    podman run --rm --network=enterprise_network -v "$PWD":/w -w /w \
+      ghcr.io/astral-sh/uv:python3.11-bookworm-slim \
+      uv export --frozen --no-dev --no-emit-project \
+        --format requirements-txt -o requirements.txt
+
+Then `pip install --require-hashes --no-deps -r requirements.txt` in the Dockerfile
+installs the exact locked closure, hash-verified, honoring platform markers.
 """
-from __future__ import annotations
-
-import tomllib
-
-PROJECT = "telegram-gateway"  # the project itself; not a pip-installable dep here
-
-
-def main() -> None:
-    lock = tomllib.load(open("uv.lock", "rb"))
-    lines: list[str] = []
-    skipped: list[str] = []
-    for pkg in lock.get("package", []):
-        name = pkg.get("name", "")
-        if name == PROJECT:
-            continue
-        version = pkg.get("version")
-        hashes: list[str] = []
-        sdist = pkg.get("sdist")
-        if isinstance(sdist, dict) and sdist.get("hash"):
-            hashes.append(sdist["hash"])
-        for wheel in pkg.get("wheels", []):
-            if wheel.get("hash"):
-                hashes.append(wheel["hash"])
-        if not version or not hashes:
-            skipped.append(name)
-            continue
-        req = f"{name}=={version}"
-        for h in hashes:
-            req += f" \\\n    --hash={h}"
-        lines.append(req)
-    with open("requirements.txt", "w") as f:
-        f.write("\n".join(sorted(lines)) + "\n")
-    print(f"wrote {len(lines)} pinned packages; skipped (no hash/version): {skipped}")
-
 
 if __name__ == "__main__":
-    main()
+    print(__doc__)
