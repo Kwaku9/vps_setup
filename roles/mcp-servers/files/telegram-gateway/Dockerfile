@@ -37,8 +37,9 @@ COPY requirements.txt ./
 # this build. requirements.txt is hash-pinned, generated offline from uv.lock by
 # gen-requirements.py (exact versions + hashes for the full transitive closure).
 # --require-hashes enforces integrity; --no-deps because the file IS the closure.
-# --retries/--timeout: the build sandbox's DNS is flaky under load (provider
-# resolver + dead IPv6 entry); ride through transient name-resolution blips.
+# Runs on enterprise_network (set in the podman_image task) so DNS resolves and
+# downloads route through Squid; the default 10.88.0.0/16 build net is firewalled
+# off. --retries/--timeout add resilience for transient blips through the proxy.
 RUN pip install --no-cache-dir --require-hashes --no-deps \
         --retries 10 --timeout 60 -r requirements.txt
 
