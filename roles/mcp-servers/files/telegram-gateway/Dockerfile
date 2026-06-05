@@ -35,7 +35,9 @@ COPY pyproject.toml ./
 
 ENV UV_CACHE_DIR=/tmp/uv-cache
 ENV UV_PYTHON_PREFERENCE=only-system
-RUN uv sync
+# --no-dev: keep test-only deps (pytest) out of the runtime image. Without it,
+# uv resolves the dev group too — extra parallel pypi fetches that flake on DNS.
+RUN uv sync --no-dev
 
 COPY telegram_gateway/ /app/telegram_gateway/
 
