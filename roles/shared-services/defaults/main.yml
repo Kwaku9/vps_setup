@@ -6,7 +6,9 @@ deploy_shared_services: true
 shared_services:
   - name: "postgres"
     enabled: true
-    image: "docker.io/library/postgres:16-alpine"
+    # pgvector image (uid 999) — enterprise DB has the `vector` extension; plain
+    # postgres lacks $libdir/vector.so and crash-loops OWUI RAG. all.yml overrides.
+    image: "docker.io/pgvector/pgvector:pg16"
     port: 5432
   - name: "redis"
     enabled: true
