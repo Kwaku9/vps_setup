@@ -29,15 +29,15 @@ RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-code-linux-x64
     fi && \
     /usr/local/bin/claude --version
 
-COPY pyproject.toml ./
+COPY requirements.txt ./
 
 # Install runtime deps with pip, NOT uv. uv's bundled DNS resolver hangs on this
 # host's unreachable IPv6 nameserver (IPv6 disabled), failing every download with
 # EAI_AGAIN; pip uses glibc's resolver — the same one apt/npm use successfully in
-# this build. Deps are read from pyproject at build time, so there's no
-# hand-maintained requirements file to drift.
-RUN python -c "import tomllib; open('/tmp/requirements.txt','w').write(chr(10).join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))" && \
-    pip install --no-cache-dir -r /tmp/requirements.txt
+# this build. requirements.txt is hash-pinned, generated offline from uv.lock by
+# gen-requirements.py (exact versions + hashes for the full transitive closure).
+# --require-hashes enforces integrity; --no-deps because the file IS the closure.
+RUN pip install --no-cache-dir --require-hashes --no-deps -r requirements.txt
 
 COPY telegram_gateway/ /app/telegram_gateway/
 
