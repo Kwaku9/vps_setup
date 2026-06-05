@@ -29,24 +29,15 @@ RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-code-linux-x64
     fi && \
     /usr/local/bin/claude --version
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY pyproject.toml ./
 
-COPY pyproject.toml uv.lock ./
-
-ENV UV_CACHE_DIR=/tmp/uv-cache
-ENV UV_PYTHON_PREFERENCE=only-system
-# Serialize downloads: uv's parallel pypi fetches overwhelm the build sandbox's
-# DNS resolver (EAI_AGAIN), even though single lookups succeed. 1 = no bursts.
-ENV UV_CONCURRENT_DOWNLOADS=1
-# Extra resilience to slow/flaky index responses during resolution.
-ENV UV_HTTP_TIMEOUT=120
-# --frozen: install straight from uv.lock — no pypi /simple/ index resolution
-#   (uv's DNS resolver flakes on those lookups in this build sandbox).
-# --no-dev: keep test-only deps (pytest) out of the runtime image.
-# NOTE: this build requires IPv4 DNS — the podman_image task passes
-#   --dns=1.1.1.1 because the host resolv.conf's IPv6 nameserver is unreachable
-#   (IPv6 disabled) and uv's resolver hangs on it.
-RUN uv sync --frozen --no-dev
+# Install runtime deps with pip, NOT uv. uv's bundled DNS resolver hangs on this
+# host's unreachable IPv6 nameserver (IPv6 disabled), failing every download with
+# EAI_AGAIN; pip uses glibc's resolver — the same one apt/npm use successfully in
+# this build. Deps are read from pyproject at build time, so there's no
+# hand-maintained requirements file to drift.
+RUN python -c "import tomllib; open('/tmp/requirements.txt','w').write(chr(10).join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))" && \
+    pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY telegram_gateway/ /app/telegram_gateway/
 
@@ -57,4 +48,4 @@ EXPOSE 7555
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3     CMD curl -sf http://localhost:7555/health || exit 1
 
-CMD ["uv", "run", "--", "python", "-m", "telegram_gateway.main"]
+CMD ["python", "-m", "telegram_gateway.main"]
