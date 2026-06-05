@@ -171,6 +171,9 @@ async def process_coder_command(command_id: int) -> None:
         args = [CLAUDE_CLI_PATH, "-p", prompt]
     args += ["--model", CODER_MODEL, "--output-format", "stream-json", "--verbose",
              "--mcp-config", CODER_APPROVER_MCP_CONFIG,
+             # strict: use ONLY the approver MCP, not the host ~/.claude.json
+             # servers — keeps the permission tool resolvable and the run clean.
+             "--strict-mcp-config",
              "--permission-prompt-tool", "mcp__approver__permission_prompt",
              "--allowedTools", CODER_AUTO_ALLOW_TOOLS]
 
@@ -214,6 +217,11 @@ async def process_coder_command(command_id: int) -> None:
         logger.info("coder command %d exit=%s", command_id, proc.returncode)
         if proc.returncode not in (0, None):
             err = b"".join(stderr_chunks).decode("utf-8", "replace")[-500:]
+            # Self-heal: a stale/missing transcript makes --resume fail. Drop the
+            # session pointer so the NEXT message starts fresh instead of looping.
+            if "No conversation found" in err:
+                await db.delete_session(chat_id)
+                err += "\n\n(Session was reset — send your message again.)"
             await send_telegram_message(chat_id, f"⚠ coder exited {proc.returncode}\n{err}")
         await db.update_command_status(
             command_id, "completed",

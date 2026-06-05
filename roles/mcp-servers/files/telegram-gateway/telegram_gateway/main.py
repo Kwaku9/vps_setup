@@ -136,7 +136,10 @@ async def lifespan(app: FastAPI):
         # The in-container CLI reaches THIS app's permission tool over HTTP MCP.
         cfg = {"mcpServers": {"approver": {
             "type": "http",
-            "url": f"http://localhost:{MCP_SERVER_PORT}/mcp/"}}}
+            # FastMCP http_app (mounted at /mcp) serves the protocol at /mcp/mcp/
+            # — /mcp/ itself 404s. This path is what makes the permission tool
+            # reachable to the in-container CLI.
+            "url": f"http://localhost:{MCP_SERVER_PORT}/mcp/mcp/"}}}
         with open(CODER_APPROVER_MCP_CONFIG, "w") as f:
             json.dump(cfg, f)
         job_queue.semaphore = asyncio.Semaphore(1)  # one coder session at a time
