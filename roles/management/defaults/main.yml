@@ -17,7 +17,7 @@ management:
     ssh_host: "10.89.0.1"  # host gateway IP inside enterprise_network
     ssh_known_hosts: "/root/.ssh/known_hosts_ops"
     vm_url: "http://metrics-pod:8428"
-    db_host: "postgres"          # fallback only; real value resolved at deploy via podman inspect (name doesn't resolve cross-pod)
+    db_host: "shared-db-pod"     # pod alias for the enterprise Postgres (cross-pod DNS-resolvable; bare `postgres` name is not)
     stale_minutes: 10            # staleness sweeper threshold for live sessions
 
   # Ansible deployment container — self-hosts the ansible runner.

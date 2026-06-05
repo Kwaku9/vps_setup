@@ -13,7 +13,7 @@ def build_dsn(host: str, port: int, db: str, user: str, password: str) -> str:
 
 def dsn_from_env() -> str:
     return build_dsn(
-        host=os.environ.get("DB_HOST", "postgres"),
+        host=os.environ.get("DB_HOST", "shared-db-pod"),
         port=int(os.environ.get("DB_PORT", "5432")),
         db=os.environ.get("DB_NAME", "enterprise"),
         user=os.environ.get("DB_USER", "postgres"),
