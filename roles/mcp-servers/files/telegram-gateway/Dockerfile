@@ -43,6 +43,9 @@ ENV UV_HTTP_TIMEOUT=120
 # --frozen: install straight from uv.lock — no pypi /simple/ index resolution
 #   (uv's DNS resolver flakes on those lookups in this build sandbox).
 # --no-dev: keep test-only deps (pytest) out of the runtime image.
+# NOTE: this build requires IPv4 DNS — the podman_image task passes
+#   --dns=1.1.1.1 because the host resolv.conf's IPv6 nameserver is unreachable
+#   (IPv6 disabled) and uv's resolver hangs on it.
 RUN uv sync --frozen --no-dev
 
 COPY telegram_gateway/ /app/telegram_gateway/
