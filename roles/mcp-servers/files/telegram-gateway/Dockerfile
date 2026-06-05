@@ -29,19 +29,17 @@ RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-code-linux-x64
     fi && \
     /usr/local/bin/claude --version
 
-COPY requirements.txt ./
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install runtime deps with pip, NOT uv. uv's bundled DNS resolver hangs on this
-# host's unreachable IPv6 nameserver (IPv6 disabled), failing every download with
-# EAI_AGAIN; pip uses glibc's resolver — the same one apt/npm use successfully in
-# this build. requirements.txt is hash-pinned, generated offline from uv.lock by
-# gen-requirements.py (exact versions + hashes for the full transitive closure).
-# --require-hashes enforces integrity; --no-deps because the file IS the closure.
-# Runs on enterprise_network (set in the podman_image task) so DNS resolves and
-# downloads route through Squid; the default 10.88.0.0/16 build net is firewalled
-# off. --retries/--timeout add resilience for transient blips through the proxy.
-RUN pip install --no-cache-dir --require-hashes --no-deps \
-        --retries 10 --timeout 60 -r requirements.txt
+COPY pyproject.toml uv.lock ./
+
+ENV UV_PYTHON_PREFERENCE=only-system
+# The image build runs on enterprise_network (set in the podman_image task), so
+# uv resolves DNS and fetches through Squid; podman's default 10.88.0.0/16 build
+# net is firewalled off (this — not uv — was the original failure). --frozen
+# installs the exact uv.lock closure (versions + hashes, platform markers
+# honored); --no-dev keeps test-only deps (pytest) out of the runtime image.
+RUN uv sync --frozen --no-dev
 
 COPY telegram_gateway/ /app/telegram_gateway/
 
@@ -52,4 +50,4 @@ EXPOSE 7555
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3     CMD curl -sf http://localhost:7555/health || exit 1
 
-CMD ["python", "-m", "telegram_gateway.main"]
+CMD ["uv", "run", "--", "python", "-m", "telegram_gateway.main"]
