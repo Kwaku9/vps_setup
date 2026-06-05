@@ -37,7 +37,10 @@ COPY requirements.txt ./
 # this build. requirements.txt is hash-pinned, generated offline from uv.lock by
 # gen-requirements.py (exact versions + hashes for the full transitive closure).
 # --require-hashes enforces integrity; --no-deps because the file IS the closure.
-RUN pip install --no-cache-dir --require-hashes --no-deps -r requirements.txt
+# --retries/--timeout: the build sandbox's DNS is flaky under load (provider
+# resolver + dead IPv6 entry); ride through transient name-resolution blips.
+RUN pip install --no-cache-dir --require-hashes --no-deps \
+        --retries 10 --timeout 60 -r requirements.txt
 
 COPY telegram_gateway/ /app/telegram_gateway/
 
