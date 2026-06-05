@@ -35,6 +35,11 @@ COPY pyproject.toml ./
 
 ENV UV_CACHE_DIR=/tmp/uv-cache
 ENV UV_PYTHON_PREFERENCE=only-system
+# Serialize downloads: uv's parallel pypi fetches overwhelm the build sandbox's
+# DNS resolver (EAI_AGAIN), even though single lookups succeed. 1 = no bursts.
+ENV UV_CONCURRENT_DOWNLOADS=1
+# Extra resilience to slow/flaky index responses during resolution.
+ENV UV_HTTP_TIMEOUT=120
 # --no-dev: keep test-only deps (pytest) out of the runtime image. Without it,
 # uv resolves the dev group too — extra parallel pypi fetches that flake on DNS.
 RUN uv sync --no-dev
