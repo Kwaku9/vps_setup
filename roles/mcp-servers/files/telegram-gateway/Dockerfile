@@ -31,7 +31,7 @@ RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-code-linux-x64
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 
 ENV UV_CACHE_DIR=/tmp/uv-cache
 ENV UV_PYTHON_PREFERENCE=only-system
@@ -40,9 +40,10 @@ ENV UV_PYTHON_PREFERENCE=only-system
 ENV UV_CONCURRENT_DOWNLOADS=1
 # Extra resilience to slow/flaky index responses during resolution.
 ENV UV_HTTP_TIMEOUT=120
-# --no-dev: keep test-only deps (pytest) out of the runtime image. Without it,
-# uv resolves the dev group too — extra parallel pypi fetches that flake on DNS.
-RUN uv sync --no-dev
+# --frozen: install straight from uv.lock — no pypi /simple/ index resolution
+#   (uv's DNS resolver flakes on those lookups in this build sandbox).
+# --no-dev: keep test-only deps (pytest) out of the runtime image.
+RUN uv sync --frozen --no-dev
 
 COPY telegram_gateway/ /app/telegram_gateway/
 
