@@ -170,11 +170,17 @@ async def process_coder_command(command_id: int) -> None:
     else:
         args = [CLAUDE_CLI_PATH, "-p", prompt]
     args += ["--model", CODER_MODEL, "--output-format", "stream-json", "--verbose",
+             # Approval gating is enforced by the inherited PreToolUse hook
+             # (claude-approval-hook.js) running in fail-closed mode — NOT a
+             # permission-prompt MCP (that path failed to connect AND failed
+             # open). --strict-mcp-config + an empty mcp-config gives the coder a
+             # clean MCP surface: no inherited host servers that could bypass the
+             # hook, and none added.
              "--mcp-config", CODER_APPROVER_MCP_CONFIG,
-             # strict: use ONLY the approver MCP, not the host ~/.claude.json
-             # servers — keeps the permission tool resolvable and the run clean.
              "--strict-mcp-config",
-             "--permission-prompt-tool", "mcp__approver__permission_prompt",
+             # Read-only tools the coder may run without a hook round-trip. The
+             # hook's own strict allow-list (TELEGRAM_APPROVAL_AUTO_ALLOW) is the
+             # real gate; this just avoids redundant prompts for safe reads.
              "--allowedTools", CODER_AUTO_ALLOW_TOOLS]
 
     logger.info("coder command %d started for chat %d", command_id, chat_id)

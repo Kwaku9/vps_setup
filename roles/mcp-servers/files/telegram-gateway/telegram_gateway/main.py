@@ -130,20 +130,17 @@ async def lifespan(app: FastAPI):
     global _listen_task
     # Startup
     await db.init_pool()
-    from telegram_gateway.config import (
-        BOT_MODE, CODER_APPROVER_MCP_CONFIG, MCP_SERVER_PORT)
+    from telegram_gateway.config import BOT_MODE, CODER_APPROVER_MCP_CONFIG
     if BOT_MODE == "coder":
-        # The in-container CLI reaches THIS app's permission tool over HTTP MCP.
-        cfg = {"mcpServers": {"approver": {
-            "type": "http",
-            # FastMCP http_app (mounted at /mcp) serves the protocol at /mcp/mcp/
-            # — /mcp/ itself 404s. This path is what makes the permission tool
-            # reachable to the in-container CLI.
-            "url": f"http://localhost:{MCP_SERVER_PORT}/mcp/mcp/"}}}
+        # Approval gating is enforced by the inherited PreToolUse hook
+        # (claude-approval-hook.js) in fail-closed mode, NOT a permission-prompt
+        # MCP — that approach failed to connect and, worse, failed OPEN. Write an
+        # EMPTY mcp-config so the coder's `claude` runs with --strict-mcp-config
+        # against a clean MCP surface: no inherited host servers, none added.
         with open(CODER_APPROVER_MCP_CONFIG, "w") as f:
-            json.dump(cfg, f)
+            json.dump({"mcpServers": {}}, f)
         job_queue.semaphore = asyncio.Semaphore(1)  # one coder session at a time
-        logger.info("Coder mode: wrote approver mcp-config, concurrency=1")
+        logger.info("Coder mode: wrote empty mcp-config (hook-gated), concurrency=1")
     _listen_task = asyncio.create_task(_listen_responses())
     logger.info("Telegram Gateway started")
     yield
