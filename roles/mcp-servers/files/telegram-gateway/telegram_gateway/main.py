@@ -190,11 +190,21 @@ async def auth_middleware(request: Request, call_next):
     return await call_next(request)
 
 
-# Include routers — these are both FastAPI routes AND MCP tools
-app.include_router(bot_router)
-app.include_router(send_router)
-app.include_router(commands_router)
-app.include_router(permission_router)
+# Include routers — these are both FastAPI routes AND MCP tools.
+# OWUI mode serves only the session-resume API (+ commands for the hook's
+# /get_approval_status poll) and deliberately omits the Telegram routers so its
+# Telegram-free /request_approval is the only one mounted.
+from telegram_gateway.config import BOT_MODE  # noqa: E402
+
+if BOT_MODE == "owui":
+    from telegram_gateway.owui_api import router as owui_router
+    app.include_router(owui_router)
+    app.include_router(commands_router)
+else:
+    app.include_router(bot_router)
+    app.include_router(send_router)
+    app.include_router(commands_router)
+    app.include_router(permission_router)
 
 
 @app.get("/health")

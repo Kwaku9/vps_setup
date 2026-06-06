@@ -88,3 +88,68 @@ def test_approve_updates_status(client, monkeypatch):
                                             "decision": "approved"})
     assert r.status_code == 204
     assert seen == {"aid": 9, "status": "approved"}
+
+
+# --- /coder/stream ---
+
+import asyncio  # noqa: E402
+
+from telegram_gateway.coder import FeedItem  # noqa: E402
+
+
+def _parse_sse(body: str):
+    """Return [(event, data_str), ...] from an SSE response body."""
+    frames = []
+    for block in body.strip().split("\n\n"):
+        ev, data = None, None
+        for ln in block.splitlines():
+            if ln.startswith("event: "):
+                ev = ln[7:]
+            elif ln.startswith("data: "):
+                data = ln[6:]
+        if ev:
+            frames.append((ev, data))
+    return frames
+
+
+def test_stream_happy_path_and_approval(client, monkeypatch):
+    RUN_ID = 777
+    monkeypatch.setattr(owui_api, "_next_run_id", lambda: RUN_ID)
+
+    async def _binding(_):
+        return {"workspace": "/w", "session_id": "old-session"}
+    upserts = []
+    async def _upsert(chat, ws, sid):
+        upserts.append((chat, ws, sid))
+    monkeypatch.setattr(db, "get_owui_binding", _binding)
+    monkeypatch.setattr(db, "upsert_owui_binding", _upsert)
+
+    async def fake_turn(prompt, cwd, session_id=None, **kw):
+        assert cwd == "/w"
+        assert session_id == "old-session"
+        yield FeedItem(kind="session", text="new-session"), None
+        yield FeedItem(kind="text", text="working"), None
+        # simulate the hook firing mid-turn for a gated tool
+        owui_runner.push_approval(RUN_ID, {"approval_id": 5, "tool": "Bash",
+                                           "summary": "Run Bash?"})
+        await asyncio.sleep(0.05)  # let _merge surface the approval first
+        yield FeedItem(kind="tool_use", text="Bash", detail="cmd: x"), None
+        yield FeedItem(kind="_exit", text=""), 0
+
+    monkeypatch.setattr(owui_runner, "run_coder_turn", fake_turn)
+
+    r = client.post("/coder/stream", json={"owui_chat_id": "c1", "prompt": "go"})
+    assert r.status_code == 200
+    frames = _parse_sse(r.text)
+    events = [e for e, _ in frames]
+    assert events[0] == "session"
+    assert "text" in events
+    assert "approval" in events
+    assert "tool_use" in events
+    assert events[-1] == "done"
+    # session id persisted, and the approval payload carried the id
+    assert ("c1", "/w", "new-session") in upserts
+    approval_frame = next(d for e, d in frames if e == "approval")
+    assert '"approval_id": 5' in approval_frame
+    # run unregistered after the stream finishes
+    assert RUN_ID not in owui_runner.PENDING

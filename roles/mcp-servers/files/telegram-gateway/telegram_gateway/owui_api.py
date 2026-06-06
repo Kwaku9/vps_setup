@@ -15,24 +15,49 @@ approval registry, which surfaces it as a native OpenWebUI confirmation.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+import time
+from collections.abc import AsyncIterator
 from dataclasses import asdict
 
 from fastapi import APIRouter, Query, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from telegram_gateway import db, owui_runner, sessions
-from telegram_gateway.config import OWUI_APPROVAL_TIMEOUT_MINUTES
+from telegram_gateway.config import (
+    AUTH_TOKEN, MCP_SERVER_PORT, OWUI_APPROVAL_TIMEOUT_MINUTES,
+    OWUI_AUTO_ALLOW_TOOLS,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["owui"])
+
+# Process-unique, monotonically increasing run id used to correlate a streamed
+# turn with the approvals its PreToolUse hook raises (passed to the hook as
+# TELEGRAM_CHAT_ID, echoed back on /request_approval).
+_run_counter = int(time.time() * 1000)
+
+
+def _next_run_id() -> int:
+    global _run_counter
+    _run_counter += 1
+    return _run_counter
 
 
 class BindRequest(BaseModel):
     owui_chat_id: str
     workspace: str
     session_id: str | None = None
+
+
+class StreamRequest(BaseModel):
+    owui_chat_id: str
+    prompt: str
+    workspace: str | None = None  # used only when the chat has no binding yet
 
 
 class ApprovalDecision(BaseModel):
@@ -92,3 +117,88 @@ async def request_approval(req: RequestApproval):
         "summary": req.prompt_text,
     })
     return {"ok": True, "approval_id": approval_id}
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+async def _merge(turn: AsyncIterator, queue: asyncio.Queue) -> AsyncIterator[tuple]:
+    """Interleave the CLI turn feed with approval events, whichever is ready.
+
+    Yields ``("approval", dict)`` for hook-raised approvals and
+    ``("item", (FeedItem, code))`` for CLI feed items, until the turn ends.
+    """
+    turn_task: asyncio.Future | None = asyncio.ensure_future(turn.__anext__())
+    q_task: asyncio.Future = asyncio.ensure_future(queue.get())
+    try:
+        while turn_task is not None:
+            done, _ = await asyncio.wait(
+                {t for t in (turn_task, q_task) if t is not None},
+                return_when=asyncio.FIRST_COMPLETED)
+            if q_task in done:
+                yield ("approval", q_task.result())
+                q_task = asyncio.ensure_future(queue.get())
+            if turn_task in done:
+                try:
+                    yield ("item", turn_task.result())
+                    turn_task = asyncio.ensure_future(turn.__anext__())
+                except StopAsyncIteration:
+                    turn_task = None
+    finally:
+        q_task.cancel()
+        if turn_task is not None:
+            turn_task.cancel()
+
+
+@router.post("/coder/stream", summary="Resume a Claude Code session, stream SSE")
+async def coder_stream(req: StreamRequest):
+    binding = await db.get_owui_binding(req.owui_chat_id)
+    workspace = binding["workspace"] if binding else req.workspace
+    session_id = binding["session_id"] if binding else None
+    if not workspace:
+        return Response(status_code=409, content="chat is not bound to a workspace")
+
+    run_id = _next_run_id()
+    queue = owui_runner.register_run(run_id)
+    # Point the inherited PreToolUse hook at THIS service with the run id as its
+    # chat id, so /request_approval correlates back to this stream.
+    env = {
+        "TELEGRAM_GATEWAY_URL": f"http://127.0.0.1:{MCP_SERVER_PORT}",
+        "TELEGRAM_GATEWAY_TOKEN": AUTH_TOKEN,
+        "TELEGRAM_CHAT_ID": str(run_id),
+        "TELEGRAM_APPROVAL_FAIL_CLOSED": "1",
+        "TELEGRAM_APPROVAL_AUTO_ALLOW": OWUI_AUTO_ALLOW_TOOLS,
+    }
+
+    async def gen() -> AsyncIterator[str]:
+        lock = owui_runner.workspace_lock(workspace)
+        async with lock:
+            try:
+                turn = owui_runner.run_coder_turn(
+                    req.prompt, workspace, session_id,
+                    env_overrides=env, allowed_tools=OWUI_AUTO_ALLOW_TOOLS)
+                async for kind, payload in _merge(turn, queue):
+                    if kind == "approval":
+                        yield _sse("approval", payload)
+                        continue
+                    item, code = payload
+                    if item.kind == "session" and item.text:
+                        await db.upsert_owui_binding(
+                            req.owui_chat_id, workspace, item.text)
+                        yield _sse("session", {"session_id": item.text})
+                    elif item.kind == "_exit":
+                        if code not in (0, None) and "No conversation found" in item.text:
+                            # stale transcript: drop the binding so the next
+                            # message starts a fresh session
+                            await db.upsert_owui_binding(
+                                req.owui_chat_id, workspace, None)
+                        yield _sse("done", {"exit_code": code,
+                                            "stderr": item.text if code else ""})
+                    else:
+                        yield _sse(item.kind, {"text": item.text,
+                                               "detail": item.detail})
+            finally:
+                owui_runner.unregister_run(run_id)
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
