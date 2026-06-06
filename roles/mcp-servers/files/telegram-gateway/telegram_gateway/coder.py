@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import os
 from datetime import datetime, timezone
 from dataclasses import dataclass
 
 from telegram_gateway.config import (
-    CLAUDE_CLI_PATH, CODER_APPROVER_MCP_CONFIG, CODER_AUTO_ALLOW_TOOLS,
-    CODER_HEARTBEAT_MINUTES, CODER_MODEL,
+    CODER_AUTO_ALLOW_TOOLS, CODER_HEARTBEAT_MINUTES,
 )
 from telegram_gateway.formatter import format_tool_use, format_tool_result
 
@@ -153,6 +150,7 @@ async def process_coder_command(command_id: int) -> None:
     """JobQueue handler: run one coder turn, streaming a progress feed."""
     from telegram_gateway import db
     from telegram_gateway.bot import send_telegram_message
+    from telegram_gateway.owui_runner import run_coder_turn
     global _active_chat_id
     pool = await db.get_pool()
     cmd = await pool.fetchrow("SELECT * FROM gateway.commands WHERE id=$1", command_id)
@@ -164,71 +162,39 @@ async def process_coder_command(command_id: int) -> None:
     session = await db.get_session(chat_id)
     session_id = session["session_id"] if session else None
 
-    # Build CLI args. --resume must be its own flag pair (mirrors agent.py).
-    if session_id:
-        args = [CLAUDE_CLI_PATH, "--resume", session_id, "-p", prompt]
-    else:
-        args = [CLAUDE_CLI_PATH, "-p", prompt]
-    args += ["--model", CODER_MODEL, "--output-format", "stream-json", "--verbose",
-             # Approval gating is enforced by the inherited PreToolUse hook
-             # (claude-approval-hook.js) running in fail-closed mode — NOT a
-             # permission-prompt MCP (that path failed to connect AND failed
-             # open). --strict-mcp-config + an empty mcp-config gives the coder a
-             # clean MCP surface: no inherited host servers that could bypass the
-             # hook, and none added.
-             "--mcp-config", CODER_APPROVER_MCP_CONFIG,
-             "--strict-mcp-config",
-             # Read-only tools the coder may run without a hook round-trip. The
-             # hook's own strict allow-list (TELEGRAM_APPROVAL_AUTO_ALLOW) is the
-             # real gate; this just avoids redundant prompts for safe reads.
-             "--allowedTools", CODER_AUTO_ALLOW_TOOLS]
+    def _on_proc(proc):
+        # Register for /cancel, then mark active so the approval card knows the
+        # target chat (permission.py reads active_coder_chat()).
+        global _active_chat_id
+        _active_procs[chat_id] = proc
+        _active_chat_id = chat_id
 
     logger.info("coder command %d started for chat %d", command_id, chat_id)
     started = asyncio.get_running_loop().time()
     hb = asyncio.create_task(_heartbeat(chat_id, started))
+    returncode: int | None = None
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            cwd="/workspace", env={**os.environ})
-        _active_procs[chat_id] = proc
-        _active_chat_id = chat_id           # set AFTER registering proc for consistency
+        async for item, code in run_coder_turn(
+                prompt, "/workspace", session_id,
+                allowed_tools=CODER_AUTO_ALLOW_TOOLS, on_proc=_on_proc):
+            if item.kind == "session" and item.text:
+                # Persist session_id IMMEDIATELY so /cancel keeps resumability.
+                await db.upsert_session(chat_id, item.text, "coder")
+            elif item.kind == "_exit":
+                returncode = code
+                if code not in (0, None):
+                    err = item.text
+                    # Self-heal: a stale/missing transcript makes --resume fail.
+                    # Drop the session pointer so the NEXT message starts fresh.
+                    if "No conversation found" in err:
+                        await db.delete_session(chat_id)
+                        err += "\n\n(Session was reset — send your message again.)"
+                    await send_telegram_message(
+                        chat_id, f"⚠ coder exited {code}\n{err}")
+            else:
+                await _render(chat_id, item)
 
-        stderr_chunks: list[bytes] = []
-
-        async def _drain_stderr() -> None:
-            assert proc.stderr is not None
-            async for line in proc.stderr:
-                stderr_chunks.append(line)
-
-        drain_task = asyncio.create_task(_drain_stderr())
-
-        assert proc.stdout is not None
-        async for raw in proc.stdout:
-            line = raw.decode("utf-8", errors="replace").strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            for item in parse_stream_event(event):
-                if item.kind == "session" and item.text:
-                    # Persist session_id IMMEDIATELY so /cancel keeps resumability.
-                    await db.upsert_session(chat_id, item.text, "coder")
-                else:
-                    await _render(chat_id, item)
-
-        await drain_task
-        await proc.wait()
-        logger.info("coder command %d exit=%s", command_id, proc.returncode)
-        if proc.returncode not in (0, None):
-            err = b"".join(stderr_chunks).decode("utf-8", "replace")[-500:]
-            # Self-heal: a stale/missing transcript makes --resume fail. Drop the
-            # session pointer so the NEXT message starts fresh instead of looping.
-            if "No conversation found" in err:
-                await db.delete_session(chat_id)
-                err += "\n\n(Session was reset — send your message again.)"
-            await send_telegram_message(chat_id, f"⚠ coder exited {proc.returncode}\n{err}")
+        logger.info("coder command %d exit=%s", command_id, returncode)
         await db.update_command_status(
             command_id, "completed",
             completed_at=datetime.now(timezone.utc),
