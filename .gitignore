@@ -161,3 +161,4 @@ flyers/output/*
 !run-daily-timeline.sh
 !sync-sessions-to-vps.sh
 !workstation-systemd/
+roles/mcp-servers/files/telegram-gateway/.venv/
