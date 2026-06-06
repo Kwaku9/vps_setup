@@ -141,6 +141,12 @@ async def lifespan(app: FastAPI):
             json.dump({"mcpServers": {}}, f)
         job_queue.semaphore = asyncio.Semaphore(1)  # one coder session at a time
         logger.info("Coder mode: wrote empty mcp-config (hook-gated), concurrency=1")
+    elif BOT_MODE == "owui":
+        # Same hook-gated, clean-MCP surface as coder; concurrency is bounded
+        # per-workspace inside the SSE handler rather than by the job queue.
+        with open(CODER_APPROVER_MCP_CONFIG, "w") as f:
+            json.dump({"mcpServers": {}}, f)
+        logger.info("OWUI mode: empty mcp-config (hook-gated), per-workspace concurrency")
     _listen_task = asyncio.create_task(_listen_responses())
     logger.info("Telegram Gateway started")
     yield
