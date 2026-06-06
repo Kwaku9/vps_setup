@@ -21,6 +21,7 @@ import logging
 import time
 from collections.abc import AsyncIterator
 from dataclasses import asdict
+from typing import Literal
 
 from fastapi import APIRouter, Query, Response
 from fastapi.responses import StreamingResponse
@@ -62,7 +63,7 @@ class StreamRequest(BaseModel):
 
 class ApprovalDecision(BaseModel):
     approval_id: int
-    decision: str  # "approved" | "denied"
+    decision: Literal["approved", "denied"]
 
 
 class RequestApproval(BaseModel):

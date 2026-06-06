@@ -212,9 +212,13 @@ async def health():
     return {"status": "ok", "service": "telegram-gateway"}
 
 
-# Create MCP server from FastAPI routes and mount as sub-app on /mcp
-mcp = FastMCP.from_fastapi(app=app)
-app.mount("/mcp", mcp.http_app())
+# Create MCP server from FastAPI routes and mount as sub-app on /mcp.
+# The /mcp mount is auth-exempt (it's the MCP protocol surface). OWUI mode has
+# no MCP consumers and its routes include the tool-approval gate, so don't
+# expose them unauthenticated as MCP tools — skip the mount entirely.
+if BOT_MODE != "owui":
+    mcp = FastMCP.from_fastapi(app=app)
+    app.mount("/mcp", mcp.http_app())
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=MCP_SERVER_PORT, log_level="info")

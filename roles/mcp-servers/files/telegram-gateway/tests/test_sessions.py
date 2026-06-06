@@ -43,6 +43,16 @@ def test_summary_falls_back_to_first_user_message(tmp_path):
     assert out[0].summary == "do the thing"
 
 
+def test_summary_from_block_list_content(tmp_path):
+    root = str(tmp_path)
+    _write_session(root, "-w", "blocks", [
+        {"type": "user", "cwd": "/w", "message": {"content": [
+            {"type": "text", "text": "resume the migration"}]}},
+    ])
+    out = sessions.list_sessions(root=root, within_days=14)
+    assert out[0].summary == "resume the migration"
+
+
 def test_old_sessions_excluded(tmp_path):
     root = str(tmp_path)
     _write_session(root, "-w", "old", [

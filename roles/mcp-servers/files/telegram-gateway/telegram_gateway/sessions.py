@@ -29,6 +29,23 @@ class SessionInfo:
     mtime_iso: str
 
 
+def _first_text(content) -> str:
+    """Best-effort short summary from a user message's content.
+
+    Claude Code user content is usually a list of blocks, sometimes a plain
+    string. Return the first text we find, truncated.
+    """
+    if isinstance(content, str):
+        return content.strip()[:120]
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = str(block.get("text", "")).strip()
+                if text:
+                    return text[:120]
+    return ""
+
+
 def _scan_file(path: str) -> SessionInfo | None:
     """Read a transcript far enough to learn its workspace and a summary.
 
@@ -38,7 +55,11 @@ def _scan_file(path: str) -> SessionInfo | None:
     cwd, summary = "", ""
     try:
         with open(path, "r", errors="replace") as f:
-            for line in f:
+            # cwd and a summary live near the top; cap the scan so one giant
+            # transcript can't stall the (event-loop) caller.
+            for lineno, line in enumerate(f):
+                if lineno >= 200:
+                    break
                 line = line.strip()
                 if not line:
                     continue
@@ -51,9 +72,7 @@ def _scan_file(path: str) -> SessionInfo | None:
                 if not summary and obj.get("type") == "summary" and obj.get("summary"):
                     summary = str(obj["summary"])[:120]
                 if not summary and obj.get("type") == "user":
-                    content = obj.get("message", {}).get("content")
-                    if isinstance(content, str) and content.strip():
-                        summary = content.strip()[:120]
+                    summary = _first_text(obj.get("message", {}).get("content"))
                 if cwd and summary:
                     break
     except OSError:
