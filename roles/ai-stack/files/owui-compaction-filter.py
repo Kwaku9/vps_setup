@@ -76,10 +76,12 @@ class Filter:
         last_n: int = Field(default=9, ge=1)
         window_fallback: int = Field(default=131072, ge=1)
         summary_model: str = Field(default="gemini-3.0-flash-lite")
-        scope: str = Field(default="all", description='"all" or "voice"')
+        scope: str = Field(default="all",
+                           description='"all" or "voice" (reserved — not yet enforced)')
 
     def __init__(self):
         self.valves = self.Valves()
+        # Unbounded in-process caches; an LRU/TTL cap is a future enhancement.
         self._recap_cache: dict[str, str] = {}
         self._window_cache: dict[str, int] = {}
 
@@ -137,6 +139,10 @@ class Filter:
                 if not recap:
                     return body  # empty summary → pass verbatim
                 self._recap_cache[key] = recap
+            # compact() places the recap as a role:"system" message mid-array.
+            # Safe ONLY because LiteLLM hoists system messages into the provider
+            # system param for the routed families (Anthropic, Vertex/Gemini). A
+            # non-hoisting OpenAI-compatible route could mis-order or reject it.
             body["messages"] = sys_msgs + compact(convo, recap, fn, ln, b["target"])
             return body
         except Exception:

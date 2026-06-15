@@ -135,6 +135,6 @@ def test_inlet_disabled_is_passthrough(monkeypatch):
 
 
 def test_valves_reject_last_n_zero():
-    import pytest as _pytest
-    with _pytest.raises(Exception):
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
         ocf.Filter.Valves(last_n=0)  # ge=1 constraint
