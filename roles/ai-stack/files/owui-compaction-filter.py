@@ -61,3 +61,83 @@ def parse_window(info_json: dict, model: str, fallback: int) -> int:
             if w:
                 return int(w)
     return fallback
+
+
+class Filter:
+    class Valves(BaseModel):
+        enabled: bool = Field(default=True)
+        litellm_url: str = Field(default=LITELLM_URL, description="LiteLLM base URL")
+        output_reserve_pct: float = Field(default=0.25, ge=0.0, le=0.9)
+        min_output_reserve: int = Field(default=4096, ge=0)
+        history_target_pct: float = Field(default=0.10, ge=0.0, le=1.0)
+        history_trigger_pct: float = Field(default=0.15, ge=0.0, le=1.0)
+        history_abs_cap: int = Field(default=65536, ge=1)
+        first_n: int = Field(default=3, ge=0)
+        last_n: int = Field(default=9, ge=1)
+        window_fallback: int = Field(default=131072, ge=1)
+        summary_model: str = Field(default="gemini-3.0-flash-lite")
+        scope: str = Field(default="all", description='"all" or "voice"')
+
+    def __init__(self):
+        self.valves = self.Valves()
+        self._recap_cache: dict[str, str] = {}
+        self._window_cache: dict[str, int] = {}
+
+    def _v(self) -> dict:
+        return self.valves.model_dump()
+
+    def _model_window(self, model: str) -> int:
+        if model in self._window_cache:
+            return self._window_cache[model]
+        window = self.valves.window_fallback
+        try:
+            r = httpx.get(f"{self.valves.litellm_url}/model/info", timeout=5)
+            r.raise_for_status()
+            window = parse_window(r.json(), model, self.valves.window_fallback)
+        except Exception:
+            pass
+        self._window_cache[model] = window
+        return window
+
+    def _summarize(self, mid: list) -> str:
+        excerpt = "\n".join(f"{m.get('role')}: {m.get('content','')}" for m in mid)
+        prompt = ("Summarize the following conversation excerpt, preserving facts, "
+                  "decisions, names, and open questions. Be concise.\n\n" + excerpt)
+        r = httpx.post(
+            f"{self.valves.litellm_url}/v1/chat/completions",
+            json={"model": self.valves.summary_model,
+                  "messages": [{"role": "user", "content": prompt}]},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
+
+    def inlet(self, body: dict, __user__: dict | None = None) -> dict:
+        try:
+            if not self.valves.enabled:
+                return body
+            msgs = body.get("messages", []) or []
+            sys_msgs = [m for m in msgs if m.get("role") == "system"]
+            convo = [m for m in msgs if m.get("role") != "system"]
+
+            window = self._model_window(body.get("model", "") or "")
+            overhead = est_messages_tokens(sys_msgs)
+            b = compute_budget(window, overhead, self._v())
+            if est_messages_tokens(convo) <= b["trigger"]:
+                return body  # under budget → verbatim
+
+            fn, ln = self.valves.first_n, self.valves.last_n
+            if len(convo) <= fn + ln:
+                return body  # no middle to compress
+            mid = convo[fn:len(convo) - ln]
+            key = hashlib.sha256(json.dumps(mid, sort_keys=True).encode()).hexdigest()
+            recap = self._recap_cache.get(key)
+            if recap is None:
+                recap = self._summarize(mid)
+                if not recap:
+                    return body  # empty summary → pass verbatim
+                self._recap_cache[key] = recap
+            body["messages"] = sys_msgs + compact(convo, recap, fn, ln, b["target"])
+            return body
+        except Exception:
+            return body  # fail-open: never break a chat

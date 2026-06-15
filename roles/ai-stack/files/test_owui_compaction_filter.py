@@ -69,3 +69,72 @@ def test_parse_window_reads_max_input_tokens():
                       "model_info": {"max_input_tokens": 200000}}]}
     assert ocf.parse_window(info, "claude-opus-4-6", fallback=131072) == 200000
     assert ocf.parse_window(info, "unknown", fallback=131072) == 131072
+
+
+# ── Filter.inlet tests (monkeypatched: no network) ──────────────────────────
+
+def _make_filter(monkeypatch, window=200000, recap="RECAP"):
+    f = ocf.Filter()
+    monkeypatch.setattr(f, "_model_window", lambda model: window)
+    calls = {"n": 0}
+    def fake_summarize(mid):
+        calls["n"] += 1
+        return recap
+    monkeypatch.setattr(f, "_summarize", fake_summarize)
+    return f, calls
+
+
+def _long_convo(n=20, size=400):
+    return [{"role": "user" if i % 2 == 0 else "assistant", "content": "x" * size}
+            for i in range(n)]
+
+
+def test_inlet_short_convo_verbatim(monkeypatch):
+    f, calls = _make_filter(monkeypatch)
+    body = {"model": "m", "messages": [{"role": "user", "content": "hi"}]}
+    out = f.inlet(body)
+    assert out["messages"] == [{"role": "user", "content": "hi"}]
+    assert calls["n"] == 0  # never summarized
+
+
+def test_inlet_long_convo_compacts_and_preserves_system(monkeypatch):
+    f, calls = _make_filter(monkeypatch, window=2000)  # tiny window → trigger≈0
+    body = {"model": "m", "messages": [{"role": "system", "content": "SYS"}] + _long_convo()}
+    out = f.inlet(body)
+    assert out["messages"][0] == {"role": "system", "content": "SYS"}  # system kept
+    assert any(m["role"] == "system" and "Summary of earlier conversation" in m["content"]
+               for m in out["messages"])
+    assert len(out["messages"]) < 1 + 20  # actually compacted
+    assert calls["n"] == 1
+
+
+def test_inlet_recap_is_cached(monkeypatch):
+    f, calls = _make_filter(monkeypatch, window=2000)
+    convo = _long_convo()
+    f.inlet({"model": "m", "messages": list(convo)})
+    f.inlet({"model": "m", "messages": list(convo)})
+    assert calls["n"] == 1  # second call reused the cached recap
+
+
+def test_inlet_fail_open_on_summary_error(monkeypatch):
+    f, _ = _make_filter(monkeypatch, window=2000)
+    monkeypatch.setattr(f, "_summarize",
+                        lambda mid: (_ for _ in ()).throw(RuntimeError("vertex down")))
+    convo = _long_convo()
+    out = f.inlet({"model": "m", "messages": list(convo)})
+    assert out["messages"] == convo  # unchanged — failed open
+
+
+def test_inlet_disabled_is_passthrough(monkeypatch):
+    f, calls = _make_filter(monkeypatch, window=2000)
+    f.valves.enabled = False
+    convo = _long_convo()
+    out = f.inlet({"model": "m", "messages": list(convo)})
+    assert out["messages"] == convo
+    assert calls["n"] == 0
+
+
+def test_valves_reject_last_n_zero():
+    import pytest as _pytest
+    with _pytest.raises(Exception):
+        ocf.Filter.Valves(last_n=0)  # ge=1 constraint
