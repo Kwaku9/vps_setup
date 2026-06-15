@@ -29,15 +29,17 @@ def est_messages_tokens(msgs: list) -> int:
 
 def compute_budget(window: int, overhead: int, v: dict) -> dict:
     reserve = max(v["min_output_reserve"], int(v["output_reserve_pct"] * window))
-    usable = window - reserve - overhead
+    usable = max(0, window - reserve - overhead)
     target = min(int(v["history_target_pct"] * window), v["history_abs_cap"])
-    trigger = min(int(v["history_trigger_pct"] * window), v["history_abs_cap"], usable)
+    trigger = max(0, min(int(v["history_trigger_pct"] * window), v["history_abs_cap"], usable))
     return {"reserve": reserve, "usable": usable, "target": target, "trigger": trigger}
 
 
 def compact(convo: list, recap_text: str, first_n: int, last_n: int, target: int) -> list:
     """Keep first_n + last_n turns verbatim; replace the middle with one system
-    recap. Shrinks the tail toward `target` tokens. No-op if there's no middle."""
+    recap. Shrinks the tail toward `target` tokens. No-op if there's no middle.
+    `last_n` must be >= 1 (enforced by the Filter Valve) so the recap is always
+    followed by at least one real turn rather than ending the prompt."""
     if len(convo) <= first_n + last_n:
         return convo
     head = convo[:first_n]

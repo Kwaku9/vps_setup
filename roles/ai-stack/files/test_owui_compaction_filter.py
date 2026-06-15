@@ -11,7 +11,13 @@ V = dict(output_reserve_pct=0.25, min_output_reserve=4096,
 
 
 def test_est_tokens_heuristic():
-    assert ocf.est_tokens("a" * 400) == 115  # 400/4*1.15
+    assert ocf.est_tokens("a" * 400) == 115  # round(400/4*1.15)
+
+
+def test_est_messages_tokens_handles_none_content():
+    # OWUI tool-result messages can have content=None — must not crash.
+    msgs = [{"role": "assistant", "content": None}, {"role": "user", "content": "abcd"}]
+    assert ocf.est_messages_tokens(msgs) == ocf.est_tokens("abcd")
 
 
 def test_compute_budget_scales_with_window():
@@ -24,10 +30,23 @@ def test_compute_budget_abs_cap_on_huge_window():
     assert b["target"] == 65_536 and b["trigger"] == 65_536
 
 
-def test_compute_budget_usable_clamps_trigger():
+def test_compute_budget_pct_wins_over_usable():
+    # window=8000: reserve=max(4096,2000)=4096; usable=8000-4096-1000=2904;
+    # 15%×8000=1200 < usable → the pct formula binds, not usable.
     b = ocf.compute_budget(8_000, overhead=1_000, v=V)
-    # reserve=max(4096, 2000)=4096; usable=8000-4096-1000=2904; 15% of 8000=1200
-    assert b["trigger"] == min(1_200, 65_536, 2_904) == 1_200
+    assert b["usable"] == 2_904 and b["trigger"] == 1_200
+
+
+def test_compute_budget_usable_binds():
+    # window=100k, overhead=61k: usable=14000 < 15%×100k=15000 → usable binds.
+    b = ocf.compute_budget(100_000, overhead=61_000, v=V)
+    assert b["usable"] == 14_000 and b["trigger"] == 14_000
+
+
+def test_compute_budget_clamps_negative_to_zero():
+    # tiny window < reserve → usable/trigger clamp to 0, never negative.
+    b = ocf.compute_budget(3_000, overhead=0, v=V)
+    assert b["usable"] == 0 and b["trigger"] == 0
 
 
 def test_compact_bookends_and_recap():
