@@ -3,7 +3,7 @@
 Clasificado Real Estate MCP Server
 
 This MCP server exposes the real estate scraper from ScrapyExtractor
-as an MCP tool that can be called by Claude Code and n8n.
+as an MCP tool that can be called by Claude Code.
 """
 
 import asyncio
