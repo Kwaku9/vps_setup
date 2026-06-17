@@ -254,6 +254,31 @@ def _extract_blocks_from_json(data: dict) -> list[tuple[str, str]]:
     return blocks
 
 
+def _resolve_no_output(
+    blocks: "list[tuple[str, str]]",
+    stderr_text: str,
+    has_session: bool,
+) -> "tuple[list[tuple[str, str]], bool]":
+    """Decide user-facing blocks + whether to clear a stale session.
+
+    `claude --resume <id>` returns empty stdout + "No conversation found ..."
+    on stderr when the stored session can't be resumed from the gateway's
+    cwd/project (e.g. it was created under a different working directory, or
+    pruned). Without clearing the stored session id the chat is stuck forever,
+    so detect that case and signal a reset — the next message then starts a
+    fresh session. Mirrors the self-heal coder.py already has.
+
+    Returns (blocks, clear_session).
+    """
+    if blocks:
+        return blocks, False
+    if has_session and "No conversation found" in stderr_text:
+        return ([("text",
+                  "Your previous session expired and has been reset — "
+                  "send your message again.")], True)
+    return [("text", "(No output from Claude CLI)")], False
+
+
 async def _process_claude_cli(
     command_id: int,
     cmd,
@@ -337,8 +362,17 @@ async def _process_claude_cli(
                     },
                 )
 
-        if not blocks:
-            blocks = [("text", "(No output from Claude CLI)")]
+        # Self-heal: if the CLI produced nothing because --resume hit a session
+        # that no longer exists in this project/cwd, clear the stale pointer so
+        # the next message starts fresh (otherwise the chat is stuck forever).
+        stderr_text = stderr.decode("utf-8", errors="replace") if stderr else ""
+        blocks, clear_session = _resolve_no_output(
+            blocks, stderr_text, session is not None)
+        if clear_session:
+            await db.delete_session(chat_id)
+            logger.info(
+                "Cleared stale session for chat %d (No conversation found)",
+                chat_id)
 
         # Store/update session for continuity
         if new_session_id:
