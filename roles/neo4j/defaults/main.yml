@@ -53,3 +53,16 @@ neo4j:
   # Idempotent (MERGE-based) — safe to re-run on every deploy.
   load_service_map: true
   cypher_file: "service-map.cypher"   # sourced from repo docs/ at deploy time
+
+  # timeline-context-api: FastAPI graph-RAG service that turns this graph into a
+  # sanitised "recent activity" blob for the buildfol.io chat widget (see
+  # tasks/timeline-context-api.yml). Source: files/timeline-context-api/.
+  # enabled defaults to FALSE so existing deploys don't break: flip to true ONLY
+  # after adding `timeline_api_key` to vault.yml (must match the chatWidget
+  # Lambda's AWS secret). The container is registered in boot-services regardless,
+  # so it auto-starts on reboot once it exists.
+  context_api:
+    enabled: false
+    container_name: "timeline-context-api"
+    image: "localhost/timeline-context-api:latest"
+    memory: "256m"
