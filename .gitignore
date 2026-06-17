@@ -167,3 +167,9 @@ flyers/output/*
 !sync-sessions-to-vps.sh
 !workstation-systemd/
 roles/mcp-servers/files/telegram-gateway/.venv/
+!tools/check-vps-drift.sh
+
+# Local-only working dir (backups, ETL scratch, dev plans, secrets — never commit)
+local/
+# Playwright MCP session artifacts (transient tool output)
+.playwright-mcp/
