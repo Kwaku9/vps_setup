@@ -423,7 +423,7 @@ OUTPUT STANDARDS:
 
 CORE COMPETENCIES:
 - Workflow design: identifying automation opportunities, mapping processes, designing triggers and actions
-- Tool integration: APIs, webhooks, Zapier, n8n, Make, custom scripts
+- Tool integration: APIs, webhooks, Zapier, Make, custom scripts
 - Data flow: moving data between systems reliably with transformation and validation
 - Error handling: designing automations that fail gracefully and alert when something breaks
 - ROI analysis: estimating time saved vs. setup cost to prioritize automation efforts
