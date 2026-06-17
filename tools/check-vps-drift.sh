@@ -30,6 +30,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 # repo-relative source | absolute path on the VPS  (Ansible 'copy' file tasks)
 FILE_PAIRS="
 tools/ingest-sessions.py|/opt/compose/session-ingestion/ingest-sessions.py
+tools/classify-sessions.py|/opt/compose/session-ingestion/classify-sessions.py
 tools/ingest-git-history.py|/opt/compose/session-ingestion/ingest-git-history.py
 tools/git-schema.sql|/opt/compose/session-ingestion/git-schema.sql
 "
