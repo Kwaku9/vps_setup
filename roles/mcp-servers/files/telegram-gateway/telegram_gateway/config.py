@@ -72,6 +72,18 @@ CODER_AUTO_ALLOW_TOOLS: str = os.environ.get(
     "CODER_AUTO_ALLOW_TOOLS", "Read,Grep,Glob"
 )
 
+# --- OWUI coder (BOT_MODE=owui) ---
+# Resumes real Claude Code sessions from OpenWebUI. Tools the OWUI coder may run
+# without an approval round-trip (read-only); everything else is hook-gated and
+# surfaced as a native OpenWebUI confirmation.
+OWUI_AUTO_ALLOW_TOOLS: str = os.environ.get(
+    "OWUI_AUTO_ALLOW_TOOLS", "Read,Grep,Glob,TodoWrite"
+)
+# Pending OWUI approvals expire after this many minutes (fail-closed).
+OWUI_APPROVAL_TIMEOUT_MINUTES: int = int(
+    os.environ.get("OWUI_APPROVAL_TIMEOUT_MINUTES", "10")
+)
+
 RATE_LIMIT_PER_MINUTE: int = int(os.environ.get("RATE_LIMIT_PER_MINUTE", "20"))
 MCP_SERVER_PORT: int = int(os.environ.get("MCP_SERVER_PORT", "7555"))
 

@@ -38,10 +38,3 @@
     - mcp_container_to_rebuild is defined
     - mcp_image_to_rebuild is defined
   listen: "rebuild mcp container"
-
-- name: restart n8n-mcp
-  containers.podman.podman_container:
-    name: "n8n-mcp"
-    state: started
-    restart: true
-  listen: "restart n8n-mcp"

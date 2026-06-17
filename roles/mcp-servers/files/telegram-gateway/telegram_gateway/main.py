@@ -130,20 +130,23 @@ async def lifespan(app: FastAPI):
     global _listen_task
     # Startup
     await db.init_pool()
-    from telegram_gateway.config import (
-        BOT_MODE, CODER_APPROVER_MCP_CONFIG, MCP_SERVER_PORT)
+    from telegram_gateway.config import BOT_MODE, CODER_APPROVER_MCP_CONFIG
     if BOT_MODE == "coder":
-        # The in-container CLI reaches THIS app's permission tool over HTTP MCP.
-        cfg = {"mcpServers": {"approver": {
-            "type": "http",
-            # FastMCP http_app (mounted at /mcp) serves the protocol at /mcp/mcp/
-            # — /mcp/ itself 404s. This path is what makes the permission tool
-            # reachable to the in-container CLI.
-            "url": f"http://localhost:{MCP_SERVER_PORT}/mcp/mcp/"}}}
+        # Approval gating is enforced by the inherited PreToolUse hook
+        # (claude-approval-hook.js) in fail-closed mode, NOT a permission-prompt
+        # MCP — that approach failed to connect and, worse, failed OPEN. Write an
+        # EMPTY mcp-config so the coder's `claude` runs with --strict-mcp-config
+        # against a clean MCP surface: no inherited host servers, none added.
         with open(CODER_APPROVER_MCP_CONFIG, "w") as f:
-            json.dump(cfg, f)
+            json.dump({"mcpServers": {}}, f)
         job_queue.semaphore = asyncio.Semaphore(1)  # one coder session at a time
-        logger.info("Coder mode: wrote approver mcp-config, concurrency=1")
+        logger.info("Coder mode: wrote empty mcp-config (hook-gated), concurrency=1")
+    elif BOT_MODE == "owui":
+        # Same hook-gated, clean-MCP surface as coder; concurrency is bounded
+        # per-workspace inside the SSE handler rather than by the job queue.
+        with open(CODER_APPROVER_MCP_CONFIG, "w") as f:
+            json.dump({"mcpServers": {}}, f)
+        logger.info("OWUI mode: empty mcp-config (hook-gated), per-workspace concurrency")
     _listen_task = asyncio.create_task(_listen_responses())
     logger.info("Telegram Gateway started")
     yield
@@ -187,11 +190,21 @@ async def auth_middleware(request: Request, call_next):
     return await call_next(request)
 
 
-# Include routers — these are both FastAPI routes AND MCP tools
-app.include_router(bot_router)
-app.include_router(send_router)
-app.include_router(commands_router)
-app.include_router(permission_router)
+# Include routers — these are both FastAPI routes AND MCP tools.
+# OWUI mode serves only the session-resume API (+ commands for the hook's
+# /get_approval_status poll) and deliberately omits the Telegram routers so its
+# Telegram-free /request_approval is the only one mounted.
+from telegram_gateway.config import BOT_MODE  # noqa: E402
+
+if BOT_MODE == "owui":
+    from telegram_gateway.owui_api import router as owui_router
+    app.include_router(owui_router)
+    app.include_router(commands_router)
+else:
+    app.include_router(bot_router)
+    app.include_router(send_router)
+    app.include_router(commands_router)
+    app.include_router(permission_router)
 
 
 @app.get("/health")
@@ -199,9 +212,13 @@ async def health():
     return {"status": "ok", "service": "telegram-gateway"}
 
 
-# Create MCP server from FastAPI routes and mount as sub-app on /mcp
-mcp = FastMCP.from_fastapi(app=app)
-app.mount("/mcp", mcp.http_app())
+# Create MCP server from FastAPI routes and mount as sub-app on /mcp.
+# The /mcp mount is auth-exempt (it's the MCP protocol surface). OWUI mode has
+# no MCP consumers and its routes include the tool-approval gate, so don't
+# expose them unauthenticated as MCP tools — skip the mount entirely.
+if BOT_MODE != "owui":
+    mcp = FastMCP.from_fastapi(app=app)
+    app.mount("/mcp", mcp.http_app())
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=MCP_SERVER_PORT, log_level="info")

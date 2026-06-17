@@ -134,6 +134,16 @@ CREATE TABLE IF NOT EXISTS gateway.manager_profiles (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Binds an OpenWebUI conversation (UUID string key) to a resumed Claude Code
+-- session. Distinct from gateway.sessions, whose key is a BIGINT Telegram id.
+CREATE TABLE IF NOT EXISTS gateway.owui_sessions (
+    owui_chat_id  TEXT PRIMARY KEY,
+    workspace     TEXT NOT NULL,
+    session_id    TEXT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_used_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Seed default agent configs (claude-cli default, litellm fallback)
 INSERT INTO gateway.agent_config (agent_type, backend, system_prompt, model, max_tokens) VALUES
     ('ask', 'claude-cli', 'You are a helpful assistant responding via Telegram. Keep responses concise and well-formatted.', 'claude-haiku-4-5', 4096),
@@ -318,6 +328,38 @@ async def delete_session(chat_id: int):
     await p.execute(
         "DELETE FROM gateway.sessions WHERE telegram_chat_id = $1",
         chat_id,
+    )
+
+
+# --- OpenWebUI session bindings ---
+
+async def get_owui_binding(owui_chat_id: str) -> asyncpg.Record | None:
+    p = await get_pool()
+    return await p.fetchrow(
+        "SELECT * FROM gateway.owui_sessions WHERE owui_chat_id = $1",
+        owui_chat_id,
+    )
+
+
+async def upsert_owui_binding(owui_chat_id: str, workspace: str,
+                              session_id: str | None):
+    p = await get_pool()
+    await p.execute(
+        """
+        INSERT INTO gateway.owui_sessions (owui_chat_id, workspace, session_id)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (owui_chat_id)
+        DO UPDATE SET workspace = $2, session_id = $3, last_used_at = now()
+        """,
+        owui_chat_id, workspace, session_id,
+    )
+
+
+async def clear_owui_binding(owui_chat_id: str):
+    p = await get_pool()
+    await p.execute(
+        "DELETE FROM gateway.owui_sessions WHERE owui_chat_id = $1",
+        owui_chat_id,
     )
 
 

@@ -217,15 +217,6 @@ services:
     ansible_tag: mcp
     dependencies: []
 
-  n8n-mcp:
-    platform: vps
-    endpoint_type: pod
-    pod: mcp-pod
-    description: "n8n workflow automation MCP server"
-    memory_mb: 256
-    ansible_tag: mcp
-    dependencies: []
-
   # === VPS: frontend-pod ===
   journey-tracker:
     platform: vps
@@ -546,7 +537,6 @@ profiles:
       ops-dashboard: true
       context7-mcp: false
       google-docs-mcp: false
-      n8n-mcp: false
       ib-mcp-server: false
       ibeam: false
       atlas-charts: false
@@ -602,7 +592,6 @@ profiles:
       ops-dashboard: true
       context7-mcp: false
       google-docs-mcp: false
-      n8n-mcp: false
       ib-mcp-server: false
       ibeam: false
       atlas-charts: false
@@ -651,7 +640,6 @@ profiles:
       ops-dashboard: true
       context7-mcp: true
       google-docs-mcp: true
-      n8n-mcp: true
       ib-mcp-server: false
       ibeam: false
       atlas-charts: false
@@ -704,7 +692,6 @@ profiles:
       ops-dashboard: true
       context7-mcp: false
       google-docs-mcp: false
-      n8n-mcp: false
       ib-mcp-server: false
       ibeam: false
       atlas-charts: false
@@ -755,7 +742,6 @@ profiles:
       ops-dashboard: true
       context7-mcp: false
       google-docs-mcp: false
-      n8n-mcp: false
       ib-mcp-server: false
       ibeam: false
       atlas-charts: false

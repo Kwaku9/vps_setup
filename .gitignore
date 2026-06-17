@@ -11,7 +11,8 @@ docs/
 CLAUDE.md
 GEMINI.md
 *.md
-!README.md                    # Keep main README for deployment notes
+# Keep main (root) README for deployment notes — anchored so sub-project READMEs stay ignored
+!/README.md
 
 # ============================================
 # Utility Scripts (Non-Deployment)
@@ -19,12 +20,15 @@ GEMINI.md
 scripts/
 *.sh
 *.ps1
-!entrypoint.sh                # Exception: needed for container
+# Exception: needed for container
+!entrypoint.sh
 
 # ============================================
 # Claude/AI Instructions
 # ============================================
 .claude/
+# Superpowers brainstorm session scratch/state (PIDs, logs, HTML)
+.superpowers/
 
 # ============================================
 # Media Files
@@ -132,7 +136,8 @@ nul
 # ============================================
 # Docker
 # ============================================
-.dockerignore             # Only needed locally, not in repo
+# Only needed locally, not in repo
+.dockerignore
 expressions.txt
 
 # Build/runtime artifacts under mcp-servers/files (added 2026-04-12)
@@ -161,3 +166,4 @@ flyers/output/*
 !run-daily-timeline.sh
 !sync-sessions-to-vps.sh
 !workstation-systemd/
+roles/mcp-servers/files/telegram-gateway/.venv/

@@ -6,11 +6,6 @@
     name: "{{ ai_stack.pod_name }}"
     state: restarted
 
-- name: restart n8n-claude
-  containers.podman.podman_container:
-    name: "{{ ai_stack.n8n_claude.name }}"
-    state: restarted
-
 - name: restart litellm
   containers.podman.podman_container:
     name: "{{ ai_stack.litellm.name }}"
@@ -24,9 +19,4 @@
 - name: restart fabric-api
   containers.podman.podman_container:
     name: "{{ ai_stack.fabric_api.name }}"
-    state: restarted
-
-- name: restart claude-monitor
-  containers.podman.podman_container:
-    name: "{{ ai_stack.claude_monitor_backend.name }}"
     state: restarted
