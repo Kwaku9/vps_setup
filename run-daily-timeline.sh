@@ -28,6 +28,17 @@ log "Daily timeline pipeline starting"
 log "================================================================"
 
 # -------------------------------------------------------------------
+# Pre-flight — warn (non-fatal) if any deployed file has drifted from its
+# canonical repo source. Catches direct edits on /opt/compose/... that a future
+# Ansible deploy would silently revert (see the 2026-06-15 ingest-sessions.py
+# incident). Best-effort: never blocks the timeline.
+# -------------------------------------------------------------------
+log "Pre-flight: checking deploy drift (repo vs VPS)"
+if ! "$REPO/tools/check-vps-drift.sh" >>"$LOG" 2>&1; then
+    log "WARN pre-flight: deploy drift detected — see log above; continuing (non-fatal)"
+fi
+
+# -------------------------------------------------------------------
 # Step 1 — Sync local Claude sessions to VPS staging
 # -------------------------------------------------------------------
 log "Step 1: sync sessions to VPS"
@@ -66,12 +77,31 @@ else
 fi
 
 # -------------------------------------------------------------------
+# DB credentials — the database is accessed by a dedicated least-
+# privilege role (session_ingest), NOT the postgres superuser. The
+# single source of truth is the vault-managed daily-ingest.sh on the
+# VPS. Source DB_USER + DB_PASSWORD from it once, into the local env,
+# so every DB step (3b remote, 3c/3d local) authenticates as the SAME
+# user. Without DB_USER, classify-sessions.py / sync_sessions_to_neo4j.py
+# / config.js all silently default to "postgres", which the locked-down
+# DB rejects.
+# -------------------------------------------------------------------
+log "Fetching session_ingest DB credentials from VPS vault file"
+eval "$(ssh "$VPS" 'grep -E "^export DB_(USER|PASSWORD)=" /opt/compose/session-ingestion/daily-ingest.sh')"
+if [ -z "${DB_USER:-}" ] || [ -z "${DB_PASSWORD:-}" ]; then
+    log "FAIL: could not source DB_USER/DB_PASSWORD from VPS daily-ingest.sh"
+    exit 3
+fi
+export DB_USER DB_PASSWORD
+
+# -------------------------------------------------------------------
 # Step 3b — Classify new sessions on VPS (LLM, costs money, idempotent)
 # -------------------------------------------------------------------
 log "Step 3b: classify new sessions"
 ssh "$VPS" bash <<'REMOTE' >>"$LOG" 2>&1
 set -e
-export DB_PASSWORD="$(grep DB_PASSWORD /opt/compose/session-ingestion/daily-ingest.sh | cut -d\" -f2)"
+export DB_USER="$(grep '^export DB_USER=' /opt/compose/session-ingestion/daily-ingest.sh | cut -d\" -f2)"
+export DB_PASSWORD="$(grep '^export DB_PASSWORD=' /opt/compose/session-ingestion/daily-ingest.sh | cut -d\" -f2)"
 export DB_HOST="$(podman inspect postgres --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')"
 export LITELLM_MASTER_KEY="$(podman inspect litellm --format '{{range .Config.Env}}{{println .}}{{end}}' | grep LITELLM_MASTER_KEY | cut -d= -f2)"
 python3 /opt/compose/session-ingestion/classify-sessions.py
@@ -91,7 +121,7 @@ if [ "$NEO4J_OK" = "1" ]; then
         ssh -L "15432:$PG_IP:5432" -N "$VPS" &
         TUNNEL_PID=$!
         sleep 3
-        (cd "$REPO/local/etl" && PG_PORT=15432 PYTHONIOENCODING=utf-8 python sync_sessions_to_neo4j.py) >>"$LOG" 2>&1 \
+        (cd "$REPO/local/etl" && PG_PORT=15432 PG_USER="$DB_USER" PG_PASSWORD="$DB_PASSWORD" PYTHONIOENCODING=utf-8 python sync_sessions_to_neo4j.py) >>"$LOG" 2>&1 \
             || log "WARN step 3c: ETL failed (continuing without graph data)"
         kill "$TUNNEL_PID" 2>/dev/null || true
     else
@@ -110,7 +140,7 @@ if [ -z "$PG_IP" ]; then
     log "FAIL step 3d: could not resolve postgres IP"
     exit 3
 fi
-if ! (cd "$JT_DIR" && DB_REMOTE_HOST="$PG_IP" node extract-sessions.js) >>"$LOG" 2>&1; then
+if ! (cd "$JT_DIR" && DB_REMOTE_HOST="$PG_IP" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" node extract-sessions.js) >>"$LOG" 2>&1; then
     log "FAIL step 3d: extract-sessions.js exited $?"
     exit 3
 fi
