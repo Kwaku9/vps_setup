@@ -63,6 +63,7 @@ inventory/hosts
 vault-pass.txt
 vault copy.yml
 vault.yml
+vault.yml.bak*
 vault_password.txt
 *.pem
 *.key
