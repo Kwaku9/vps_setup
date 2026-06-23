@@ -94,19 +94,24 @@ def _last_aititle(path: str) -> str:
     return title
 
 
-def _scan_file(path: str) -> SessionInfo | None:
-    """Read a transcript far enough to learn its workspace and a summary.
+HEAD_LINES = 200  # transcript head scanned for cwd + the fallback title
 
-    Returns None for files that carry no ``cwd`` (not a resumable session).
+
+def _scan_file(path: str) -> SessionInfo | None:
+    """Read a transcript to learn its workspace and best title.
+
+    Title precedence: last ``aiTitle`` (Claude Code auto-title / ``/rename``) →
+    cleaned first user message → "(no summary)". Returns None for files that
+    carry no ``cwd`` (not a resumable session).
     """
     sid = os.path.splitext(os.path.basename(path))[0]
-    cwd, summary = "", ""
+    cwd, fallback = "", ""
     try:
         with open(path, "r", errors="replace") as f:
-            # cwd and a summary live near the top; cap the scan so one giant
-            # transcript can't stall the (event-loop) caller.
+            # cwd + the fallback title live near the top; cap the head scan so
+            # one giant transcript can't stall the (event-loop) caller.
             for lineno, line in enumerate(f):
-                if lineno >= 200:
+                if lineno >= HEAD_LINES:
                     break
                 line = line.strip()
                 if not line:
@@ -117,18 +122,18 @@ def _scan_file(path: str) -> SessionInfo | None:
                     continue
                 if not cwd and obj.get("cwd"):
                     cwd = obj["cwd"]
-                if not summary and obj.get("type") == "summary" and obj.get("summary"):
-                    summary = str(obj["summary"])[:120]
-                if not summary and obj.get("type") == "user":
-                    summary = _first_text(obj.get("message", {}).get("content"))
-                if cwd and summary:
+                if not fallback and obj.get("type") == "user":
+                    fallback = _clean_user_title(
+                        obj.get("message", {}).get("content"))
+                if cwd and fallback:
                     break
     except OSError:
         return None
     if not cwd:
         return None
+    title = _last_aititle(path) or fallback or "(no summary)"
     mtime = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
-    return SessionInfo(sid, cwd, summary or "(no summary)", mtime.isoformat())
+    return SessionInfo(sid, cwd, title, mtime.isoformat())
 
 
 def list_sessions(root: str = PROJECTS_ROOT, within_days: int = 14,

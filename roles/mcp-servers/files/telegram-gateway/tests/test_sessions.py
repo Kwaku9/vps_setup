@@ -18,19 +18,19 @@ def _write_session(root, enc_dir, sid, lines, age_days=0):
     return path
 
 
-def test_list_sessions_extracts_cwd_and_summary(tmp_path):
+def test_list_sessions_uses_aititle(tmp_path):
     root = str(tmp_path)
     _write_session(root, "-workspace-vscode-projects-vps-setup", "abc", [
-        {"type": "summary", "summary": "fix approval gate"},
         {"type": "user", "cwd": "/workspace/vscode-projects/vps_setup",
          "message": {"content": "hello"}},
+        {"type": "ai-title", "aiTitle": "Fix approval gate", "sessionId": "abc"},
     ])
     out = sessions.list_sessions(root=root, within_days=14)
     assert len(out) == 1
     s = out[0]
     assert s.session_id == "abc"
     assert s.workspace == "/workspace/vscode-projects/vps_setup"
-    assert s.summary == "fix approval gate"
+    assert s.summary == "Fix approval gate"
     assert s.mtime_iso  # ISO string present
 
 
@@ -86,8 +86,8 @@ def test_list_workspaces_groups_and_counts(tmp_path):
 
 def test_file_without_cwd_is_skipped(tmp_path):
     root = str(tmp_path)
-    _write_session(root, "-w", "nocwd", [{"type": "summary",
-                                          "summary": "orphan"}])
+    _write_session(root, "-w", "nocwd", [
+        {"type": "ai-title", "aiTitle": "orphan", "sessionId": "nocwd"}])
     assert sessions.list_sessions(root=root, within_days=14) == []
 
 
@@ -129,3 +129,39 @@ def test_last_aititle_found_in_tail_of_large_file(tmp_path):
         json.dumps({"type": "ai-title", "aiTitle": "Tail Title", "sessionId": "s"})]
     p.write_text("\n".join(lines) + "\n")
     assert sessions._last_aititle(str(p)) == "Tail Title"
+
+
+def test_latest_aititle_wins(tmp_path):
+    root = str(tmp_path)
+    _write_session(root, "-w", "multi", [
+        {"type": "user", "cwd": "/w", "message": {"content": "start"}},
+        {"type": "ai-title", "aiTitle": "Early Auto Title", "sessionId": "multi"},
+        {"type": "ai-title", "aiTitle": "Renamed Title", "sessionId": "multi"},
+    ])
+    assert sessions.list_sessions(root=root, within_days=14)[0].summary == "Renamed Title"
+
+
+def test_no_aititle_falls_back_to_user_message(tmp_path):
+    root = str(tmp_path)
+    _write_session(root, "-w", "fb", [
+        {"type": "user", "cwd": "/w", "message": {"content": "do the thing"}}])
+    assert sessions.list_sessions(root=root, within_days=14)[0].summary == "do the thing"
+
+
+def test_injected_first_message_skipped(tmp_path):
+    root = str(tmp_path)
+    _write_session(root, "-w", "apm", [
+        {"type": "user", "cwd": "/w", "message": {"content": "[Context: You are APM]"}},
+        {"type": "user", "message": {"content": "what is my next task"}},
+    ])
+    assert sessions.list_sessions(
+        root=root, within_days=14)[0].summary == "what is my next task"
+
+
+def test_aititle_beyond_head_found(tmp_path):
+    root = str(tmp_path)
+    lines = [{"type": "user", "cwd": "/w", "message": {"content": "begin"}}]
+    lines += [{"type": "mode", "mode": "x", "sessionId": "big"} for _ in range(250)]
+    lines += [{"type": "ai-title", "aiTitle": "Deep Title", "sessionId": "big"}]
+    _write_session(root, "-w", "big", lines)
+    assert sessions.list_sessions(root=root, within_days=14)[0].summary == "Deep Title"
