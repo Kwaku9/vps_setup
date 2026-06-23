@@ -89,3 +89,18 @@ def test_file_without_cwd_is_skipped(tmp_path):
     _write_session(root, "-w", "nocwd", [{"type": "summary",
                                           "summary": "orphan"}])
     assert sessions.list_sessions(root=root, within_days=14) == []
+
+
+def test_clean_user_title_passes_real_text():
+    assert sessions._clean_user_title("Fix the login bug") == "Fix the login bug"
+
+
+def test_clean_user_title_drops_injected_blobs():
+    assert sessions._clean_user_title("[Context: You are APM ...]") == ""
+    assert sessions._clean_user_title("### Task:\nSuggest follow-ups") == ""
+    assert sessions._clean_user_title("<command-name>/compact</command-name>") == ""
+
+
+def test_clean_user_title_handles_block_list():
+    assert sessions._clean_user_title(
+        [{"type": "text", "text": "resume migration"}]) == "resume migration"
