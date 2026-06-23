@@ -46,6 +46,20 @@ def _first_text(content) -> str:
     return ""
 
 
+# Opening user turns that are NOT meaningful titles: injected agent context,
+# OpenWebUI auto-tasks, harness reminders, slash-command/caveat wrappers.
+_SKIP_TITLE_PREFIXES = (
+    "[Context:", "### Task:", "<system-reminder", "<command-", "Caveat:")
+
+
+def _clean_user_title(content) -> str:
+    """First real user text usable as a title; '' for empty/injected blobs."""
+    text = _first_text(content)
+    if not text or text.startswith(_SKIP_TITLE_PREFIXES):
+        return ""
+    return text
+
+
 def _scan_file(path: str) -> SessionInfo | None:
     """Read a transcript far enough to learn its workspace and a summary.
 
