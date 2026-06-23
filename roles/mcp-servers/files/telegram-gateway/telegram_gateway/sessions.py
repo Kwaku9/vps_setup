@@ -60,6 +60,40 @@ def _clean_user_title(content) -> str:
     return text
 
 
+TAIL_BYTES = 131072  # bytes scanned from EOF for the latest aiTitle (~128 KiB)
+
+
+def _last_aititle(path: str) -> str:
+    """Last `aiTitle` in the file's final TAIL_BYTES, or '' if none/unreadable.
+
+    Claude Code re-emits the session title as `{"type":"ai-title",...}` lines
+    throughout the transcript; the last one reflects the current title
+    (including a `/rename`). Reading only the tail keeps cost bounded on large
+    transcripts.
+    """
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            if size > TAIL_BYTES:
+                f.seek(size - TAIL_BYTES)
+                f.readline()  # drop the partial first line after the seek
+            data = f.read()
+    except OSError:
+        return ""
+    title = ""
+    for raw in data.split(b"\n"):
+        raw = raw.strip()
+        if not raw or b'"ai-title"' not in raw:  # cheap prefilter before JSON
+            continue
+        try:
+            obj = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if obj.get("type") == "ai-title" and obj.get("aiTitle"):
+            title = str(obj["aiTitle"]).strip()[:120]
+    return title
+
+
 def _scan_file(path: str) -> SessionInfo | None:
     """Read a transcript far enough to learn its workspace and a summary.
 
