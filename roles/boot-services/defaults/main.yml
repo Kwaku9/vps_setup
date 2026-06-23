@@ -29,7 +29,13 @@ boot_services:
     - { name: monitoring-pod,            enabled: true,  depends_on: [logs-pod] }
     - { name: authentication-pod,        enabled: true,  depends_on: [shared-db-pod] }
     - { name: authentication-worker-pod, enabled: true,  depends_on: [authentication-pod] }
-    - { name: ai-stack-pod,              enabled: true,  depends_on: [authentication-pod, shared-db-pod] }
+    # llama-embed-pod (EmbeddingGemma via llama.cpp): OWUI RAG embeddings, dialed
+    # cross-pod by LiteLLM. Same reboot gap as the coders/neo4j — deployed
+    # 2026-06-04, then reaped after the 2026-06-17 reboot (no boot unit -> Exited
+    # -> pruned). Independent store; ai-stack-pod waits on it so embeddings are
+    # ready before OWUI/LiteLLM come up.
+    - { name: llama-embed-pod,           enabled: true,  depends_on: [] }
+    - { name: ai-stack-pod,              enabled: true,  depends_on: [authentication-pod, shared-db-pod, llama-embed-pod] }
     - { name: management-pod,            enabled: true,  depends_on: [authentication-pod] }
     - { name: backend-pod,               enabled: true,  depends_on: [shared-db-pod] }
     - { name: frontend-pod,              enabled: true,  depends_on: [backend-pod] }
