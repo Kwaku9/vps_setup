@@ -104,3 +104,28 @@ def test_clean_user_title_drops_injected_blobs():
 def test_clean_user_title_handles_block_list():
     assert sessions._clean_user_title(
         [{"type": "text", "text": "resume migration"}]) == "resume migration"
+
+
+def test_last_aititle_reads_last_value(tmp_path):
+    p = tmp_path / "s.jsonl"
+    p.write_text("\n".join([
+        json.dumps({"type": "ai-title", "aiTitle": "First Draft", "sessionId": "s"}),
+        json.dumps({"type": "mode", "mode": "x", "sessionId": "s"}),
+        json.dumps({"type": "ai-title", "aiTitle": "Final Title", "sessionId": "s"}),
+    ]) + "\n")
+    assert sessions._last_aititle(str(p)) == "Final Title"
+
+
+def test_last_aititle_absent_returns_empty(tmp_path):
+    p = tmp_path / "s.jsonl"
+    p.write_text(json.dumps({"type": "user", "message": {"content": "hi"}}) + "\n")
+    assert sessions._last_aititle(str(p)) == ""
+
+
+def test_last_aititle_found_in_tail_of_large_file(tmp_path):
+    p = tmp_path / "s.jsonl"
+    filler = json.dumps({"type": "mode", "mode": "x", "sessionId": "s"})
+    lines = [filler] * 300 + [
+        json.dumps({"type": "ai-title", "aiTitle": "Tail Title", "sessionId": "s"})]
+    p.write_text("\n".join(lines) + "\n")
+    assert sessions._last_aititle(str(p)) == "Tail Title"
