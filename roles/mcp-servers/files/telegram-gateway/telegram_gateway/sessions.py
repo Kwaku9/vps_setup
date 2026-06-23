@@ -46,19 +46,72 @@ def _first_text(content) -> str:
     return ""
 
 
-def _scan_file(path: str) -> SessionInfo | None:
-    """Read a transcript far enough to learn its workspace and a summary.
+# Opening user turns that are NOT meaningful titles: injected agent context,
+# OpenWebUI auto-tasks, harness reminders, slash-command/caveat wrappers.
+_SKIP_TITLE_PREFIXES = (
+    "[Context:", "### Task:", "<system-reminder", "<command-", "Caveat:")
 
-    Returns None for files that carry no ``cwd`` (not a resumable session).
+
+def _clean_user_title(content) -> str:
+    """First real user text usable as a title; '' for empty/injected blobs."""
+    text = _first_text(content)
+    if not text or text.startswith(_SKIP_TITLE_PREFIXES):
+        return ""
+    return text
+
+
+TAIL_BYTES = 131072  # bytes scanned from EOF for the latest aiTitle (~128 KiB)
+
+
+def _last_aititle(path: str) -> str:
+    """Last `aiTitle` in the file's final TAIL_BYTES, or '' if none/unreadable.
+
+    Claude Code re-emits the session title as `{"type":"ai-title",...}` lines
+    throughout the transcript; the last one reflects the current title
+    (including a `/rename`). Reading only the tail keeps cost bounded on large
+    transcripts.
+    """
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            if size > TAIL_BYTES:
+                f.seek(size - TAIL_BYTES)
+                f.readline()  # drop the partial first line after the seek
+            data = f.read()
+    except OSError:
+        return ""
+    title = ""
+    for raw in data.split(b"\n"):
+        raw = raw.strip()
+        if not raw or b'"ai-title"' not in raw:  # cheap prefilter before JSON
+            continue
+        try:
+            obj = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if obj.get("type") == "ai-title" and obj.get("aiTitle"):
+            title = str(obj["aiTitle"]).strip()[:120]
+    return title
+
+
+HEAD_LINES = 200  # transcript head scanned for cwd + the fallback title
+
+
+def _scan_file(path: str) -> SessionInfo | None:
+    """Read a transcript to learn its workspace and best title.
+
+    Title precedence: last ``aiTitle`` (Claude Code auto-title / ``/rename``) →
+    cleaned first user message → "(no summary)". Returns None for files that
+    carry no ``cwd`` (not a resumable session).
     """
     sid = os.path.splitext(os.path.basename(path))[0]
-    cwd, summary = "", ""
+    cwd, fallback = "", ""
     try:
         with open(path, "r", errors="replace") as f:
-            # cwd and a summary live near the top; cap the scan so one giant
-            # transcript can't stall the (event-loop) caller.
+            # cwd + the fallback title live near the top; cap the head scan so
+            # one giant transcript can't stall the (event-loop) caller.
             for lineno, line in enumerate(f):
-                if lineno >= 200:
+                if lineno >= HEAD_LINES:
                     break
                 line = line.strip()
                 if not line:
@@ -69,18 +122,18 @@ def _scan_file(path: str) -> SessionInfo | None:
                     continue
                 if not cwd and obj.get("cwd"):
                     cwd = obj["cwd"]
-                if not summary and obj.get("type") == "summary" and obj.get("summary"):
-                    summary = str(obj["summary"])[:120]
-                if not summary and obj.get("type") == "user":
-                    summary = _first_text(obj.get("message", {}).get("content"))
-                if cwd and summary:
+                if not fallback and obj.get("type") == "user":
+                    fallback = _clean_user_title(
+                        obj.get("message", {}).get("content"))
+                if cwd and fallback:
                     break
     except OSError:
         return None
     if not cwd:
         return None
+    title = _last_aititle(path) or fallback or "(no summary)"
     mtime = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
-    return SessionInfo(sid, cwd, summary or "(no summary)", mtime.isoformat())
+    return SessionInfo(sid, cwd, title, mtime.isoformat())
 
 
 def list_sessions(root: str = PROJECTS_ROOT, within_days: int = 14,
