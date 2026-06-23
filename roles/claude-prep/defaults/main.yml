@@ -4,3 +4,6 @@
 claude:
   workspace_base: "/workspace"
   cli_version: "latest"
+
+# Deploy bundled Claude Code skills (files/skills/) to /root/.claude/skills
+claude_prep_skills_enabled: true

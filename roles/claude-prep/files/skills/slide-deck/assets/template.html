@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<!-- =====================================================================
+     slide-deck template - reveal.js technical presentation.
+     Fill every  FILL:  slot (each is its own HTML comment in the markup).
+     Keep slides terse (one idea each); give EVERY slide a notes aside.
+     Ships in the timeline.aicortex.cloud house style - see reference.md.
+     NOTE: do not nest comment markers or write literal tags in THIS header
+     comment - it breaks HTML parsing. ===================================== -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title><!-- FILL: deck title --></title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css" id="theme">
+
+<style>
+  /* ── DEFAULT aesthetic: timeline.aicortex.cloud (dark glassmorphic, purple-blue).
+     This IS the house style — every deck ships looking like this. ── */
+  :root{
+    --src:#7b93ff;       /* source / inputs  (blue accent)   */
+    --dst:#9b6fd0;       /* target / output  (purple accent) */
+    --accent:#a78bfa;    /* highlight / the payoff           */
+    --bad:#ef6a6a;       /* failure                          */
+    --glass:rgba(255,255,255,.06);
+    --glass-brd:rgba(255,255,255,.10);
+    --glow:rgba(123,147,255,.45);
+    --ink:#e0e0f0; --ink2:#a0a0b8; --ink3:#6a6a80;
+  }
+  .reveal-viewport{ background:linear-gradient(135deg,#0a0a14 0%,#1a1030 50%,#0a0a14 100%); }
+  /* ambient glow blobs behind everything */
+  .reveal-viewport::before{ content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(40% 50% at 18% 22%, rgba(123,147,255,.16), transparent 70%),
+      radial-gradient(45% 55% at 82% 78%, rgba(155,111,208,.16), transparent 70%); }
+  .reveal { font-size:30px; color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,sans-serif; }
+  .reveal h1,.reveal h2,.reveal h3 { letter-spacing:-.01em; text-transform:none; color:var(--ink); }
+  .reveal h1 { font-size:1.75em; font-weight:800;
+    background:linear-gradient(135deg,#fff 0%,#c7d2fe 40%,#a78bfa 72%,#fff 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 4px 14px rgba(123,147,255,.45)); }
+  .reveal h2 { font-size:1.35em; font-weight:800;
+    background:linear-gradient(135deg,#e8ecff,#b9a7ff); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .reveal section { text-align:left; }
+  .reveal section.center { text-align:center; }
+  .reveal .muted { color:var(--ink2); }
+  .reveal .src { color:var(--src); } .reveal .dst { color:var(--dst); }
+  .reveal .amber { color:var(--accent); } .reveal .bad { color:var(--bad); }
+  .reveal .pill { display:inline-block; padding:.12em .6em; border-radius:1em; font-size:.55em;
+    border:1px solid var(--glass-brd); color:#cbd5e1; margin:.15em .25em; background:var(--glass);
+    box-shadow:0 0 10px rgba(123,147,255,.18); }
+  /* glass card wrapper — use <div class="card"> for cols, callouts, static structure */
+  .reveal .card{ background:var(--glass); border:1px solid var(--glass-brd); border-radius:16px;
+    padding:.7em .9em; backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); box-shadow:0 8px 32px rgba(0,0,0,.4); }
+  .reveal table { font-size:.6em; border-collapse:collapse; width:100%; }
+  .reveal table th { color:var(--accent); border-bottom:2px solid var(--glass-brd); text-align:left; padding:.3em .5em; }
+  .reveal table td { padding:.3em .5em; border-bottom:1px solid rgba(255,255,255,.05); }
+  .reveal pre { box-shadow:none; width:100%; font-size:.5em; }
+  .reveal pre code { padding:14px 18px; border-radius:12px; max-height:none;
+    border:1px solid var(--glass-brd); background:rgba(10,10,20,.7); }
+  .reveal .cols { display:flex; gap:1.1em; align-items:flex-start; flex-wrap:wrap; }
+  .reveal .cols > div { flex:1; min-width:220px; }
+  .reveal .big-num { font-size:2.0em; font-weight:800; line-height:1;
+    background:linear-gradient(135deg,#c7d2fe,#a78bfa); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .reveal .stat { text-align:center; }
+  .reveal .stat .lbl { font-size:.46em; color:var(--ink2); text-transform:uppercase; letter-spacing:.08em; }
+  .reveal .grid5 { display:grid; grid-template-columns:repeat(4,1fr); gap:1em 1.3em; }
+  .reveal small.note { color:var(--ink3); font-size:.5em; }
+  /* Mermaid stays available for STATIC structure only (class/ER diagrams) — prefer .flow for any traffic. */
+  .reveal pre.mermaid { background:transparent; box-shadow:none; text-align:center; }
+  .reveal pre.mermaid svg { max-width:100%; height:auto; max-height:560px; }  /* keep tall diagrams on-slide */
+
+  /* ── animated flow diagram — PREFER over Mermaid for traffic/request flows ──
+     glass node cards + connector links with a glowing packet that travels in the
+     traffic direction. Palette-agnostic via color-mix(var(--src)…). Markup:
+       <div class="flow"> <div class="node src">A<small>sub</small></div>
+         <div class="link"></div> <div class="node hi">B</div> </div>
+     .flow.vert = vertical · .link.back = reverse packet · .bilink = two-way (see reference.md) */
+  .reveal .flow{ display:flex; align-items:center; justify-content:center; flex-wrap:wrap; margin:.5em 0; }
+  .reveal .flow.vert{ flex-direction:column; }
+  .reveal .node{ position:relative; background:var(--glass); border:1px solid var(--glass-brd); border-radius:14px;
+    padding:.5em .8em; min-width:130px; text-align:center; font-size:.72em; font-weight:600; line-height:1.3;
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); box-shadow:0 6px 22px rgba(0,0,0,.35); }
+  .reveal .node small{ display:block; color:var(--ink2); font-size:.8em; font-weight:400; margin-top:.12em; }
+  .reveal .node .ic{ font-size:1.3em; }
+  .reveal .node.src{ border-color:var(--src); box-shadow:0 0 20px color-mix(in srgb,var(--src) 30%,transparent); }
+  .reveal .node.dst{ border-color:var(--dst); box-shadow:0 0 20px color-mix(in srgb,var(--dst) 30%,transparent); }
+  .reveal .node.hi{ border-color:var(--accent); box-shadow:0 0 26px color-mix(in srgb,var(--accent) 45%,transparent); }
+  .reveal .node.bad{ border-color:var(--bad); box-shadow:0 0 20px color-mix(in srgb,var(--bad) 32%,transparent); }
+  .reveal .link{ position:relative; align-self:center; flex:1 1 28px; min-width:28px; max-width:88px; height:3px; margin:0 3px; border-radius:3px;
+    background:linear-gradient(90deg,color-mix(in srgb,var(--src) 12%,transparent),color-mix(in srgb,var(--src) 60%,transparent),color-mix(in srgb,var(--src) 12%,transparent));
+    background-size:200% 100%; animation:flowx 1.5s linear infinite; }
+  @keyframes flowx{ from{background-position:200% 0} to{background-position:0 0} }
+  .reveal .link::after{ content:''; position:absolute; right:-6px; top:50%; transform:translateY(-50%);
+    border-left:7px solid var(--src); border-top:5px solid transparent; border-bottom:5px solid transparent; }
+  .reveal .link::before{ content:''; position:absolute; top:50%; left:0; width:9px; height:9px; margin-top:-4.5px; border-radius:50%;
+    background:#fff; box-shadow:0 0 12px var(--accent); animation:pktx 1.5s linear infinite; }
+  @keyframes pktx{ 0%{left:0;opacity:0} 12%{opacity:1} 86%{opacity:1} 100%{left:100%;opacity:0} }
+  .reveal .link .cap{ position:absolute; top:-1.5em; left:50%; transform:translateX(-50%); white-space:nowrap; font-size:9px; color:#94a3b8; }
+  .reveal .link.lbl{ margin-top:1.1em; }
+  .reveal .link.back{ animation:flowxr 1.5s linear infinite;
+    background:linear-gradient(90deg,color-mix(in srgb,var(--dst) 12%,transparent),color-mix(in srgb,var(--dst) 60%,transparent),color-mix(in srgb,var(--dst) 12%,transparent)); background-size:200% 100%; }
+  @keyframes flowxr{ from{background-position:0 0} to{background-position:200% 0} }
+  .reveal .link.back::after{ left:-6px; right:auto; border-left:none; border-right:7px solid var(--dst); border-top:5px solid transparent; border-bottom:5px solid transparent; }
+  .reveal .link.back::before{ box-shadow:0 0 12px var(--dst); animation:pktxr 1.5s linear infinite; }
+  @keyframes pktxr{ 0%{left:100%;opacity:0} 12%{opacity:1} 86%{opacity:1} 100%{left:0;opacity:0} }
+  .reveal .vert .link{ width:3px; height:30px; min-height:30px; max-width:none; flex:none; margin:3px 0;
+    background:linear-gradient(180deg,color-mix(in srgb,var(--src) 12%,transparent),color-mix(in srgb,var(--src) 60%,transparent),color-mix(in srgb,var(--src) 12%,transparent)); background-size:100% 200%; animation:flowy 1.5s linear infinite; }
+  @keyframes flowy{ from{background-position:0 200%} to{background-position:0 0} }
+  .reveal .vert .link::after{ right:50%; left:auto; top:auto; bottom:-6px; transform:translateX(50%); border:none; border-left:5px solid transparent; border-right:5px solid transparent; border-top:7px solid var(--src); }
+  .reveal .vert .link::before{ left:50%; top:0; margin-left:-4.5px; margin-top:0; animation:pkty 1.5s linear infinite; }
+  @keyframes pkty{ 0%{top:0;opacity:0} 12%{opacity:1} 86%{opacity:1} 100%{top:100%;opacity:0} }
+  .reveal .bilink{ align-self:center; flex:1 1 44px; min-width:44px; max-width:130px; display:flex; flex-direction:column; gap:9px; }
+  .reveal .bilink .link{ flex:none; width:100%; min-width:0; max-width:none; margin:0; }
+  @media (prefers-reduced-motion: reduce){ .reveal .link,.reveal .link::before{ animation:none } }
+  .reveal .footer { position:fixed; bottom:8px; left:14px; font-size:13px; color:#475569; }
+  .reveal .kbd { font-family:monospace; background:#1e293b; padding:.05em .35em; border-radius:5px; font-size:.8em; }
+  .reveal ul { width:100%; } .reveal li { margin:.2em 0; }
+  #viz { width:100%; max-width:1000px; height:520px; margin:.3em auto 0; border:1px solid #334155; border-radius:14px;
+    background:radial-gradient(120% 120% at 50% 0%, rgba(22,16,52,.5), #0b1220); overflow:hidden;
+    box-shadow:inset 0 0 70px rgba(123,147,255,.08), 0 8px 32px rgba(0,0,0,.4); }
+  #viz.fallback { display:flex; align-items:center; justify-content:center; text-align:center; padding:0 2.2em;
+    color:#7a8299; border-style:dashed; font-size:.62em; line-height:1.55; }
+  /* dark glassy node hover tooltip (vis.js injects .vis-tooltip on <body>, outside .reveal) */
+  div.vis-tooltip{ background:rgba(16,14,38,.96)!important; border:1px solid #334155!important;
+    color:#e0e0f0!important; border-radius:10px!important; padding:8px 11px!important; max-width:320px!important;
+    white-space:normal!important; font-size:12px!important; line-height:1.45!important;
+    box-shadow:0 8px 28px rgba(0,0,0,.5)!important; font-family:-apple-system,'Segoe UI',Roboto,sans-serif!important; }
+
+  /* ── OPTIONAL voiceover control (remove #vo-bar + the VO script if not narrating) ── */
+  #vo-bar{ position:fixed; top:10px; right:12px; z-index:40; display:flex; gap:6px; align-items:center;
+    background:var(--glass); border:1px solid var(--glass-brd); border-radius:999px; padding:5px 8px 5px 12px;
+    backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); font-size:13px; color:var(--ink2); }
+  #vo-toggle{ cursor:pointer; border:none; border-radius:999px; padding:5px 12px; font-weight:700; font-size:12px;
+    background:linear-gradient(135deg,#7b93ff,#9b6fd0); color:#fff; box-shadow:0 0 14px var(--glow); }
+  #vo-bar.on{ box-shadow:0 0 18px var(--glow); }
+
+  /* ── mobile / responsive (paired with the narrower mobile canvas in the reveal init) ── */
+  @media (max-width:760px){
+    .reveal { font-size:33px; }            /* canvas is narrower on mobile → text scales up bigger */
+    .reveal .cols { flex-direction:column; gap:.6em; }
+    .reveal .grid5 { grid-template-columns:repeat(2,1fr); }
+    .reveal table { font-size:.7em; }
+    .reveal pre code { white-space:pre-wrap; word-break:break-word; }  /* wrap long code lines */
+    /* flow diagrams: stack vertically + bigger node text on phones */
+    .reveal .flow{ flex-direction:column; }
+    .reveal .node{ font-size:1.05em; min-width:60%; max-width:84%; padding:.6em 1em; }
+    .reveal .node small{ font-size:.82em; }
+    .reveal .flow .link{ width:3px; height:26px; min-height:26px; max-width:none; flex:none; margin:3px 0;
+      background:linear-gradient(180deg,color-mix(in srgb,var(--src) 12%,transparent),color-mix(in srgb,var(--src) 60%,transparent),color-mix(in srgb,var(--src) 12%,transparent)); background-size:100% 200%; animation:flowy 1.5s linear infinite; }
+    .reveal .flow .link::after{ right:50%; left:auto; top:auto; bottom:-6px; transform:translateX(50%); border:none; border-left:5px solid transparent; border-right:5px solid transparent; border-top:7px solid var(--src); }
+    .reveal .flow .link::before{ left:50%; top:0; margin-left:-4.5px; margin-top:0; animation:pkty 1.5s linear infinite; }
+    .reveal .bilink{ flex-direction:row; gap:16px; align-self:center; min-width:0; }
+    .reveal .link .cap{ position:static; transform:none; display:block; }
+    #vo-bar{ top:6px; right:6px; font-size:11px; padding:4px 6px 4px 9px; }
+    #viz{ height:58vh; max-height:520px; }
+    .reveal .footer{ font-size:11px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── LIVE-GRAPH CONFIG (Enhancement 1) ─────────────────────────────────
+     Set enabled:false (or run the skill with --no-graph) to drop the live slide.
+     serverPassword is read at render time — fine for a localhost presentation;
+     do not commit real remote creds. See reference.md "Live graph config". -->
+<script>
+  window.DECK_GRAPH = {
+    enabled: true,
+    serverUrl: "bolt://localhost:7687",
+    serverUser: "neo4j",
+    serverPassword: "neo4j",                  // FILL: real password when presenting
+    initialCypher: "MATCH (n)-[r]->(m) RETURN n,r,m LIMIT 75",   // FILL: a representative query
+    caption: "Live from bolt://localhost:7687",
+    // optional vis styling — label = node property to show as the caption
+    labels: { /* FILL: e.g. Session:{label:'title'}, File:{label:'path'} */ },
+    relationships: { /* FILL: e.g. HAS_SESSION:{}, TOUCHES_FILE:{} */ }
+  };
+  // OPTIONAL per-slide voiceovers (Enhancement 3). Generate with gen-voiceovers.py;
+  // remove this + the #vo-bar + the VO script below if not narrating.
+  window.DECK_VO = { dir: "voiceovers", ext: "wav" };
+  // OPTIONAL scored background music — a looping bed UNDER the narration. base = level while a
+  // voiceover plays (15%), swell = level after the voice ends (25%); the bed dips out on slide
+  // change and crossfades when the per-slide track changes. Drop tracks in bg/. Use `src` for a
+  // single bed, or `tracks` for a per-slide arc (ONE entry per slide). Remove DECK_BG + #bg-audio
+  // (and re-fill the VO script) to disable. See reference.md "Background music".
+  window.DECK_BG = { base: 0.15, swell: 0.25,
+    src: "bg/track.mp3",                      // FILL: a single looping bed, OR use `tracks` below
+    tracks: [ /* FILL (optional per-slide arc, one per slide): "bg/intro.mp3","bg/intro.mp3","bg/build.mp3",… */ ] };
+</script>
+
+<!-- OPTIONAL narration control (remove if not using voiceovers) -->
+<div id="vo-bar"><span>🔊 Narration</span><button id="vo-toggle">Off</button></div>
+<audio id="vo-audio" preload="none"></audio>
+<audio id="bg-audio" loop preload="auto"></audio>
+
+<div class="reveal"><div class="slides">
+
+<!-- 1 ─ TITLE ──────────────────────────────────────────────────────── -->
+<section class="center" data-background-gradient="radial-gradient(circle at 30% 20%, #1a1030, #050509)">
+  <h1><!-- FILL: Title (use <span class="dst"> for the key term) --></h1>
+  <h3 class="muted"><!-- FILL: one-line subtitle --></h3>
+  <p style="margin-top:1em;">
+    <span class="pill"><!-- FILL: context pill --></span>
+    <span class="pill"><!-- FILL: e.g. A → B --></span>
+  </p>
+  <p class="muted" style="font-size:.6em;margin-top:1.5em;"><code><!-- FILL: canonical file/path --></code></p>
+  <aside class="notes"><!-- FILL: speaker notes --></aside>
+</section>
+
+<!-- 2 ─ ONE-LINER ──────────────────────────────────────────────────── -->
+<section class="center">
+  <h2>In one sentence</h2>
+  <p style="font-size:1.15em;line-height:1.4;margin-top:.6em;"><!-- FILL: the system in one sentence --></p>
+  <p class="muted" style="margin-top:1.2em;font-size:.8em;"><!-- FILL: why it exists / what it unlocks --></p>
+  <aside class="notes"><!-- FILL --></aside>
+</section>
+
+<!-- 3 ─ WHERE IT FITS (animated flow — preferred over Mermaid for traffic) ─── -->
+<section>
+  <h2><!-- FILL: Where it sits --></h2>
+  <div class="flow">
+    <div class="node src"><!-- FILL: A --><small><!-- sub --></small></div>
+    <div class="link"></div>
+    <div class="node hi"><!-- FILL: B (focal) --></div>
+    <div class="link"></div>
+    <div class="node dst"><!-- FILL: C --></div>
+  </div>
+  <!-- bidirectional gap: <div class="bilink"><span class="link"></span><span class="link back"></span></div>
+       vertical flow: <div class="flow vert">…</div> · labeled link: <div class="link lbl"><span class="cap">label</span></div> -->
+  <p class="muted" style="font-size:.7em"><!-- FILL: one clarifying sentence --></p>
+  <aside class="notes"><!-- FILL --></aside>
+</section>
+
+<!-- 4 ─ CORE CONCEPT / E·T·L or request-flow breakdown ─────────────── -->
+<section>
+  <h2><!-- FILL --></h2>
+  <div class="cols">
+    <div><h3 class="src"><!-- FILL --></h3><ul style="font-size:.72em"><li><!-- FILL --></li></ul></div>
+    <div><h3 class="amber"><!-- FILL --></h3><ul style="font-size:.72em"><li><!-- FILL --></li></ul></div>
+    <div><h3 class="dst"><!-- FILL --></h3><ul style="font-size:.72em"><li><!-- FILL --></li></ul></div>
+  </div>
+  <aside class="notes"><!-- FILL --></aside>
+</section>
+
+<!-- 5 ─ SOURCE / INPUTS table ──────────────────────────────────────── -->
+<section>
+  <h2 class="src"><!-- FILL: the inputs --></h2>
+  <table>
+    <tr><th>FILL</th><th>FILL</th><th>FILL</th></tr>
+    <tr><td>FILL</td><td>FILL</td><td>FILL</td></tr>
+  </table>
+  <p class="muted" style="font-size:.62em"><!-- FILL --></p>
+  <aside class="notes"><!-- FILL --></aside>
+</section>
+
+<!-- 6 ─ ARCHITECTURE / DATA MODEL ──────────────────────────────────────
+     DEFAULT = glass cards for static structure. For a directional/request
+     flow use <div class="flow"> (slide 3). Mermaid is available ONLY for a
+     genuinely static class/ER diagram — if you use it, keep the loader. -->
+<section>
+  <h2 class="dst"><!-- FILL: the model --></h2>
+  <div class="cols" style="font-size:.72em">
+    <div class="card"><h3 class="src"><!-- FILL --></h3><ul><li><!-- FILL --></li></ul></div>
+    <div class="card"><h3 class="dst"><!-- FILL --></h3><ul><li><!-- FILL --></li></ul></div>
+  </div>
+  <p class="muted" style="font-size:.58em"><!-- FILL: legend --></p>
+  <aside class="notes"><!-- FILL --></aside>
+</section>
+
+<!-- 7 ─ HOW A RUN / REQUEST WORKS (the steps) ──────────────────────── -->
+<section>
+  <h2><!-- FILL --></h2>
+  <div class="cols" style="font-size:.66em">
+    <div><ol><li><!-- FILL --></li></ol></div>
+    <div><ol start="5"><li><!-- FILL --></li></ol></div>
+  </div>
+  <aside class="notes"><!-- FILL --></aside>
+</section>
+
+<!-- 8 ─ KEY MECHANISM (code snippet) ───────────────────────────────── -->
+<section>
+  <h2><!-- FILL --></h2>
+  <pre><code data-trim>
+FILL: the one snippet that captures the core mechanism
+  </code></pre>
+  <ul style="font-size:.66em"><li><!-- FILL: why it matters --></li></ul>
+  <aside class="notes"><!-- FILL --></aside>
+</section>
+
+<!-- 9 ─ SPOTLIGHT (the "why bother") — animated flow ───────────────── -->
+<section>
+  <h2 class="amber"><!-- FILL --></h2>
+  <div class="flow">
+    <div class="node src"><!-- FILL: X --></div>
+    <div class="link"></div>
+    <div class="node hi"><!-- FILL: Y (the payoff) --></div>
+    <div class="link"></div>
+    <div class="node dst"><!-- FILL: Z --></div>
+  </div>
+  <p style="font-size:.66em"><!-- FILL: the payoff, with a real number --></p>
+  <aside class="notes"><!-- FILL --></aside>
+</section>
+
+<!-- 10 ─ FAILURE MODES / hardening (optional) ──────────────────────── -->
+<section>
+  <h2 class="bad"><!-- FILL --></h2>
+  <table>
+    <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+    <tr><td>FILL</td><td>FILL</td><td>FILL</td></tr>
+  </table>
+  <aside class="notes"><!-- FILL --></aside>
+</section>
+
+<!-- 11 ─ THE NUMBERS ───────────────────────────────────────────────── -->
+<section class="center">
+  <h2><!-- FILL --></h2>
+  <div class="grid5" style="margin-top:.6em">
+    <div class="stat"><div class="big-num dst">FILL</div><div class="lbl">FILL</div></div>
+    <div class="stat"><div class="big-num amber">FILL</div><div class="lbl">FILL</div></div>
+  </div>
+  <aside class="notes"><!-- FILL --></aside>
+</section>
+
+<!-- 12 ─ LIVE GRAPH (Enhancement 1) — delete if --no-graph ──────────── -->
+<section class="center">
+  <h2>The <span class="dst">live</span> graph</h2>
+  <div id="viz" class="fallback">graph mounts here when Neo4j is reachable</div>
+  <small class="note" id="viz-cap"></small>
+  <aside class="notes">Renders the real Neo4j graph via neovis.js. Falls back to a message if Bolt is unreachable, so the deck always opens. Configure in window.DECK_GRAPH at the top of the file.</aside>
+</section>
+
+<!-- 13 ─ RECAP ─────────────────────────────────────────────────────── -->
+<section class="center">
+  <h2>Recap</h2>
+  <p style="font-size:.9em;line-height:1.5"><!-- FILL: the arc in one line --></p>
+  <p style="margin-top:1.4em"><span class="pill"><!-- FILL: where it lives / URL --></span></p>
+  <aside class="notes"><!-- FILL --></aside>
+</section>
+
+</div></div>
+
+<div class="footer"><!-- FILL: deck name --> &nbsp;·&nbsp; ← → navigate · <span class="kbd">S</span> notes · <span class="kbd">F</span> fullscreen</div>
+
+<!-- reveal.js core + plugins -->
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/highlight.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/monokai.css">
+
+<!-- Mermaid: lazy per-slide render (reveal hides off-screen slides → render on show) -->
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad:false, theme:'dark', securityLevel:'loose',
+                       flowchart:{ curve:'basis', htmlLabels:true } });
+  const renderIn = (slide) => {
+    if(!slide) return;
+    const blocks = slide.querySelectorAll('pre.mermaid:not([data-processed])');
+    if(blocks.length) mermaid.run({ nodes: blocks });
+  };
+  // Mobile: narrower+taller canvas so reveal's fit-scale shrinks far less
+  // (≈0.55× vs ≈0.3×) → readable text on phones. Desktop unchanged.
+  const _mobile = window.matchMedia('(max-width:760px)').matches;
+  const deck = new Reveal({ hash:true, slideNumber:'c/t', transition:'slide',
+                            width:  _mobile ? 720  : 1280,
+                            height: _mobile ? 1000 : 760,
+                            margin: _mobile ? 0.03 : 0.04, minScale:0.2, maxScale:2.0,
+                            plugins:[ RevealNotes, RevealHighlight ] });
+  deck.initialize().then(() => renderIn(deck.getCurrentSlide()));
+  deck.on('slidechanged', e => { renderIn(e.currentSlide); window.playVO && window.playVO(e.indexh); });
+  window.__deck = deck;
+</script>
+
+<!-- OPTIONAL voiceover + scored background music (Enhancement 3) — on slide change, plays
+     voiceovers/slide-<i>.<ext> and a looping bed that ducks under the voice (base), swells when
+     the voice ends, dips on slide change, and crossfades when the per-slide track changes. -->
+<script>
+  (function(){
+    const cfg = window.DECK_VO || { dir:"voiceovers", ext:"wav" };
+    const bgc = window.DECK_BG || {};
+    const vo  = document.getElementById('vo-audio');
+    const bg  = document.getElementById('bg-audio');
+    const bar = document.getElementById('vo-bar');
+    const btn = document.getElementById('vo-toggle');
+    if(!vo || !btn) return;                                 // narration control removed → no-op
+    const BASE  = (bgc.base  != null ? bgc.base  : 0.15);   // music level under the voice
+    const SWELL = (bgc.swell != null ? bgc.swell : 0.25);   // music level after the voice ends
+    const FADE_OUT = 350, FADE_IN = 900, FADE_SWELL = 1400; // ms
+    const TRACKS = bgc.tracks && bgc.tracks.length ? bgc.tracks : null;  // optional per-slide list
+    let on = false, cur = null;                             // cur = currently-loaded bg src
+
+    function fadeTo(aud, target, ms){
+      if(!aud) return;
+      if(aud._raf) cancelAnimationFrame(aud._raf);
+      const start = aud.volume || 0, t0 = performance.now();
+      (function step(t){
+        const k = ms <= 0 ? 1 : Math.min(1, (t - t0) / ms);
+        aud.volume = Math.max(0, Math.min(1, start + (target - start) * k));
+        if(k < 1) aud._raf = requestAnimationFrame(step);
+      })(performance.now());
+    }
+    function trackFor(i){
+      if(TRACKS) return TRACKS[Math.min(i, TRACKS.length - 1)];
+      return bgc.src || null;
+    }
+    // crossfade to a new track when the slide's track changes; dip+recover (continuous) when it's the same
+    function cueBg(i){
+      if(!bg) return;
+      const want = trackFor(i);
+      if(!want) return;
+      if(want === cur){
+        fadeTo(bg, 0, FADE_OUT);
+        setTimeout(() => { if(on) fadeTo(bg, BASE, FADE_IN); }, FADE_OUT);
+      } else {
+        cur = want;
+        fadeTo(bg, 0, FADE_OUT);
+        setTimeout(() => {
+          bg.src = want; bg.currentTime = 0;
+          if(on){ bg.play().catch(()=>{}); fadeTo(bg, BASE, FADE_IN); }
+        }, FADE_OUT);
+      }
+    }
+
+    vo.addEventListener('ended', () => { if(on) fadeTo(bg, SWELL, FADE_SWELL); });
+
+    function speak(i){
+      vo.src = `${cfg.dir}/slide-${i}.${cfg.ext}`; vo.currentTime = 0;
+      vo.play().catch(()=>{});             // missing file / autoplay block → ignore
+    }
+
+    window.playVO = function(i){
+      if(!on) return;
+      cueBg(i);
+      speak(i);
+    };
+
+    btn.addEventListener('click', () => {
+      on = !on; btn.textContent = on ? 'On' : 'Off'; bar && bar.classList.toggle('on', on);
+      if(on){
+        const h = (window.__deck ? window.__deck.getIndices().h : 0);
+        cur = null; cueBg(h); speak(h);    // gesture unlocks autoplay
+      } else {
+        vo.pause();
+        fadeTo(bg, 0, FADE_OUT);
+        setTimeout(() => { if(!on && bg) bg.pause(); }, FADE_OUT + 60);
+      }
+    });
+  })();
+</script>
+
+<!-- Live Neo4j graph via neovis.js (Enhancement 1) -->
+<script src="https://unpkg.com/neovis.js@2.1.0/dist/neovis.js"></script>
+<script>
+  (function(){
+    const cfg = window.DECK_GRAPH || {};
+    const el  = document.getElementById('viz');
+    if(!el) return;
+    if(!cfg.enabled){ el.textContent = "live graph disabled"; return; }
+    if(typeof NeoVis === 'undefined'){ el.textContent = "neovis.js failed to load"; return; }
+    const cap = document.getElementById('viz-cap');
+
+    // Caption truncation: node labels carry the caption property's FULL value, which is
+    // often a long string → show a short caption, move the full text to a hover tooltip.
+    const ADV = NeoVis.NEOVIS_ADVANCED_CONFIG;
+    const trunc = (v) => { const s = (v==null?'':String(v)).replace(/\s+/g,' ').trim();
+      return s.length > 34 ? s.slice(0,32).trim() + '…' : (s || 'node'); };
+    // Per-node static styling so neovis doesn't fall back to vis.js default light-blue.
+    const NODE_STATIC = { shape:'dot', size:22, borderWidth:2,
+      color:{ background:'#9b6fd0', border:'#cbb6f4',
+              highlight:{ background:'#a78bfa', border:'#ffffff' }, hover:{ background:'#b291e6', border:'#ffffff' } },
+      font:{ color:'#ece9fb', size:15, face:"-apple-system,'Segoe UI',Roboto,sans-serif",
+             strokeWidth:3, strokeColor:'rgba(8,8,20,.85)' },
+      shadow:{ enabled:true, color:'rgba(123,147,255,.5)', size:20, x:0, y:0 } };
+    const labelsCfg = {};
+    Object.entries(cfg.labels || {}).forEach(([name, def]) => {
+      const prop = (def && def.label) || 'name';
+      labelsCfg[name] = Object.assign({}, def, { [ADV]: {
+        static: NODE_STATIC,
+        function: { label: (n) => trunc(n.properties[prop]),
+                    title: (n) => (n.properties[prop]==null?'':String(n.properties[prop])) } } });
+    });
+
+    // Dark glassmorphic vis-network theme + physics that keeps even edge-less nodes
+    // together and auto-fits them into view. Arrows ON for directional relationships.
+    const visConfig = {
+      nodes:{ shape:'dot', size:22, borderWidth:2,
+        color:{ background:'#9b6fd0', border:'#cbb6f4',
+                highlight:{ background:'#a78bfa', border:'#ffffff' }, hover:{ background:'#b291e6', border:'#ffffff' } },
+        font:{ color:'#ece9fb', size:15, strokeWidth:3, strokeColor:'rgba(8,8,20,.85)' },
+        shadow:{ enabled:true, color:'rgba(123,147,255,.45)', size:18, x:0, y:0 } },
+      edges:{ color:{ color:'rgba(123,147,255,.5)', highlight:'#a78bfa', hover:'#a78bfa' },
+        width:1.5, smooth:{ enabled:true, type:'dynamic' }, arrows:{ to:{ enabled:true, scaleFactor:0.6 } },
+        font:{ color:'#a0a0b8', size:11, strokeWidth:3, strokeColor:'rgba(8,8,20,.85)', align:'middle' } },
+      physics:{ enabled:true, solver:'forceAtlas2Based',
+        forceAtlas2Based:{ gravitationalConstant:-45, centralGravity:0.018, springLength:130,
+                           springConstant:0.10, damping:0.55, avoidOverlap:1 },
+        stabilization:{ enabled:true, iterations:240, fit:true }, minVelocity:0.6 },
+      interaction:{ hover:true, tooltipDelay:120, zoomView:true, dragView:true },
+      layout:{ improvedLayout:true } };
+
+    let rendered = false;
+    function go(){
+      if(rendered) return; rendered = true;
+      try{
+        const viz = new NeoVis.default({
+          containerId: "viz",
+          neo4j: { serverUrl: cfg.serverUrl, serverUser: cfg.serverUser, serverPassword: cfg.serverPassword },
+          labels: labelsCfg, relationships: cfg.relationships || {},
+          initialCypher: cfg.initialCypher, visConfig
+        });
+        viz.registerOnEvent && viz.registerOnEvent("error", e => {
+          el.classList.add('fallback'); el.textContent = "Neo4j unreachable — showing fallback";
+        });
+        viz.registerOnEvent && viz.registerOnEvent("completed", () => { setTimeout(() => {
+          try{
+            const net = viz.network || viz._network;
+            const n = net && net.body ? Object.keys(net.body.nodes).length : 0;
+            if(!n){ el.classList.add('fallback'); el.textContent = "Graph is empty — no matching nodes returned yet."; }
+            else if(net){ net.fit({ animation:false }); }   // pull stray nodes back into view
+          }catch(_){}
+        }, 350); });
+        el.classList.remove('fallback'); el.textContent = '';
+        viz.render();
+        if(cap) cap.textContent = cfg.caption || "";
+      }catch(err){
+        el.classList.add('fallback'); el.textContent = "Neo4j unreachable — " + err.message;
+      }
+    }
+    // render when the live-graph slide is shown
+    const tryWhenVisible = () => { const s = window.__deck && window.__deck.getCurrentSlide();
+      if(s && s.querySelector('#viz')) go(); };
+    if(window.__deck){ window.__deck.on('slidechanged', tryWhenVisible); setTimeout(tryWhenVisible, 800); }
+    else { setTimeout(go, 1200); }
+  })();
+</script>
+</body>
+</html>
