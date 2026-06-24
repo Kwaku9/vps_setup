@@ -8,6 +8,9 @@ metadata:
 spec:
   kprobes:
     # 1. Reverse shell / C2 — a shell binary makes an outbound TCP connection
+    #    to a NON-private destination. Private/tailnet/loopback dests are excluded
+    #    so routine Alpine/busybox deploy traffic (local mirrors, container-to-
+    #    container, tailnet SSH) doesn't false-positive. A real C2 dials a public IP.
     - call: "tcp_connect"
       syscall: false
       args:
@@ -21,6 +24,16 @@ spec:
                 - "/bin/bash"
                 - "/bin/busybox"
                 - "/bin/ash"
+          matchArgs:
+            - index: 0
+              operator: "NotDAddr"
+              values:
+                - "127.0.0.0/8"      # loopback
+                - "10.0.0.0/8"       # RFC1918 / podman networks
+                - "172.16.0.0/12"    # RFC1918
+                - "192.168.0.0/16"   # RFC1918
+                - "169.254.0.0/16"   # link-local
+                - "100.64.0.0/10"    # Tailscale CGNAT (tailnet)
           matchActions:
             - action: Post
 
@@ -43,14 +56,15 @@ spec:
         - index: 1
           type: "int"
       selectors:
-        # 3a. Container escape — open the podman/docker control socket
+        # 3a. Container escape — open the container control socket. Narrowed to the
+        #     actual podman/docker socket paths (Postfix) so it no longer matches the
+        #     whole /run/user/ runtime tree (which broke rootless podman / user sessions).
         - matchArgs:
             - index: 0
-              operator: "Prefix"
+              operator: "Postfix"
               values:
-                - "/run/podman/podman.sock"
-                - "/run/user/"
-                - "/var/run/docker.sock"
+                - "podman/podman.sock"   # rootful /run/podman/... and rootless /run/user/<uid>/podman/...
+                - "docker.sock"          # /var/run/docker.sock and friends
           matchActions:
             - action: Post
         # 3b. Credential / secret theft — read crown jewels, excluding legit readers
@@ -70,12 +84,30 @@ spec:
                 - "/usr/bin/ansible-playbook"
                 - "/usr/bin/python3"
                 - "/usr/sbin/sshd"
+                # /usr/lib/ssh/sshd-session (OpenSSH 10.x auth helper) is deliberately NOT
+                # allowlisted in OBSERVE: we WANT its /etc/shadow reads logged as Post events
+                # -> Alloy -> Loki (job=tetragon) for login-auth baseline analytics. It IS
+                # allowlisted in 20-enforce so enforcement never kills it; Telegram noise for
+                # these benign baseline reads is suppressed in tetragon-alerter (SUPPRESS), not here.
+                - "/usr/bin/ssh"       # git-over-ssh / outbound ssh reads its own key — not theft
                 - "/bin/su"
                 - "/bin/login"
                 - "/usr/bin/passwd"
           matchActions:
             - action: Post
-        # 3c. Persistence — writes to cron/init/security-tool dirs
+    # 4. Persistence WRITE detection — security_file_permission carries the access
+    #    mask (MAY_WRITE=2) as a real argument (index 1), unlike security_file_open
+    #    (no usable flags) and the openat syscall (pt_regs prototype hides index>0).
+    #    This is Tetragon's canonical file-write monitoring hook.
+    - call: "security_file_permission"
+      syscall: false
+      args:
+        - index: 0
+          type: "file"     # resolved path
+        - index: 1
+          type: "int"      # access mask (MAY_EXEC=1, MAY_WRITE=2, MAY_READ=4)
+      selectors:
+        # 4a. Persistence — writes to cron/init/security-tool dirs
         - matchArgs:
             - index: 0
               operator: "Prefix"
@@ -89,18 +121,19 @@ spec:
             - index: 1
               operator: "Mask"
               values:
-                - "1"    # O_WRONLY
-                - "64"   # O_CREAT
+                - "2"    # MAY_WRITE
           matchBinaries:
             - operator: "NotIn"
               values:
                 - "/usr/bin/ansible"
                 - "/usr/bin/ansible-playbook"
                 - "/usr/bin/python3"
+                - "/usr/bin/python3.14"   # matchBinaries compares the resolved path (python3 → python3.14); ansible runs AS python3
                 - "/usr/bin/crontab"
+                - "/sbin/apk"
           matchActions:
             - action: Post
-        # 3d. Persistence — writes to authorized_keys / shell rc files
+        # 4b. Persistence — writes to authorized_keys / shell rc files
         - matchArgs:
             - index: 0
               operator: "Postfix"
@@ -111,14 +144,15 @@ spec:
             - index: 1
               operator: "Mask"
               values:
-                - "1"
-                - "64"
+                - "2"    # MAY_WRITE
           matchBinaries:
             - operator: "NotIn"
               values:
                 - "/usr/bin/ansible"
                 - "/usr/bin/ansible-playbook"
                 - "/usr/bin/python3"
+                - "/usr/bin/python3.14"   # matchBinaries compares the resolved path (python3 → python3.14); ansible runs AS python3
                 - "/usr/bin/crontab"
+                - "/sbin/apk"
           matchActions:
             - action: Post
