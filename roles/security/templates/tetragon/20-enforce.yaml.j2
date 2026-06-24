@@ -1,6 +1,8 @@
 # Tetragon enforcement layer - SIGKILL (action: Sigkill)
 # Loaded only when security.tetragon.enforce is true.
-# Same conditions as observe; kills the offending process in-kernel.
+# Mirrors the observe policy but kills the offending process in-kernel.
+# ONLY high-confidence, low-false-positive signatures are enforced here —
+# noisy/escape heuristics (mount, control-socket open) stay alert-only in 10-observe.
 # Managed by Ansible - do not edit on the VPS.
 apiVersion: cilium.io/v1alpha1
 kind: TracingPolicy
@@ -8,7 +10,12 @@ metadata:
   name: enforce-security
 spec:
   kprobes:
-    # Reverse shell / C2 — kill a shell that dials out
+    # Reverse shell / C2 — kill a shell that dials out to a NON-private address.
+    # Private/tailnet/loopback destinations are excluded so legitimate Alpine/busybox
+    # deploy traffic (tailnet SSH, container-to-container, local mirrors) is never killed.
+    # This is the rule that locked out SSH before narrowing: on Alpine the login shell
+    # and busybox net tools ARE /bin/ash and /bin/busybox, so every local/tailnet
+    # connection matched the bare "shell made a connection" signature.
     - call: "tcp_connect"
       syscall: false
       args:
@@ -22,6 +29,16 @@ spec:
                 - "/bin/bash"
                 - "/bin/busybox"
                 - "/bin/ash"
+          matchArgs:
+            - index: 0
+              operator: "NotDAddr"
+              values:
+                - "127.0.0.0/8"      # loopback
+                - "10.0.0.0/8"       # RFC1918 / podman networks
+                - "172.16.0.0/12"    # RFC1918
+                - "192.168.0.0/16"   # RFC1918
+                - "169.254.0.0/16"   # link-local
+                - "100.64.0.0/10"    # Tailscale CGNAT (tailnet)
           matchActions:
             - action: Sigkill
 
@@ -33,23 +50,23 @@ spec:
         - index: 1
           type: "int"
       selectors:
-        # Container escape — kill anything opening the container control socket
-        - matchArgs:
-            - index: 0
-              operator: "Prefix"
-              values:
-                - "/run/podman/podman.sock"
-                - "/run/user/"
-                - "/var/run/docker.sock"
-          matchActions:
-            - action: Sigkill
-        # Credential theft — kill non-allowlisted reader of crown jewels
+        # NOTE: container-control-socket detection (podman/docker .sock) is intentionally
+        # NOT enforced here — it is alert-only in 10-observe. The original rule also used a
+        # bare "/run/user/" prefix with NO binary allowlist, which would SIGKILL anything
+        # touching the rootless-podman / systemd-user / dbus runtime tree. Killing socket
+        # opens risks taking out legitimate host tooling and monitoring, so enforce is
+        # limited to the two high-confidence signatures below.
+        #
+        # Credential theft — kill non-allowlisted reader of crown jewels.
+        # NOTE: ".credentials.json" is intentionally NOT enforced here (kept observe-only in
+        # 10-observe). Its main matcher is Claude Code reading its OWN /root/.claude/.credentials.json
+        # at startup — a benign self-read that SIGKILL would kill on every launch. Real crown
+        # jewels (SSH keys, vault, shadow) stay enforced.
         - matchArgs:
             - index: 0
               operator: "Postfix"
               values:
                 - "vault.yml"
-                - ".credentials.json"
                 - "/etc/shadow"
                 - "id_rsa"
                 - "id_ed25519"
@@ -60,55 +77,20 @@ spec:
                 - "/usr/bin/ansible-playbook"
                 - "/usr/bin/python3"
                 - "/usr/sbin/sshd"
+                - "/usr/lib/ssh/sshd-session"  # OpenSSH 9.8+ per-connection helper reads /etc/shadow at login
+                - "/usr/lib/ssh/sshd-auth"     # OpenSSH 10.x auth helper
+                - "/usr/bin/ssh"       # git-over-ssh / outbound ssh reads its own key — not theft
                 - "/bin/su"
                 - "/bin/login"
                 - "/usr/bin/passwd"
           matchActions:
             - action: Sigkill
-        # Persistence — kill writes to cron/init/security-tool dirs
-        - matchArgs:
-            - index: 0
-              operator: "Prefix"
-              values:
-                - "/etc/crontabs/"
-                - "/etc/periodic/"
-                - "/etc/init.d/"
-                - "/etc/conf.d/"
-                - "/opt/compose/tetragon/"
-                - "/opt/compose/crowdsec/"
-            - index: 1
-              operator: "Mask"
-              values:
-                - "1"
-                - "64"
-          matchBinaries:
-            - operator: "NotIn"
-              values:
-                - "/usr/bin/ansible"
-                - "/usr/bin/ansible-playbook"
-                - "/usr/bin/python3"
-                - "/usr/bin/crontab"
-          matchActions:
-            - action: Sigkill
-        # Persistence — kill writes to authorized_keys / shell rc files
-        - matchArgs:
-            - index: 0
-              operator: "Postfix"
-              values:
-                - "authorized_keys"
-                - ".bashrc"
-                - ".profile"
-            - index: 1
-              operator: "Mask"
-              values:
-                - "1"
-                - "64"
-          matchBinaries:
-            - operator: "NotIn"
-              values:
-                - "/usr/bin/ansible"
-                - "/usr/bin/ansible-playbook"
-                - "/usr/bin/python3"
-                - "/usr/bin/crontab"
-          matchActions:
-            - action: Sigkill
+    # NOTE: persistence WRITE detection (writes to init/cron/conf.d dirs, authorized_keys,
+    # shell rc files) is intentionally OBSERVE-ONLY (see 10-observe via the
+    # security_file_permission hook) and is NOT enforced here. Legitimate deploys write to
+    # these dirs constantly (apk installs init scripts; ansible/python3 write configs), and
+    # the binary allowlist that exempts them is version-fragile (python3 -> python3.14 — a
+    # Python upgrade would silently break it and start SIGKILLing deploy steps). A SIGKILL on
+    # that class is too false-positive-prone, so we detect + alert in observe instead.
+    # Enforce stays limited to near-zero-FP signatures: reverse-shell-to-public and
+    # credential-theft reads above.
