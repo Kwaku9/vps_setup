@@ -174,3 +174,8 @@ roles/mcp-servers/files/telegram-gateway/.venv/
 local/
 # Playwright MCP session artifacts (transient tool output)
 .playwright-mcp/
+
+# Bundled Claude Code skills deployed via claude-prep — track the WHOLE skill tree
+# (overrides the global *.md and *.sh ignores above for SKILL.md, reference.md, *.sh helpers)
+!roles/claude-prep/files/skills/**/*.md
+!roles/claude-prep/files/skills/**/*.sh
