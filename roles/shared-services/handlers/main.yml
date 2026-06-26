@@ -1,0 +1,10 @@
+---
+# Shared-services handlers
+- name: restart traefik
+  # Traefik's STATIC config (/opt/compose/traefik.yml: entryPoints, forwardedHeaders,
+  # accessLog, providers, certResolvers) is read ONLY at process start — unlike the
+  # dynamic file provider, which hot-reloads. So a change to traefik.yml.j2 must
+  # restart the container or it stays inert. (Before this handler existed, the role
+  # silently could not apply any static-config change, e.g. forwardedHeaders.)
+  ansible.builtin.command: podman restart traefik
+  changed_when: true
