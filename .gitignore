@@ -22,6 +22,7 @@ scripts/
 *.ps1
 # Exception: needed for container
 !entrypoint.sh
+!tools/spikes/session-recall/run.sh
 
 # ============================================
 # Claude/AI Instructions
