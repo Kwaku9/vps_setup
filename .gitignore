@@ -184,3 +184,4 @@ local/
 # (overrides the global *.md and *.sh ignores above for SKILL.md, reference.md, *.sh helpers)
 !roles/claude-prep/files/skills/**/*.md
 !roles/claude-prep/files/skills/**/*.sh
+!tools/spikes/session-recall/LOCAL-GPU-SYNC.md
