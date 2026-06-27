@@ -12,7 +12,7 @@ monitoring:
     memory: "1536m"  # 73% usage is healthy for TSDB
   grafana:
     enabled: true
-    version: "12.3.1-ubuntu"
+    version: "13.1.0-ubuntu"
     port: 3000
     admin_user: "admin"
     memory: "512m"  # Was 300m — OOM-killed 2026-05-26 during crowdsec-threats dashboard query burst; 512m matches Grafana's recommended baseline
@@ -53,9 +53,30 @@ monitoring:
     memory: "32m"  # Reduced from 256m — only uses 9MB
   dep_health_check:
     enabled: true
+  # Daily Grafana-panel-to-S3 publish for the buildfol.io blog (opt-in).
+  # Requires: a (preferably public-safe) dashboard, an S3 bucket, and an IAM
+  # user scoped to s3:PutObject on the target prefix. Creds come from vault
+  # (stats_publish_aws_access_key_id / stats_publish_aws_secret_access_key).
+  stats_publish:
+    enabled: false
+    dashboard_uid: ""              # UID of the stats dashboard to render
+    panel_id: 1                    # single panel via /render/d-solo
+    width: 1000
+    height: 500
+    from_time: "now-24h"
+    theme: "light"                 # match the blog; Grafana default is dark
+    s3_uri: ""                     # e.g. s3://buildfolio-assets/stats/vps-daily.png
+    aws_region: "us-east-1"
+    cache_control: "max-age=3600"
+    cloudfront_distribution_id: "" # set to also invalidate the edge cache
+    cloudfront_invalidation_path: "/stats/vps-daily.png"
+    hour: "6"                      # cron hour (ET, via CRON_TZ)
+    minute: "15"
 
 # Network names
 monitoring_network_name: "monitoring-net"
 
 # Will be overridden by vault
 grafana_password: "VAULT_OVERRIDE"
+stats_publish_aws_access_key_id: "VAULT_OVERRIDE"
+stats_publish_aws_secret_access_key: "VAULT_OVERRIDE"

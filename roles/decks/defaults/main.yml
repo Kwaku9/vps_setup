@@ -1,0 +1,15 @@
+---
+# decks.aicortex.cloud — static reveal.js slide-deck gallery.
+#
+# A standalone nginx container on enterprise_network, routed by Traefik's file
+# provider (behind Cloudflare Access). This role owns the INFRASTRUCTURE and the
+# landing page (index.html, shipped in files/). The decks themselves are DATA:
+# publish them by scp-ing <name>-deck.html (+ <name>-narration.md) into data_dir,
+# then add a card to roles/decks/files/index.html and re-run this role (or scp
+# the index for an instant update — nginx serves the dir live, no rebuild).
+decks:
+  enabled: true
+  container_name: "decks-nginx"
+  image: "docker.io/library/nginx:1.29-alpine"
+  data_dir: "/opt/compose/decks"
+  domain: "decks"
