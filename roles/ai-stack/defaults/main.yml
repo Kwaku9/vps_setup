@@ -70,6 +70,10 @@ ai_stack:
     model_url: "https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf"
     ctx_size: 2048                  # EmbeddingGemma max context
     memory: "2g"
+    # CPU cap so a batch embed run can't peg every core and starve sshd/tailscaled.
+    # Leaves >=1 core's worth of quota + thread headroom free for the system.
+    cpu_count: "{{ [(ansible_processor_vcpus | default(2) | int) - 1, 1] | max }}"
+    cpu_shares: 256                 # de-prioritise vs system (default 1024) under contention
 
   # SearxNG (AI search)
   searxng:
