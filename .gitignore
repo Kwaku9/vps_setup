@@ -13,6 +13,8 @@ GEMINI.md
 *.md
 # Keep main (root) README for deployment notes — anchored so sub-project READMEs stay ignored
 !/README.md
+# Exception: session-recall spike harness README
+!tools/spikes/session-recall/README.md
 
 # ============================================
 # Utility Scripts (Non-Deployment)
@@ -24,6 +26,7 @@ scripts/
 !entrypoint.sh
 !tools/spikes/session-recall/run.sh
 !tools/spikes/session-recall/nomic-up.sh
+!tools/spikes/session-recall/teardown.sh
 
 # ============================================
 # Claude/AI Instructions
