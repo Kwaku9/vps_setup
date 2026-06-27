@@ -34,11 +34,17 @@ neo4j:
     build: true
     package_version: "0.6.0"      # mcp-neo4j-cypher pin (see files/neo4j-mcp/Dockerfile)
     http_bind: "127.0.0.1:18080"  # MCP streamable-http endpoint (Claude connects here)
+    # Tailnet bind: also publish the MCP endpoint on this host's Tailscale IP so
+    # Claude clients can reach the live graph over the tailnet (not just via an
+    # ephemeral SSH tunnel). Bind is explicit tailnet IP — never 0.0.0.0; the VPS
+    # public IP still takes no inbound. Keep in sync with allowed_hosts below.
+    http_bind_tailnet: "100.121.252.38:18080"
     database: "neo4j"
     # DNS-rebinding allow-list for the streamable-http transport. Must include every
-    # Host header clients send: 127.0.0.1:18080 (host-loopback session) AND neo4j-pod:8080
-    # (cross-pod clients like the telegram-gateway). Default allows localhost only.
-    allowed_hosts: "127.0.0.1:18080,127.0.0.1,localhost,neo4j-pod:8080,neo4j-pod"
+    # Host header clients send: 127.0.0.1:18080 (host-loopback session), neo4j-pod:8080
+    # (cross-pod clients like the telegram-gateway), AND 100.121.252.38:18080 (tailnet
+    # clients). Default allows localhost only.
+    allowed_hosts: "127.0.0.1:18080,127.0.0.1,localhost,neo4j-pod:8080,neo4j-pod,100.121.252.38:18080,100.121.252.38"
 
   # Idempotent sessions-graph loader (Claude Code session history + Telegram-queryable).
   # Heavy (~226k messages) -> runs via nightly cron, not on every deploy.

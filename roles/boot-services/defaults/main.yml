@@ -55,3 +55,7 @@ boot_services:
     - { name: google-docs-mcp,  enabled: true, depends_on: [] }
     # graph-RAG service for the buildfol.io chat widget; needs neo4j-pod up first.
     - { name: timeline-context-api, enabled: true, depends_on: [neo4j-pod] }
+    # decks.aicortex.cloud — static slide-deck gallery; standalone nginx, routed
+    # by traefik's file provider. Only reachable once traefik is up, so order it
+    # after traefik (same as cloudflared).
+    - { name: decks-nginx,      enabled: true, depends_on: [traefik] }

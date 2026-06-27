@@ -65,14 +65,27 @@ NEO4J_OK=0
 if docker ps --filter name=neo4j-local --filter status=running --format '{{.Names}}' | grep -q neo4j-local; then
     NEO4J_OK=1
     log "Neo4j already running"
+# neo4j-local binds host ports 17474/17687 (a distinctive range so it can
+# coexist with the livekit-agent's neo4j on the default 7474/7687). If something
+# else is already on 17474/17687, starting neo4j-local would wedge podman-compose
+# forever on a doomed 'bind: address already in use'. Detect that up front and
+# skip — graph ETL is best-effort; the timeline deploy must never hang on it.
+elif ss -ltn 2>/dev/null | grep -qE ':(17474|17687)\b'; then
+    log "WARN: ports 17474/17687 already held by another process (not neo4j-local) — skipping Neo4j start, proceeding without graph ETL"
 else
     log "Neo4j not running, starting"
-    (cd "$REPO/local/neo4j-graph" && docker compose up -d) >>"$LOG" 2>&1
-    sleep 15
-    if docker exec neo4j-local cypher-shell -u neo4j -p sessiongraph2024 "RETURN 1" >>"$LOG" 2>&1; then
-        NEO4J_OK=1
+    # Hard-cap the compose + health check so a hung rootlessport / image pull
+    # can never wedge the whole pipeline (Step 3a is best-effort). -k follows
+    # an unresponsive SIGTERM with SIGKILL so nothing lingers.
+    if timeout -k 15 120 sh -c "cd '$REPO/local/neo4j-graph' && docker compose up -d" >>"$LOG" 2>&1; then
+        sleep 15
+        if timeout -k 5 30 docker exec neo4j-local cypher-shell -u neo4j -p sessiongraph2024 "RETURN 1" >>"$LOG" 2>&1; then
+            NEO4J_OK=1
+        else
+            log "WARN: Neo4j unreachable after start — proceeding without graph ETL"
+        fi
     else
-        log "WARN: Neo4j unreachable after start — proceeding without graph ETL"
+        log "WARN: 'docker compose up' for Neo4j timed out/failed — proceeding without graph ETL"
     fi
 fi
 
@@ -121,7 +134,7 @@ if [ "$NEO4J_OK" = "1" ]; then
         ssh -L "15432:$PG_IP:5432" -N "$VPS" &
         TUNNEL_PID=$!
         sleep 3
-        (cd "$REPO/local/etl" && PG_PORT=15432 PG_USER="$DB_USER" PG_PASSWORD="$DB_PASSWORD" PYTHONIOENCODING=utf-8 python sync_sessions_to_neo4j.py) >>"$LOG" 2>&1 \
+        (cd "$REPO/local/etl" && PG_PORT=15432 PG_USER="$DB_USER" PG_PASSWORD="$DB_PASSWORD" NEO4J_URI="bolt://localhost:17687" PYTHONIOENCODING=utf-8 python sync_sessions_to_neo4j.py) >>"$LOG" 2>&1 \
             || log "WARN step 3c: ETL failed (continuing without graph data)"
         kill "$TUNNEL_PID" 2>/dev/null || true
     else
@@ -140,7 +153,7 @@ if [ -z "$PG_IP" ]; then
     log "FAIL step 3d: could not resolve postgres IP"
     exit 3
 fi
-if ! (cd "$JT_DIR" && DB_REMOTE_HOST="$PG_IP" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" node extract-sessions.js) >>"$LOG" 2>&1; then
+if ! (cd "$JT_DIR" && DB_REMOTE_HOST="$PG_IP" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" NEO4J_URI="bolt://localhost:17687" node extract-sessions.js) >>"$LOG" 2>&1; then
     log "FAIL step 3d: extract-sessions.js exited $?"
     exit 3
 fi
