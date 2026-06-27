@@ -23,6 +23,7 @@ scripts/
 # Exception: needed for container
 !entrypoint.sh
 !tools/spikes/session-recall/run.sh
+!tools/spikes/session-recall/nomic-up.sh
 
 # ============================================
 # Claude/AI Instructions
