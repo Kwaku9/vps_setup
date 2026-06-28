@@ -40,7 +40,7 @@ def iter_gemma_docs(conn, dataset, limit=None):
     cur.close()
 
 
-def iter_nomic_docs(conn, dataset, limit=None, max_chars=6000):
+def iter_nomic_docs(conn, dataset, limit=None, max_chars=3500):
     sql = """
         SELECT s.session_uuid,
                COALESCE(p.display_name, p.project_path) AS project,
