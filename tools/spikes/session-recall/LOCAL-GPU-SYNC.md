@@ -256,20 +256,29 @@ scp root@<VPS_TAILNET>:~/sessions.dump  ~/sessions.dump
 scp root@<VPS_TAILNET>:~/parity-vps.txt ~/parity-vps.txt
 ```
 
-### Phase 2 — Restore into local Postgres + verify EXACT parity
+### Phase 2 — Containerized local Postgres + restore + parity gate
+> All local pieces are containers on one podman network (`spike-net`) — no native installs.
 ```bash
-# FED: pgvector must exist BEFORE restoring vector columns; then replace the JSONL-built sessions
-psql -U <LPGUSER> -d <LOCALDB> -c "CREATE EXTENSION IF NOT EXISTS vector;"
-psql -U <LPGUSER> -d <LOCALDB> -c "DROP SCHEMA IF EXISTS sessions CASCADE;"
-pg_restore -U <LPGUSER> -d <LOCALDB> -n sessions ~/sessions.dump
+# FED: one network for the whole local stack
+podman network create spike-net 2>/dev/null || true
 
-# FED: create the spike schema locally. NOTE: schema.sql GRANTs to role `session_ingest`.
-#   If that role doesn't exist locally, either create it or strip the GRANT/ALTER lines first:
-#   create:  psql -U <LPGUSER> -d <LOCALDB> -c "CREATE ROLE session_ingest LOGIN;"
-psql -U <LPGUSER> -d <LOCALDB> -f tools/spikes/session-recall/schema.sql
+# FED: containerized Postgres + pgvector (same image as the VPS)
+mkdir -p ~/spike-pgdata
+podman run -d --name spike-pg --network spike-net \
+  -e POSTGRES_PASSWORD=spike -e POSTGRES_DB=spikedb \
+  -v ~/spike-pgdata:/var/lib/postgresql/data:Z docker.io/pgvector/pgvector:pg16
+until podman exec spike-pg pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done
+podman exec spike-pg psql -U postgres -d spikedb -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
-# FED: run the SAME fingerprint locally and diff — MUST be identical
-psql -U <LPGUSER> -d <LOCALDB> -tA > ~/parity-local.txt <<'SQL'
+# FED: restore the VPS dump into the container; create role; apply the spike schema
+podman cp ~/sessions.dump spike-pg:/tmp/sessions.dump
+podman exec spike-pg pg_restore -U postgres -d spikedb -n sessions /tmp/sessions.dump
+podman exec spike-pg psql -U postgres -d spikedb -c "CREATE ROLE session_ingest LOGIN;" 2>/dev/null || true
+podman cp tools/spikes/session-recall/schema.sql spike-pg:/tmp/schema.sql
+podman exec spike-pg psql -U postgres -d spikedb -f /tmp/schema.sql
+
+# FED: parity fingerprint inside the container — MUST match ~/parity-vps.txt
+podman exec -i spike-pg psql -U postgres -d spikedb -tA > ~/parity-local.txt <<'SQL'
 SELECT 'sessions_count', count(*)::text FROM sessions.sessions
 UNION ALL SELECT 'messages_count', count(*)::text FROM sessions.messages
 UNION ALL SELECT 'session_uuid_set', md5(string_agg(session_uuid, ',' ORDER BY session_uuid)) FROM sessions.sessions
@@ -290,38 +299,45 @@ curl -fL -o ~/spike-models/nomic-embed-text-v1.5.Q8_0.gguf \
 # FED: GPU access for podman — one-time (skip if already configured); for docker use `--gpus all` below
 sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 
-# FED: gemma embedder on GPU @127.0.0.1:8090  (podman; for docker swap --device ... for --gpus all)
-podman run -d --name gemma-cuda --device nvidia.com/gpu=all -p 127.0.0.1:8090:8090 \
+# FED: gemma + nomic embedders on the GPU, on spike-net (reached by name; no host ports needed)
+podman run -d --name gemma-cuda --network spike-net --device nvidia.com/gpu=all \
   -v ~/spike-models:/models:Z ghcr.io/ggml-org/llama.cpp:server-cuda \
   --model /models/embeddinggemma-300M-Q8_0.gguf --embeddings --pooling mean \
   --n-gpu-layers 99 --ctx-size 2048 --ubatch-size 2048 --host 0.0.0.0 --port 8090
-
-# FED: nomic embedder on GPU @127.0.0.1:8091  (ctx 2048 to match the VPS)
-podman run -d --name nomic-cuda --device nvidia.com/gpu=all -p 127.0.0.1:8091:8090 \
+podman run -d --name nomic-cuda --network spike-net --device nvidia.com/gpu=all \
   -v ~/spike-models:/models:Z ghcr.io/ggml-org/llama.cpp:server-cuda \
   --model /models/nomic-embed-text-v1.5.Q8_0.gguf --embeddings --pooling mean \
   --n-gpu-layers 99 --ctx-size 2048 --ubatch-size 2048 --host 0.0.0.0 --port 8090
-
 podman logs --tail 3 gemma-cuda; podman logs --tail 3 nomic-cuda   # expect "listening" + GPU offload
 ```
 
-### Phase 4 — Embed locally (run the committed scripts natively; no enterprise_network needed)
+### Phase 4 — Embed via the containerized runner (spike-tools on spike-net)
 ```bash
-# FED: from the repo's spike dir
-cd tools/spikes/session-recall
-python -m venv .venv && . .venv/bin/activate && pip install psycopg2-binary requests
+# FED: build the same spike-tools image + a local spike.env pointing at the containers
+podman build -t spike-tools tools/spikes/session-recall
+cat > tools/spikes/session-recall/spike.env <<'EOF'
+PGHOST=spike-pg
+PGPORT=5432
+PGUSER=postgres
+PGPASSWORD=spike
+PGDATABASE=spikedb
+LITELLM_BASE_URL=http://gemma-cuda:8090/v1
+LITELLM_API_KEY=ignored
+NOMIC_BASE_URL=http://nomic-cuda:8090/v1
+GEMMA_MODEL=embeddinggemma
+EOF
 
-export PGHOST=127.0.0.1 PGPORT=5432 PGUSER=<LPGUSER> PGPASSWORD=<LPGPW> PGDATABASE=<LOCALDB>
-export LITELLM_BASE_URL=http://127.0.0.1:8090/v1 LITELLM_API_KEY=ignored GEMMA_MODEL=embeddinggemma
-export NOMIC_BASE_URL=http://127.0.0.1:8091/v1
-
+# FED: run the embed pass on spike-net (run.sh hardcodes enterprise_network, so invoke directly)
+SR="$PWD/tools/spikes/session-recall"
 for ds in useronly userasst; do
-  python embed_sessions.py --model gemma --dataset $ds
-  python embed_sessions.py --model nomic --dataset $ds
+  podman run --rm --network spike-net --env-file "$SR/spike.env" -v "$SR":/spike -w /spike \
+    spike-tools python embed_sessions.py --model gemma --dataset $ds
+  podman run --rm --network spike-net --env-file "$SR/spike.env" -v "$SR":/spike -w /spike \
+    spike-tools python embed_sessions.py --model nomic --dataset $ds
 done
 
-# FED: sanity — expect roughly gemma 11,711 (useronly) + 44,276 (userasst) chunk rows; nomic ~692 each
-psql -U <LPGUSER> -d <LOCALDB> -tAc "
+# FED: sanity (expect gemma ~11,711 + ~44,276 chunk rows; nomic ~692 each)
+podman exec spike-pg psql -U postgres -d spikedb -tAc "
 SELECT 'gemma_useronly', count(*) FROM spike.emb_gemma_useronly
 UNION ALL SELECT 'gemma_userasst', count(*) FROM spike.emb_gemma_userasst
 UNION ALL SELECT 'nomic_useronly', count(*) FROM spike.emb_nomic_useronly
@@ -330,11 +346,12 @@ UNION ALL SELECT 'nomic_userasst', count(*) FROM spike.emb_nomic_userasst ORDER 
 
 ### Phase 5 — Sync the vectors UP (local → VPS)
 ```bash
-# FED: dump ONLY the four embedding tables (data-only — the VPS already has the DDL)
-pg_dump -U <LPGUSER> -d <LOCALDB> --data-only \
+# FED: dump ONLY the four embedding tables (data-only) from the container, copy out, ship up
+podman exec spike-pg pg_dump -U postgres -d spikedb --data-only \
   -t spike.emb_gemma_useronly -t spike.emb_gemma_userasst \
   -t spike.emb_nomic_useronly -t spike.emb_nomic_userasst \
-  -Fc -f ~/spike-emb.dump
+  -Fc -f /tmp/spike-emb.dump
+podman cp spike-pg:/tmp/spike-emb.dump ~/spike-emb.dump
 scp ~/spike-emb.dump root@<VPS_TAILNET>:~/spike-emb.dump
 ```
 ```bash
@@ -362,5 +379,6 @@ crontab ~/crontab.before-spike.bak
 crontab -l | grep -i ingest
 ```
 
-> Tear-down (when fully done): `tools/spikes/session-recall/teardown.sh` on the VPS, and
-> `podman rm -f gemma-cuda nomic-cuda` + drop the local `spike` schema on Fedora.
+> Tear-down (when fully done): `tools/spikes/session-recall/teardown.sh` on the VPS; on Fedora
+> `podman rm -f gemma-cuda nomic-cuda spike-pg && podman network rm spike-net`
+> (and `rm -rf ~/spike-pgdata ~/spike-models` to reclaim disk).
