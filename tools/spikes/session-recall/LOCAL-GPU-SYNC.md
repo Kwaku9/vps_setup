@@ -203,13 +203,164 @@ All four lines identical on local and VPS ⇒ **exact content parity**. Any mism
 
 ---
 
-## 8. Open decisions (need your input to finalize)
+## 8. Decisions — RESOLVED (2026-06-28)
 
-1. **What is the local mirror today?** (a) a local Postgres with the `sessions` schema, (b) only the
-   raw Claude Code JSONL files, or (c) nothing yet. → Determines whether we `pg_dump`-down fresh
-   (recommended regardless) or validate an existing copy with §6.
-2. **Local embedding stack:** llama.cpp-CUDA with the **same GGUFs** (recommended, exact parity) vs
-   HF fp16 sentence-transformers (faster setup, slight numeric drift). → §4.
+1. **Mirror method = full `pg_dump` VPS → local, REPLACING the JSONL-built data.** Confirmed
+   necessary: the VPS `sessions` is an aggregate (**vps 467 / local 226** by `source`), so a
+   Fedora JSONL re-ingest only ever held ~⅓ of the corpus and can never mirror the VPS. The VPS
+   is the source of truth; copy it down whole.
+2. **Embedding stack = the same two Q8 GGUFs via llama.cpp on both sides** — CUDA on the Fedora
+   GPU, CPU on the VPS. Identical model artifacts ⇒ doc vectors (local) and query vectors (VPS)
+   share one map. (CPU vs CUDA backend differs only at ~1e-4, negligible for cosine.) nomic stays
+   at **2048** context both sides.
 
-Once those are answered, the remaining setup (local llama.cpp-CUDA endpoints + the down/up sync
-commands) is mechanical and I can script it.
+---
+
+## 9. Commands — copy-paste runbook
+
+Placeholders to fill once: `<VPS_TAILNET>` (VPS tailscale name/IP — NOT the public IP),
+`<LOCALDB>` (local Postgres DB name), `<LPGUSER>` (local PG superuser), `<LPGPW>` (its password).
+"VPS:" = run on the VPS; "FED:" = run on the Fedora workstation.
+
+### Phase 0 — Freeze the VPS snapshot
+```bash
+# VPS: disable the 3 AM ingest so the corpus can't drift mid-spike (reversible)
+crontab -l > ~/crontab.before-spike.bak
+crontab -l | sed '/daily-ingest\.sh/ s/^/# FROZEN-FOR-SPIKE /' | crontab -
+crontab -l | grep -i ingest      # confirm the daily-ingest line is now commented
+
+# VPS: clear the smoke embeddings so the real pass starts clean
+podman exec postgres psql -U postgres -d enterprise -c \
+ "TRUNCATE spike.emb_gemma_useronly, spike.emb_gemma_userasst, spike.emb_nomic_useronly, spike.emb_nomic_userasst;"
+```
+
+### Phase 1 — Dump the sessions schema DOWN + record the VPS fingerprint
+```bash
+# VPS: custom-format dump of just the sessions schema
+podman exec postgres pg_dump -U postgres -d enterprise -n sessions -Fc -f /tmp/sessions.dump
+podman cp postgres:/tmp/sessions.dump ~/sessions.dump
+podman exec postgres rm /tmp/sessions.dump
+
+# VPS: save the parity fingerprint (the §6 query) for later comparison
+podman exec -i postgres psql -U postgres -d enterprise -tA > ~/parity-vps.txt <<'SQL'
+SELECT 'sessions_count', count(*)::text FROM sessions.sessions
+UNION ALL SELECT 'messages_count', count(*)::text FROM sessions.messages
+UNION ALL SELECT 'session_uuid_set', md5(string_agg(session_uuid, ',' ORDER BY session_uuid)) FROM sessions.sessions
+UNION ALL SELECT 'message_content_hash', md5(string_agg(md5(s.session_uuid||':'||m.sequence_num||':'||coalesce(m.content_text,'')), ',' ORDER BY s.session_uuid, m.sequence_num)) FROM sessions.messages m JOIN sessions.sessions s ON s.id=m.session_id;
+SQL
+cat ~/parity-vps.txt
+```
+```bash
+# FED: pull both files over the tailnet
+scp root@<VPS_TAILNET>:~/sessions.dump  ~/sessions.dump
+scp root@<VPS_TAILNET>:~/parity-vps.txt ~/parity-vps.txt
+```
+
+### Phase 2 — Restore into local Postgres + verify EXACT parity
+```bash
+# FED: pgvector must exist BEFORE restoring vector columns; then replace the JSONL-built sessions
+psql -U <LPGUSER> -d <LOCALDB> -c "CREATE EXTENSION IF NOT EXISTS vector;"
+psql -U <LPGUSER> -d <LOCALDB> -c "DROP SCHEMA IF EXISTS sessions CASCADE;"
+pg_restore -U <LPGUSER> -d <LOCALDB> -n sessions ~/sessions.dump
+
+# FED: create the spike schema locally. NOTE: schema.sql GRANTs to role `session_ingest`.
+#   If that role doesn't exist locally, either create it or strip the GRANT/ALTER lines first:
+#   create:  psql -U <LPGUSER> -d <LOCALDB> -c "CREATE ROLE session_ingest LOGIN;"
+psql -U <LPGUSER> -d <LOCALDB> -f tools/spikes/session-recall/schema.sql
+
+# FED: run the SAME fingerprint locally and diff — MUST be identical
+psql -U <LPGUSER> -d <LOCALDB> -tA > ~/parity-local.txt <<'SQL'
+SELECT 'sessions_count', count(*)::text FROM sessions.sessions
+UNION ALL SELECT 'messages_count', count(*)::text FROM sessions.messages
+UNION ALL SELECT 'session_uuid_set', md5(string_agg(session_uuid, ',' ORDER BY session_uuid)) FROM sessions.sessions
+UNION ALL SELECT 'message_content_hash', md5(string_agg(md5(s.session_uuid||':'||m.sequence_num||':'||coalesce(m.content_text,'')), ',' ORDER BY s.session_uuid, m.sequence_num)) FROM sessions.messages m JOIN sessions.sessions s ON s.id=m.session_id;
+SQL
+diff ~/parity-local.txt ~/parity-vps.txt && echo "✅ PARITY OK — proceed" || echo "❌ MISMATCH — STOP, do not embed"
+```
+
+### Phase 3 — Local GPU embedders (same GGUFs, llama.cpp-CUDA)
+```bash
+# FED: same model files as the VPS
+mkdir -p ~/spike-models
+curl -fL -o ~/spike-models/embeddinggemma-300M-Q8_0.gguf \
+  https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf
+curl -fL -o ~/spike-models/nomic-embed-text-v1.5.Q8_0.gguf \
+  https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf
+
+# FED: GPU access for podman — one-time (skip if already configured); for docker use `--gpus all` below
+sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+
+# FED: gemma embedder on GPU @127.0.0.1:8090  (podman; for docker swap --device ... for --gpus all)
+podman run -d --name gemma-cuda --device nvidia.com/gpu=all -p 127.0.0.1:8090:8090 \
+  -v ~/spike-models:/models:Z ghcr.io/ggml-org/llama.cpp:server-cuda \
+  --model /models/embeddinggemma-300M-Q8_0.gguf --embeddings --pooling mean \
+  --n-gpu-layers 99 --ctx-size 2048 --ubatch-size 2048 --host 0.0.0.0 --port 8090
+
+# FED: nomic embedder on GPU @127.0.0.1:8091  (ctx 2048 to match the VPS)
+podman run -d --name nomic-cuda --device nvidia.com/gpu=all -p 127.0.0.1:8091:8090 \
+  -v ~/spike-models:/models:Z ghcr.io/ggml-org/llama.cpp:server-cuda \
+  --model /models/nomic-embed-text-v1.5.Q8_0.gguf --embeddings --pooling mean \
+  --n-gpu-layers 99 --ctx-size 2048 --ubatch-size 2048 --host 0.0.0.0 --port 8090
+
+podman logs --tail 3 gemma-cuda; podman logs --tail 3 nomic-cuda   # expect "listening" + GPU offload
+```
+
+### Phase 4 — Embed locally (run the committed scripts natively; no enterprise_network needed)
+```bash
+# FED: from the repo's spike dir
+cd tools/spikes/session-recall
+python -m venv .venv && . .venv/bin/activate && pip install psycopg2-binary requests
+
+export PGHOST=127.0.0.1 PGPORT=5432 PGUSER=<LPGUSER> PGPASSWORD=<LPGPW> PGDATABASE=<LOCALDB>
+export LITELLM_BASE_URL=http://127.0.0.1:8090/v1 LITELLM_API_KEY=ignored GEMMA_MODEL=embeddinggemma
+export NOMIC_BASE_URL=http://127.0.0.1:8091/v1
+
+for ds in useronly userasst; do
+  python embed_sessions.py --model gemma --dataset $ds
+  python embed_sessions.py --model nomic --dataset $ds
+done
+
+# FED: sanity — expect roughly gemma 11,711 (useronly) + 44,276 (userasst) chunk rows; nomic ~692 each
+psql -U <LPGUSER> -d <LOCALDB> -tAc "
+SELECT 'gemma_useronly', count(*) FROM spike.emb_gemma_useronly
+UNION ALL SELECT 'gemma_userasst', count(*) FROM spike.emb_gemma_userasst
+UNION ALL SELECT 'nomic_useronly', count(*) FROM spike.emb_nomic_useronly
+UNION ALL SELECT 'nomic_userasst', count(*) FROM spike.emb_nomic_userasst ORDER BY 1;"
+```
+
+### Phase 5 — Sync the vectors UP (local → VPS)
+```bash
+# FED: dump ONLY the four embedding tables (data-only — the VPS already has the DDL)
+pg_dump -U <LPGUSER> -d <LOCALDB> --data-only \
+  -t spike.emb_gemma_useronly -t spike.emb_gemma_userasst \
+  -t spike.emb_nomic_useronly -t spike.emb_nomic_userasst \
+  -Fc -f ~/spike-emb.dump
+scp ~/spike-emb.dump root@<VPS_TAILNET>:~/spike-emb.dump
+```
+```bash
+# VPS: load into the (empty, smoke-cleared) spike tables, then verify counts match local
+podman cp ~/spike-emb.dump postgres:/tmp/spike-emb.dump
+podman exec postgres pg_restore -U postgres -d enterprise --data-only /tmp/spike-emb.dump
+podman exec postgres rm /tmp/spike-emb.dump
+podman exec postgres psql -U postgres -d enterprise -c "
+SELECT 'gemma_useronly', count(*) FROM spike.emb_gemma_useronly
+UNION ALL SELECT 'gemma_userasst', count(*) FROM spike.emb_gemma_userasst
+UNION ALL SELECT 'nomic_useronly', count(*) FROM spike.emb_nomic_useronly
+UNION ALL SELECT 'nomic_userasst', count(*) FROM spike.emb_nomic_userasst ORDER BY 1;"
+```
+
+### Phase 6 — Eval on the VPS, then unfreeze
+```bash
+# VPS: build the gold set (interactive) and run the scoreboard — see README.md
+cd /workspace/vscode-projects/vps_setup/tools/spikes/session-recall
+./run.sh gen_queries.py --batch-size 25     # approve/edit/reject
+# (optional) ./run.sh add_query.py           # your own queries
+./run.sh run_eval.py                          # per-source six-method scoreboard
+
+# VPS: re-enable the ingest cron when finished
+crontab ~/crontab.before-spike.bak
+crontab -l | grep -i ingest
+```
+
+> Tear-down (when fully done): `tools/spikes/session-recall/teardown.sh` on the VPS, and
+> `podman rm -f gemma-cuda nomic-cuda` + drop the local `spike` schema on Fedora.
