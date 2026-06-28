@@ -63,3 +63,27 @@ engines return the same neighbors → they **tie on quality**. pgvector-vs-Qdran
 - Neo4j is `neo4j-db` (bolt :7687) on the VPS; the sessions graph is loaded from Postgres via
   `roles/neo4j/files/sessions-graph/` (Postgres is the source of truth — graph is downstream).
 - All scratch lives under the `spike` schema / throwaway containers; teardown unchanged.
+
+---
+
+## Results (2026-06-28) — 9 human-curated queries, userasst
+
+RAG answer-quality (LLM-judged 1-5, synth=claude-haiku-4-5, judge=claude-sonnet-4-6):
+
+| method      | avg_quality | retr_ms |
+|-------------|------------:|--------:|
+| gemma-512   | 3.00        | 920     |
+| gemma-3500  | 2.67        | 1079    |
+| nomic       | 2.67        | 213     |
+| hybrid      | 2.44        | 919     |
+| graphrag    | 2.44        | 833     |
+| keyword     | 2.22        | 39      |
+
+Engine axis (gemma_userasst, 46k vectors, both HNSW): pgvector 110ms p50 / 173MB vs
+Qdrant 22ms p50; top-10 overlap 0.86 (quality ties, as predicted).
+
+**Verdict:** gemma-512 (finer chunks) best answers; nomic ~equal quality at 5x speed;
+keyword weak-but-usable (2.22) and 25x faster; hybrid + GraphRAG did NOT beat pure dense
+(top-5 dense context already good; fusion/expansion diluted it — GraphRAG helps *recall*,
+not focused synthesis). pgvector sufficient at this scale. Caveat: 9 queries + single judge
+= directional, not statistically tight.
