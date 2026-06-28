@@ -25,7 +25,7 @@ def main():
     a = ap.parse_args()
     conn = db.connect(); cur = conn.cursor()
     for name, (fn, table) in EMBEDDERS.items():
-        join = "TRUE" if a.force else f"v.session_uuid IS NULL"
+        join = "TRUE" if a.force else "v.session_uuid IS NULL"
         sql = f"""SELECT ss.session_uuid, ss.summary_text FROM spike.session_summary ss
                   LEFT JOIN {table} v ON v.session_uuid=ss.session_uuid
                   WHERE ss.summary_text IS NOT NULL AND ss.model='claude-haiku-4-5' AND {join}"""
@@ -38,12 +38,15 @@ def main():
             try:
                 vec = fn(text)
             except Exception as e:
-                print("  ERR", name, uuid, repr(e)[:100]); continue
-            cur.execute(f"""INSERT INTO {table} (session_uuid, embedding, embedded_at)
-                            VALUES (%s, %s, now())
-                            ON CONFLICT (session_uuid) DO UPDATE
-                              SET embedding=EXCLUDED.embedding, embedded_at=now()""",
-                        (uuid, db.vec_literal(vec)))
+                print("  ERR embed", name, uuid, repr(e)[:100]); continue
+            try:
+                cur.execute(f"""INSERT INTO {table} (session_uuid, embedding, embedded_at)
+                                VALUES (%s, %s, now())
+                                ON CONFLICT (session_uuid) DO UPDATE
+                                  SET embedding=EXCLUDED.embedding, embedded_at=now()""",
+                            (uuid, db.vec_literal(vec)))
+            except Exception as e:
+                print("  ERR insert", name, uuid, repr(e)[:100]); conn.rollback(); continue
             n += 1
             if n % 100 == 0:
                 conn.commit(); print(f"  {name} ...{n}")
