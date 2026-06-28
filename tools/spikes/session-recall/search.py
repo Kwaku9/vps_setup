@@ -12,6 +12,7 @@ METHODS = [
     ("nomic", "useronly"), ("nomic", "userasst"),
     ("keyword", "useronly"), ("keyword", "userasst"),
     ("hybrid", "useronly"), ("hybrid", "userasst"),
+    ("graphrag", "useronly"), ("graphrag", "userasst"),
 ]
 
 
@@ -63,6 +64,9 @@ def rank(conn, query, model, dataset, k=10):
         return kwsearch.search(conn, query, dataset, k)
     if model == "hybrid":
         return _rank_hybrid(conn, query, dataset, k)
+    if model == "graphrag":
+        import graphrag
+        return graphrag.rank(conn, query, dataset, k)
     raise ValueError(model)
 
 
