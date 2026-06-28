@@ -40,7 +40,7 @@ def embed_gemma(conn_read, conn_write, dataset, limit, batch_size=32):
     for d in datasets.iter_gemma_docs(conn_read, dataset, limit):
         if d["message_id"] in done:
             continue
-        for ci, chunk in enumerate(chunk_text(d["content_text"])):
+        for ci, chunk in enumerate(chunk_text(d["content_text"], 3500)):
             pending.append((d["message_id"], ci, d["session_uuid"], d["project"],
                             d["ts"], chunk[:500], chunk))
             if len(pending) >= batch_size:
