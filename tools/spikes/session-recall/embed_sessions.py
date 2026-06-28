@@ -10,10 +10,10 @@ GEMMA_TABLES = {"useronly": "spike.emb_gemma_useronly", "userasst": "spike.emb_g
 NOMIC_TABLES = {"useronly": "spike.emb_nomic_useronly", "userasst": "spike.emb_nomic_userasst"}
 
 
-def embed_gemma(conn_read, conn_write, dataset, limit, batch_size=32):
+def embed_gemma(conn_read, conn_write, dataset, limit, batch_size=32, chunk_chars=3500, table=None):
     # NOTE: a server-side (named) read cursor is invalidated by COMMIT, so reads and
     # writes use SEPARATE connections. conn_read streams; conn_write inserts + commits.
-    table = GEMMA_TABLES[dataset]
+    table = table or GEMMA_TABLES[dataset]
     w = conn_write.cursor()
     w.execute(f"SELECT DISTINCT message_id FROM {table}")
     done = {r[0] for r in w.fetchall()}
@@ -40,7 +40,7 @@ def embed_gemma(conn_read, conn_write, dataset, limit, batch_size=32):
     for d in datasets.iter_gemma_docs(conn_read, dataset, limit):
         if d["message_id"] in done:
             continue
-        for ci, chunk in enumerate(chunk_text(d["content_text"], 3500)):
+        for ci, chunk in enumerate(chunk_text(d["content_text"], chunk_chars)):
             pending.append((d["message_id"], ci, d["session_uuid"], d["project"],
                             d["ts"], chunk[:500], chunk))
             if len(pending) >= batch_size:
@@ -95,12 +95,16 @@ def main():
     ap.add_argument("--model", choices=["gemma", "nomic"], required=True)
     ap.add_argument("--dataset", choices=["useronly", "userasst"], required=True)
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--chunk-chars", type=int, default=3500)
+    ap.add_argument("--gemma-table", default=None,
+                    help="override the gemma target table (for chunk-size variants)")
     args = ap.parse_args()
 
     conn_read = connect()
     conn_write = connect()
     if args.model == "gemma":
-        embed_gemma(conn_read, conn_write, args.dataset, args.limit)
+        embed_gemma(conn_read, conn_write, args.dataset, args.limit,
+                    chunk_chars=args.chunk_chars, table=args.gemma_table)
     else:
         embed_nomic(conn_read, conn_write, args.dataset, args.limit)
     conn_read.close()
