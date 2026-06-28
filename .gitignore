@@ -185,3 +185,4 @@ local/
 !roles/claude-prep/files/skills/**/*.md
 !roles/claude-prep/files/skills/**/*.sh
 !tools/spikes/session-recall/LOCAL-GPU-SYNC.md
+!tools/spikes/session-recall/RETRIEVAL-BAKEOFF.md
