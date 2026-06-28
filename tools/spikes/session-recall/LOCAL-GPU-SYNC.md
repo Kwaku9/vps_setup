@@ -298,6 +298,11 @@ curl -fL -o ~/spike-models/nomic-embed-text-v1.5.Q8_0.gguf \
 
 # FED: GPU access for podman — one-time (skip if already configured); for docker use `--gpus all` below
 sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+# CRITICAL on SELinux (Fedora): without this, the container sees /dev/nvidia0 but gets
+# "Permission denied" on it and llama.cpp silently falls back to CPU (GPU 0%, ~CPU speed).
+sudo setsebool -P container_use_devices 1
+# Verify GPU is REALLY used: during an embed `nvidia-smi` should show ~100% util, and
+# `podman exec gemma-cuda cat /dev/nvidia0` must NOT say "Permission denied".
 
 # FED: gemma + nomic embedders on the GPU, on spike-net (reached by name; no host ports needed)
 podman run -d --name gemma-cuda --network spike-net --device nvidia.com/gpu=all \
