@@ -37,3 +37,14 @@ def test_report_endpoint_returns_base64_png(tmp_path, monkeypatch):
     body = r.json()
     assert base64.b64decode(body["png_base64"]) == b"\x89PNG-data"
     assert body["from"] == "now-24h" and len(body["report_id"]) == 64
+
+def test_report_render_failure_maps_to_502(tmp_path, monkeypatch):
+    from grafana_reports.renderer import RenderError
+    eng = _engine(tmp_path, monkeypatch)
+    async def boom(uid, pid, frm, to, w, h, settings, client=None):
+        raise RenderError("grafana render HTTP 500")
+    monkeypatch.setattr("grafana_reports.service.render", boom)
+    c = _client(eng)
+    r = c.post("/report", json={"query": "cyber attack map last 24h"})
+    assert r.status_code == 502
+    assert "render failed" in r.json()["detail"]
