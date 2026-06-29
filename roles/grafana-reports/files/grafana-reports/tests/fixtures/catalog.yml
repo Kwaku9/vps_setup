@@ -1,0 +1,11 @@
+categories:
+  threats:
+    label: "Threats"
+    dashboards:
+      - uid: crowdsec-threats
+        expose:
+          - title: "Cyber Attack Map"
+            label: "Cyber Attack Map"
+            synonyms: ["attack map", "world map", "geo attacks"]
+          - title: "Decisions over time"
+            synonyms: ["decisions", "bans over time"]
