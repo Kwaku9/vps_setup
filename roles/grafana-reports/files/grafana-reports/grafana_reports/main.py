@@ -16,7 +16,7 @@ def create_app() -> FastAPI:
     settings = Settings.from_env()
     engine = Engine(settings)
     mcp = build_mcp(engine)
-    mcp_app = mcp.http_app(path="/mcp")
+    mcp_app = mcp.http_app(path="/")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -33,8 +33,7 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def bearer_auth(request: Request, call_next):
-        # /mcp handles its own auth header; guard the REST routes
-        if not request.url.path.startswith("/mcp") and request.url.path != "/healthz":
+        if request.url.path != "/healthz":
             expected = f"Bearer {settings.auth_token}"
             if settings.auth_token and request.headers.get("Authorization") != expected:
                 return JSONResponse({"error": "unauthorized"}, status_code=401)

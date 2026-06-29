@@ -1,7 +1,9 @@
 from __future__ import annotations
-import boto3, hashlib, json, os, re
+import boto3, hashlib, json, logging, os, re
 from pathlib import Path
 from grafana_reports.config import Settings
+
+log = logging.getLogger("grafana_reports.store")
 
 _RID_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -32,8 +34,11 @@ class Store:
         self._png(rid).write_bytes(png)
         (self._dir / f"{rid}.json").write_text(json.dumps(meta))
         if self._s.s3_bucket:
-            self._client().put_object(Bucket=self._s.s3_bucket, Key=self._key(rid),
-                                      Body=png, ContentType="image/png")
+            try:
+                self._client().put_object(Bucket=self._s.s3_bucket, Key=self._key(rid),
+                                          Body=png, ContentType="image/png")
+            except Exception:
+                log.warning("S3 upload failed for %s; serving local render only", rid)
         return rid
 
     def get(self, report_id: str) -> bytes:

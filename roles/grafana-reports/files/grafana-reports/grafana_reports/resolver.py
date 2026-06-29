@@ -29,10 +29,14 @@ async def resolve(query: str, categories: list[Category], settings: Settings, ll
     scored.sort(key=lambda c: c.confidence, reverse=True)
     top = scored[0].confidence if scored else 0.0
     if top < settings.fuzzy_threshold and llm is not None:
-        cand = await llm(query, categories, settings)
+        try:
+            cand = await llm(query, categories, settings)
+        except Exception:
+            log.exception("llm fallback errored; returning fuzzy results")
+            cand = None
         if cand is not None and _exists(categories, cand.dashboard_uid, cand.panel_id):
             return [cand]
-        log.info("llm fallback rejected (no candidate or not in catalog)")
+        log.info("llm fallback rejected/unavailable")
     return scored
 
 async def llm_resolve(query: str, categories: list[Category], settings: Settings) -> Candidate | None:

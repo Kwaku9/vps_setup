@@ -51,6 +51,24 @@ def test_exists_false_for_invalid_id(tmp_path, monkeypatch):
     assert st.exists("not-a-hex") is False
 
 @mock_aws
+def test_save_succeeds_locally_when_s3_put_raises(tmp_path, monkeypatch):
+    """I2a regression: S3 upload failure must not propagate; local write + rid still returned."""
+    monkeypatch.setenv("LOCAL_DIR", str(tmp_path))
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "x"); monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "y")
+    # bucket intentionally NOT created so put_object raises
+    from grafana_reports.config import Settings
+    settings = Settings(grafana_url="", grafana_sa_token="", auth_token="", s3_bucket="nonexistent-bucket",
+                        s3_prefix="reports", s3_region="us-east-1", presign_ttl=120, litellm_url=None,
+                        litellm_model="m", litellm_key=None, catalog_path="", refresh_interval=900,
+                        default_width=1000, default_height=500, render_timeout=15, fuzzy_threshold=70)
+    from grafana_reports.store import Store
+    st = Store(settings)
+    png = b"\x89PNG test bytes"
+    rid = st.save(png, {"k": 1})  # must not raise
+    assert rid == hashlib.sha256(png).hexdigest()
+    assert st.get(rid) == png  # local file written
+
+@mock_aws
 def test_save_uploads_to_s3_and_presign_returns_url(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCAL_DIR", str(tmp_path))
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "x"); monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "y")
