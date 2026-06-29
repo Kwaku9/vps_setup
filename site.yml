@@ -63,6 +63,9 @@
       tags: ['mcp-servers', 'mcp']
       when: claude.enabled | default(true)
 
+    - role: grafana-reports
+      tags: ['grafana-reports', 'reports']
+      when: grafana_reports.enabled | default(true)
 
     - role: management
       tags: ['management', 'admin']
