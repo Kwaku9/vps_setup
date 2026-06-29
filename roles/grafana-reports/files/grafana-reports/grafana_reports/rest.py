@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from grafana_reports.service import Engine
 from grafana_reports.resolver import resolve, llm_resolve
+from grafana_reports.renderer import RenderError
 
 class ResolveBody(BaseModel):
     query: str
@@ -40,6 +41,8 @@ def build_router(engine: Engine) -> APIRouter:
             out = await engine.do_render(**body.model_dump())
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
+        except RenderError as e:
+            raise HTTPException(status_code=502, detail=f"render failed upstream: {e}")
         return {"report_id": out["report_id"], "view_url": out["view_url"],
                 "png_base64": base64.b64encode(out["png"]).decode(),
                 "label": out["label"], "from": out["from"], "to": out["to"]}
