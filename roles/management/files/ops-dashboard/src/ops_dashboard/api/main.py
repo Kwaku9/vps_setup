@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
 
 from .dependencies import init_state, refresh_live_containers
 from .routers import actions, metrics, profiles, services, stacks
@@ -108,6 +109,22 @@ async def health():
     return {"status": "ok", "version": "0.2.0"}
 
 
+class SPAStaticFiles(StaticFiles):
+    """Serve the SPA entrypoint with no-cache so a redeploy (which re-hashes
+    asset filenames) never strands a client on a dead bundle. Hashed assets
+    under /assets/ are content-addressed, so they stay immutably cached."""
+
+    async def get_response(self, path: str, scope) -> Response:
+        response = await super().get_response(path, scope)
+        if not path or path == "." or path.endswith(".html"):
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        else:
+            response.headers.setdefault(
+                "Cache-Control", "public, max-age=31536000, immutable"
+            )
+        return response
+
+
 # Serve frontend static files in production
 if FRONTEND_DIST.is_dir():
-    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
+    app.mount("/", SPAStaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
