@@ -6,6 +6,7 @@ If you change parsing here, mirror it in tools/ingest-sessions.py (or vice versa
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 # --- ported verbatim from tools/ingest-sessions.py (pure helpers) ---
@@ -20,6 +21,20 @@ LANG_MAP = {
     ".dockerfile": "dockerfile", ".tf": "terraform", ".j2": "jinja2",
     ".vue": "vue", ".svelte": "svelte", ".graphql": "graphql",
 }
+
+
+def parse_timestamp(value):
+    """ISO-8601 string -> tz-aware datetime (mirrors tools/ingest-sessions.py).
+
+    asyncpg binds the `timestamptz` columns from a ``datetime``; a raw ISO string
+    (e.g. ``2026-05-30T10:00:00Z``) raises DataError and 500s the live ingest.
+    ``None``/empty stays ``None``; an already-parsed datetime passes through.
+    """
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 def sanitize_text(text):
@@ -102,6 +117,7 @@ def parse_lines(lines: list[str], source: str) -> dict:
         msg = rec.get("message") or {}
         usage = msg.get("usage") or {}
         content = msg.get("content")
+        ts = parse_timestamp(rec.get("timestamp"))
         seq += 1
         messages.append({
             "uuid": rec.get("uuid"),
@@ -117,7 +133,7 @@ def parse_lines(lines: list[str], source: str) -> dict:
             "cache_creation_tokens": usage.get("cache_creation_input_tokens", 0),
             "is_sidechain": bool(rec.get("isSidechain", False)),
             "cwd": rec.get("cwd"),
-            "timestamp": rec.get("timestamp"),
+            "timestamp": ts,
             "sequence_num": seq,
         })
         if isinstance(content, list):
@@ -131,7 +147,7 @@ def parse_lines(lines: list[str], source: str) -> dict:
                         "input_json": block.get("input"),
                         "result_text": None,
                         "status": "pending",
-                        "timestamp": rec.get("timestamp"),
+                        "timestamp": ts,
                         "sequence_num": tc_seq,
                     })
     return {"session_uuid": session_uuid, "messages": messages, "tool_calls": tool_calls}
