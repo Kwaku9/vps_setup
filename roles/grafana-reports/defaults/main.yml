@@ -10,7 +10,7 @@ grafana_reports:
   port: 8765
   data_dir: "/opt/podman-data/grafana-reports"
   grafana_url: "http://metrics-pod:3000"
-  s3_bucket: "{{ s3_assets_bucket | default('') }}"
+  s3_bucket: "{{ grafana_reports_s3_bucket | default('') }}"
   s3_prefix: "grafana-reports"
   s3_region: "us-east-1"
   presign_ttl: 3600

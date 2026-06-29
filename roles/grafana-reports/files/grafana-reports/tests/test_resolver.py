@@ -40,6 +40,15 @@ async def test_low_confidence_falls_back_to_llm_and_validates_membership():
     assert out[0].panel_id == 5 and out[0].method == "llm"
 
 @pytest.mark.asyncio
+async def test_llm_exception_falls_back_to_fuzzy():
+    """I3 regression: if the injected llm raises, resolve() must return fuzzy list, not propagate."""
+    async def boom(*a):
+        raise RuntimeError("litellm down")
+    out = await resolve("cyber attack map", _cats(), _settings(fuzzy_threshold=5), llm=boom)
+    assert len(out) > 0
+    assert all(c.method == "fuzzy" for c in out)
+
+@pytest.mark.asyncio
 async def test_llm_hallucination_rejected():
     async def fake_llm(q, cats, s):
         return Candidate("threats", "crowdsec-threats", 999, "Ghost", "now-6h", "now", 0.9, "llm")
