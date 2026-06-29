@@ -40,11 +40,7 @@ def create_app() -> FastAPI:
                 return JSONResponse({"error": "unauthorized"}, status_code=401)
         return await call_next(request)
 
-    # FastAPI 0.100+ wraps include_router routes in _IncludedRouter (no .path attr),
-    # which breaks `{r.path for r in app.routes}` introspection in the smoke test.
-    # Add routes individually via add_api_route so they appear as Route objects.
-    for route in build_router(engine).routes:
-        app.add_api_route(route.path, route.endpoint, methods=list(route.methods))
+    app.include_router(build_router(engine))
     app.mount("/mcp", mcp_app)
     return app
 
