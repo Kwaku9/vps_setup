@@ -1,13 +1,20 @@
 ---
+# Curation: which Grafana panels are exposable, by category.
+# Panels are referenced BY GRAFANA TITLE (exact match); live panel ids are resolved
+# at runtime by the catalog from Grafana's API — never hand-maintain ids here.
+# Titles below verified against live Grafana dashboard crowdsec-threats 2026-06-29.
 categories:
   threats:
     label: "Threats"
     dashboards:
       - uid: crowdsec-threats
         expose:
-          - title: "Cyber Attack Map"
+          - title: "Cyberthreats Map"
             label: "Cyber Attack Map"
-            synonyms: ["attack map", "world map", "geo attacks", "where are attacks"]
-          - title: "Decisions over time"
-            label: "Active Decisions Over Time"
-            synonyms: ["bans", "decisions", "blocked ips"]
+            synonyms: ["attack map", "world map", "geo attacks", "where are attacks", "cyberthreats map", "threat map"]
+          - title: "Top 10 Cyberthreat Countries"
+            label: "Top Threat Countries"
+            synonyms: ["top countries", "attacker countries", "where attacks come from", "top 10 countries"]
+          - title: "Cyberthreats Over Last Month / Granularity: 1m"
+            label: "Cyberthreats Over Time"
+            synonyms: ["threats over time", "threat volume", "threat trend", "cyberthreats over last month", "threats last month"]
