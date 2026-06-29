@@ -1,0 +1,12 @@
+{
+  "dashboard": {
+    "uid": "crowdsec-threats",
+    "title": "CrowdSec Cyber Threat Insights",
+    "tags": ["threats", "security"],
+    "panels": [
+      {"id": 1, "type": "row", "title": "Overview"},
+      {"id": 12, "type": "geomap", "title": "Cyber Attack Map"},
+      {"id": 5, "type": "timeseries", "title": "Decisions over time"}
+    ]
+  }
+}

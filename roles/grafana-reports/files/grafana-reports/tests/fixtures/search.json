@@ -1,0 +1,4 @@
+[
+  {"uid": "crowdsec-threats", "title": "CrowdSec Cyber Threat Insights", "type": "dash-db", "tags": ["threats", "security"]},
+  {"uid": "node-overview", "title": "Node Overview", "type": "dash-db", "tags": ["infra"]}
+]
