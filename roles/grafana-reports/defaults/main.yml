@@ -14,6 +14,7 @@ grafana_reports:
   s3_prefix: "grafana-reports"
   s3_region: "us-east-1"
   presign_ttl: 3600
+  render_timeout: 60   # this VPS renders slowly (~38s observed); 15s default times out
   litellm_url: "http://ai-stack-pod:4000/v1"
   litellm_model: "gpt-4o-mini"
   refresh_interval: 900
