@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from .dependencies import init_state, refresh_live_containers
 from .routers import actions, metrics, profiles, services, stacks
@@ -51,12 +51,23 @@ async def lifespan(app: FastAPI):
     # Start live container discovery background task
     live_discovery_task = asyncio.create_task(refresh_live_containers(state))
 
-    # Sessions DB pool (best-effort — dashboard still serves metrics if DB is down)
-    try:
-        app.state.db_pool = await create_pool()
-    except Exception:
-        logger.exception("sessions DB pool init failed; ingest disabled")
-        app.state.db_pool = None
+    # Sessions DB pool. create_pool() can fail on a transient aardvark-dns race at
+    # container startup (shared-db-pod not yet resolvable -> socket.gaierror). That
+    # previously left db_pool=None permanently, so the dashboard showed no sessions
+    # and ingest 200'd while persisting nothing. Retry with backoff before giving up.
+    app.state.db_pool = None
+    for attempt in range(1, 11):
+        try:
+            app.state.db_pool = await create_pool()
+            break
+        except Exception as exc:  # noqa: BLE001 — any connect error is retryable here
+            logger.warning(
+                "sessions DB pool init attempt %d/10 failed (%s); retrying in 2s",
+                attempt, exc,
+            )
+            await asyncio.sleep(2)
+    if app.state.db_pool is None:
+        logger.error("sessions DB pool init failed after 10 attempts; ingest disabled")
 
     sweeper_task = asyncio.create_task(
         staleness_sweeper(app.state.db_pool, ingest_router.ws_manager)
@@ -106,7 +117,14 @@ app.include_router(approvals_router.router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "0.2.0"}
+    # db_pool is None means the sessions DB pool never came up (e.g. a startup DNS
+    # race) — the app looks alive but ingest + live-sessions are dead. Report 503 so
+    # it can't masquerade as healthy to monitoring.
+    db_up = getattr(app.state, "db_pool", None) is not None
+    return JSONResponse(
+        {"status": "ok" if db_up else "degraded", "version": "0.2.0", "db": db_up},
+        status_code=200 if db_up else 503,
+    )
 
 
 class SPAStaticFiles(StaticFiles):

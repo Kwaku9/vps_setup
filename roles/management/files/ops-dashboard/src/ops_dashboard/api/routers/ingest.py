@@ -26,7 +26,9 @@ async def handle_ingest(pool, payload: dict) -> dict:
     # Hooks always send session_uuid even when the delta is empty.
     parsed["session_uuid"] = parsed["session_uuid"] or payload["session_uuid"]
     if pool is None:
-        return {"session_uuid": parsed["session_uuid"], "live_status": "running"}
+        # Pool never initialised (startup DB failure). Fail loudly instead of
+        # 200-ing while silently dropping the event.
+        raise HTTPException(status_code=503, detail="sessions DB unavailable")
     async with pool.acquire() as conn:
         async with conn.transaction():
             return await upsert_event(conn, payload, parsed)
