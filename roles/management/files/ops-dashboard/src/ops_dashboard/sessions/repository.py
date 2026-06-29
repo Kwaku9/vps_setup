@@ -70,7 +70,7 @@ async def upsert_event(conn: asyncpg.Connection, payload: dict, parsed: dict) ->
                   model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
                   is_sidechain, cwd, timestamp, sequence_num)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-               ON CONFLICT (uuid) DO NOTHING
+               ON CONFLICT (session_id, uuid) DO NOTHING
                RETURNING id""",
             session_id, m["uuid"], m["parent_uuid"], m["type"], m["role"],
             m["content_text"], json.dumps(m["content_json"]) if m["content_json"] else None,
