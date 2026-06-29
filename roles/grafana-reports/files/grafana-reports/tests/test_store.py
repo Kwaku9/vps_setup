@@ -35,3 +35,15 @@ def test_presign_none_without_s3(tmp_path, monkeypatch):
     st = Store(_s())
     rid = st.save(b"x", {})
     assert st.presign(rid) is None
+
+def test_get_rejects_path_traversal_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCAL_DIR", str(tmp_path))
+    st = Store(_s())
+    with pytest.raises(KeyError):
+        st.get("../../etc/passwd")
+
+def test_exists_false_for_invalid_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCAL_DIR", str(tmp_path))
+    st = Store(_s())
+    assert st.exists("../../etc/passwd") is False
+    assert st.exists("not-a-hex") is False

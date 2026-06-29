@@ -1,7 +1,9 @@
 from __future__ import annotations
-import hashlib, json, os
+import hashlib, json, os, re
 from pathlib import Path
 from grafana_reports.config import Settings
+
+_RID_RE = re.compile(r"^[0-9a-f]{64}$")
 
 class Store:
     def __init__(self, settings: Settings):
@@ -10,6 +12,8 @@ class Store:
         self._dir.mkdir(parents=True, exist_ok=True)
 
     def _png(self, rid: str) -> Path:
+        if not _RID_RE.match(rid):
+            raise KeyError(rid)
         return self._dir / f"{rid}.png"
 
     def save(self, png: bytes, meta: dict) -> str:
@@ -25,6 +29,8 @@ class Store:
         return p.read_bytes()
 
     def exists(self, report_id: str) -> bool:
+        if not _RID_RE.match(report_id):
+            return False
         return self._png(report_id).exists()
 
     def presign(self, report_id: str, ttl: int | None = None) -> str | None:
