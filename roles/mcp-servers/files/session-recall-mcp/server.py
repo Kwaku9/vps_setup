@@ -62,26 +62,37 @@ AUTH_TOKEN = os.environ.get("AUTH_TOKEN", "")
 
 def _run_http():
     import uvicorn
-    from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.responses import JSONResponse
 
-    class BearerAuthMiddleware(BaseHTTPMiddleware):
-        async def dispatch(self, request, call_next):
-            if request.headers.get("authorization", "") != f"Bearer {AUTH_TOKEN}":
-                return JSONResponse({"error": "unauthorized"}, status_code=401)
-            return await call_next(request)
+    if not AUTH_TOKEN:
+        raise SystemExit("session-recall-mcp: AUTH_TOKEN is required for the http transport")
 
     mcp.settings.host = "0.0.0.0"
     mcp.settings.port = int(os.environ.get("MCP_PORT", "8970"))
     app = mcp.streamable_http_app()
-    app.add_middleware(BearerAuthMiddleware)
-    uvicorn.run(app, host=mcp.settings.host, port=mcp.settings.port)
+
+    class BearerAuthASGI:
+        # Pure ASGI middleware: check the bearer on the initial HTTP request,
+        # then pass the raw ASGI streams through untouched so streamable-HTTP /
+        # SSE responses are not buffered or truncated.
+        def __init__(self, inner):
+            self.inner = inner
+
+        async def __call__(self, scope, receive, send):
+            if scope["type"] == "http":
+                headers = dict(scope.get("headers") or [])
+                auth = headers.get(b"authorization", b"").decode("latin-1")
+                if auth != f"Bearer {AUTH_TOKEN}":
+                    await send({"type": "http.response.start", "status": 401,
+                                "headers": [(b"content-type", b"application/json")]})
+                    await send({"type": "http.response.body", "body": b'{"error":"unauthorized"}'})
+                    return
+            await self.inner(scope, receive, send)
+
+    uvicorn.run(BearerAuthASGI(app), host=mcp.settings.host, port=mcp.settings.port)
 
 
 if __name__ == "__main__":
     if os.environ.get("MCP_TRANSPORT") == "stdio":
         mcp.run()  # stdio path is tokenless (host-only, via podman exec)
     else:
-        if not AUTH_TOKEN:
-            raise SystemExit("session-recall-mcp: AUTH_TOKEN is required for the http transport")
         _run_http()
