@@ -1,4 +1,6 @@
 import hashlib, pytest
+import boto3
+from moto import mock_aws
 from grafana_reports.store import Store
 from grafana_reports.config import Settings
 
@@ -47,3 +49,22 @@ def test_exists_false_for_invalid_id(tmp_path, monkeypatch):
     st = Store(_s())
     assert st.exists("../../etc/passwd") is False
     assert st.exists("not-a-hex") is False
+
+@mock_aws
+def test_save_uploads_to_s3_and_presign_returns_url(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCAL_DIR", str(tmp_path))
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "x"); monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "y")
+    s3 = boto3.client("s3", region_name="us-east-1")
+    s3.create_bucket(Bucket="reports-bucket")
+    from grafana_reports.config import Settings
+    settings = Settings(grafana_url="", grafana_sa_token="", auth_token="", s3_bucket="reports-bucket",
+                        s3_prefix="reports", s3_region="us-east-1", presign_ttl=120, litellm_url=None,
+                        litellm_model="m", litellm_key=None, catalog_path="", refresh_interval=900,
+                        default_width=1000, default_height=500, render_timeout=15, fuzzy_threshold=70)
+    from grafana_reports.store import Store
+    st = Store(settings)
+    rid = st.save(b"\x89PNG", {"k": 1})
+    body = s3.get_object(Bucket="reports-bucket", Key=f"reports/{rid}.png")["Body"].read()
+    assert body == b"\x89PNG"
+    url = st.presign(rid)
+    assert url and "reports-bucket" in url and f"reports/{rid}.png" in url
