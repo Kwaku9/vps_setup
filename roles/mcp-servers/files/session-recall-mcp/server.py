@@ -57,10 +57,31 @@ def get_session(session_uuid: str, max_chars: int = 8000) -> dict:
         return {"error": f"{type(e).__name__}: {e}"}
 
 
+AUTH_TOKEN = os.environ.get("AUTH_TOKEN", "")
+
+
+def _run_http():
+    import uvicorn
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import JSONResponse
+
+    class BearerAuthMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            if request.headers.get("authorization", "") != f"Bearer {AUTH_TOKEN}":
+                return JSONResponse({"error": "unauthorized"}, status_code=401)
+            return await call_next(request)
+
+    mcp.settings.host = "0.0.0.0"
+    mcp.settings.port = int(os.environ.get("MCP_PORT", "8970"))
+    app = mcp.streamable_http_app()
+    app.add_middleware(BearerAuthMiddleware)
+    uvicorn.run(app, host=mcp.settings.host, port=mcp.settings.port)
+
+
 if __name__ == "__main__":
     if os.environ.get("MCP_TRANSPORT") == "stdio":
-        mcp.run()  # stdio (default FastMCP transport)
+        mcp.run()  # stdio path is tokenless (host-only, via podman exec)
     else:
-        mcp.settings.host = "0.0.0.0"
-        mcp.settings.port = int(os.environ.get("MCP_PORT", "8970"))
-        mcp.run(transport="streamable-http")
+        if not AUTH_TOKEN:
+            raise SystemExit("session-recall-mcp: AUTH_TOKEN is required for the http transport")
+        _run_http()
