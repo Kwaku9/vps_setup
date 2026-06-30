@@ -12,7 +12,7 @@ monitoring:
     memory: "1536m"  # 73% usage is healthy for TSDB
   grafana:
     enabled: true
-    version: "12.3.1-ubuntu"
+    version: "13.1.0-ubuntu"
     port: 3000
     admin_user: "admin"
     memory: "512m"  # Was 300m — OOM-killed 2026-05-26 during crowdsec-threats dashboard query burst; 512m matches Grafana's recommended baseline
