@@ -50,16 +50,18 @@ class Pipe:
 
     # --- model list --------------------------------------------------------
     def pipes(self) -> list[dict]:
+        # Fixed Historian persona first, then one model per resumable workspace.
+        models = [{"id": "historian", "name": "📚 Historian — Ask My Sessions"}]
         try:
             r = httpx.get(self._url("/coder/sessions?workspaces_only=1"),
                           headers=self._headers(), timeout=10)
             r.raise_for_status()
             workspaces = r.json().get("workspaces", [])
         except Exception as e:
-            return [{"id": "error", "name": f"CC Sessions (unreachable: {e})"}]
-        return [{"id": _enc(w["workspace"]),
-                 "name": f"CC: {w['label']} ({w['session_count']})"}
-                for w in workspaces]
+            return models + [{"id": "error", "name": f"CC Sessions (unreachable: {e})"}]
+        return models + [{"id": _enc(w["workspace"]),
+                          "name": f"CC: {w['label']} ({w['session_count']})"}
+                         for w in workspaces]
 
     # --- main turn ---------------------------------------------------------
     async def pipe(self, body: dict, __user__: dict = None,
@@ -67,6 +69,19 @@ class Pipe:
                    __metadata__: dict = None):
         model = body.get("model", "")
         pipe_id = model.split(".", 1)[-1]
+
+        # Historian: no workspace/binding/session-picker — a fresh Q&A turn whose
+        # tools are the session-recall MCP tools (gateway flips on persona).
+        if pipe_id == "historian":
+            messages = body.get("messages", [])
+            msg = (messages[-1].get("content", "") if messages else "").strip()
+            chat_id = (__metadata__ or {}).get("chat_id", "") or "owui"
+            async with httpx.AsyncClient(timeout=None) as client:
+                async for chunk in self._stream_turn(
+                        client, chat_id, msg, __event_call__, persona="historian"):
+                    yield chunk
+            return
+
         try:
             workspace = _dec(pipe_id)
         except Exception:
@@ -131,10 +146,13 @@ class Pipe:
         lines.append("\n_/new_ for a fresh session.")
         yield "\n".join(lines)
 
-    async def _stream_turn(self, client, chat_id, prompt, event_call):
+    async def _stream_turn(self, client, chat_id, prompt, event_call, persona=None):
+        payload = {"owui_chat_id": chat_id, "prompt": prompt}
+        if persona:
+            payload["persona"] = persona
         async with client.stream(
                 "POST", self._url("/coder/stream"), headers=self._headers(),
-                json={"owui_chat_id": chat_id, "prompt": prompt}) as resp:
+                json=payload) as resp:
             event, data = None, None
             async for line in resp.aiter_lines():
                 if line.startswith("event: "):
