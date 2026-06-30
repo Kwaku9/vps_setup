@@ -171,7 +171,12 @@ async def coder_stream(req: StreamRequest):
         "TELEGRAM_GATEWAY_TOKEN": AUTH_TOKEN,
         "TELEGRAM_CHAT_ID": str(run_id),
         "TELEGRAM_APPROVAL_FAIL_CLOSED": "1",
-        "TELEGRAM_APPROVAL_AUTO_ALLOW": OWUI_AUTO_ALLOW_TOOLS,
+        # The PreToolUse hook auto-allows tools in this list; for the Historian
+        # it must include the recall MCP tools, or its searches fail-closed
+        # (no human approves in a Q&A flow). Keep it aligned with --allowedTools.
+        "TELEGRAM_APPROVAL_AUTO_ALLOW": (
+            HISTORIAN_AUTO_ALLOW_TOOLS if req.persona == "historian"
+            else OWUI_AUTO_ALLOW_TOOLS),
     }
 
     async def gen() -> AsyncIterator[str]:
