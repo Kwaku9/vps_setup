@@ -31,6 +31,7 @@ from telegram_gateway import db, owui_runner, sessions
 from telegram_gateway.config import (
     AUTH_TOKEN, MCP_SERVER_PORT, OWUI_APPROVAL_TIMEOUT_MINUTES,
     OWUI_AUTO_ALLOW_TOOLS,
+    HISTORIAN_MCP_CONFIG, HISTORIAN_AUTO_ALLOW_TOOLS, HISTORIAN_SYSTEM_PROMPT,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ class StreamRequest(BaseModel):
     owui_chat_id: str
     prompt: str
     workspace: str | None = None  # used only when the chat has no binding yet
+    persona: str | None = None    # "historian" selects the recall-tools persona
 
 
 class ApprovalDecision(BaseModel):
@@ -176,9 +178,16 @@ async def coder_stream(req: StreamRequest):
         lock = owui_runner.workspace_lock(workspace)
         async with lock:
             try:
-                turn = owui_runner.run_coder_turn(
-                    req.prompt, workspace, session_id,
-                    env_overrides=env, allowed_tools=OWUI_AUTO_ALLOW_TOOLS)
+                if req.persona == "historian":
+                    turn = owui_runner.run_coder_turn(
+                        req.prompt, workspace, session_id,
+                        env_overrides=env, allowed_tools=HISTORIAN_AUTO_ALLOW_TOOLS,
+                        mcp_config=HISTORIAN_MCP_CONFIG,
+                        append_system_prompt=HISTORIAN_SYSTEM_PROMPT)
+                else:
+                    turn = owui_runner.run_coder_turn(
+                        req.prompt, workspace, session_id,
+                        env_overrides=env, allowed_tools=OWUI_AUTO_ALLOW_TOOLS)
                 async for kind, payload in _merge(turn, queue):
                     if kind == "approval":
                         yield _sse("approval", payload)

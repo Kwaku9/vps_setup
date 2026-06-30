@@ -84,6 +84,26 @@ OWUI_APPROVAL_TIMEOUT_MINUTES: int = int(
     os.environ.get("OWUI_APPROVAL_TIMEOUT_MINUTES", "10")
 )
 
+# --- Historian persona (BOT_MODE=owui, persona="historian") ---
+# HISTORIAN_MCP_CONFIG points at an ansible-rendered file mounted into the
+# container (contains the bearer header for the session-recall HTTP transport).
+HISTORIAN_MCP_CONFIG: str = os.environ.get(
+    "HISTORIAN_MCP_CONFIG", "/app/historian-mcp.json"
+)
+HISTORIAN_AUTO_ALLOW_TOOLS: str = os.environ.get(
+    "HISTORIAN_AUTO_ALLOW_TOOLS",
+    "Read,Grep,Glob,mcp__session-recall__search_sessions,mcp__session-recall__get_session",
+)
+HISTORIAN_SYSTEM_PROMPT: str = os.environ.get(
+    "HISTORIAN_SYSTEM_PROMPT",
+    "You are the Historian. You answer questions about the user's own past "
+    "development work using ONLY the search_sessions and get_session tools over "
+    "their Claude Code session history. Always cite the session a claim comes "
+    "from (its date and project). When a search snippet is too thin to answer, "
+    "call get_session to pull the fuller transcript. If the sessions do not "
+    "cover the question, say so plainly — never invent history.",
+)
+
 RATE_LIMIT_PER_MINUTE: int = int(os.environ.get("RATE_LIMIT_PER_MINUTE", "20"))
 MCP_SERVER_PORT: int = int(os.environ.get("MCP_SERVER_PORT", "7555"))
 
