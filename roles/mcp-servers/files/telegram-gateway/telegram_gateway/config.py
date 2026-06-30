@@ -90,9 +90,15 @@ OWUI_APPROVAL_TIMEOUT_MINUTES: int = int(
 HISTORIAN_MCP_CONFIG: str = os.environ.get(
     "HISTORIAN_MCP_CONFIG", "/app/historian-mcp.json"
 )
+# Historian gets ONLY the recall tools — NOT Read/Grep/Glob. owui-coder mounts
+# /root/.claude and /workspace, and the tool inputs (past-session transcripts)
+# are untrusted; auto-allowing file reads would let a prompt-injection in a
+# transcript exfiltrate e.g. /root/.claude.json. The Historian answers purely
+# from the DB via MCP, so it needs no filesystem tools. Matches the prompt's
+# "ONLY the search_sessions and get_session tools".
 HISTORIAN_AUTO_ALLOW_TOOLS: str = os.environ.get(
     "HISTORIAN_AUTO_ALLOW_TOOLS",
-    "Read,Grep,Glob,mcp__session-recall__search_sessions,mcp__session-recall__get_session",
+    "mcp__session-recall__search_sessions,mcp__session-recall__get_session",
 )
 HISTORIAN_SYSTEM_PROMPT: str = os.environ.get(
     "HISTORIAN_SYSTEM_PROMPT",
