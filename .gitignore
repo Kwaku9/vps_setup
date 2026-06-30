@@ -172,6 +172,9 @@ roles/mcp-servers/files/telegram-gateway/.venv/
 
 # Local-only working dir (backups, ETL scratch, dev plans, secrets — never commit)
 local/
+# Spike/experiment scratch (datasets, spike.env secrets, notebooks) — never canonical.
+# Nothing here is tracked; commit a spike tool explicitly with `git add -f` if needed.
+tools/spikes/
 # Playwright MCP session artifacts (transient tool output)
 .playwright-mcp/
 
