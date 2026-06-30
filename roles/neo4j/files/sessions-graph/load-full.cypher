@@ -16,7 +16,11 @@ CREATE CONSTRAINT sess_tool_id   IF NOT EXISTS FOR (t:ToolCall) REQUIRE t.tool_u
 CREATE CONSTRAINT sess_sub_id    IF NOT EXISTS FOR (s:Subagent) REQUIRE s.agent_id IS UNIQUE;
 CREATE CONSTRAINT sg_artifact    IF NOT EXISTS FOR (a:Artifact) REQUIRE a.art_key IS UNIQUE;
 
-// ---- Projects (MERGE on path; pg_id untouched) ----
+// ---- Projects: AUTHORITATIVE full-refresh (MERGE on path) ----
+// Project paths get merged/renamed upstream (e.g. the decode-bug backfill), so a
+// purely additive MERGE would retain stale renamed project nodes (and poison the
+// Codebase layer derived from them). Drop + reload so :Project mirrors Postgres.
+MATCH (p:Project) DETACH DELETE p;
 LOAD CSV WITH HEADERS FROM 'file:///sg_projects.csv' AS r
 MERGE (p:Project {path: r.path}) SET p.display_name = r.display_name, p.source = r.source;
 
@@ -28,8 +32,8 @@ MERGE (s:Session {uuid: r.session_uuid})
       s.total_messages=toInteger(r.total_messages), s.total_turns=toInteger(r.total_turns),
       s.total_tool_calls=toInteger(r.total_tool_calls), s.git_branch=r.git_branch, s.cli_version=r.cli_version;
 
-LOAD CSV WITH HEADERS FROM 'file:///sg_sessions.csv' AS r WITH r WHERE r.project_id <> ''
-MATCH (p:Project {pg_id: toInteger(r.project_id)}), (s:Session {uuid: r.session_uuid})
+LOAD CSV WITH HEADERS FROM 'file:///sg_sessions.csv' AS r WITH r WHERE r.project_path <> ''
+MATCH (p:Project {path: r.project_path}), (s:Session {uuid: r.session_uuid})
 MERGE (p)-[:HAS_SESSION]->(s);
 
 LOAD CSV WITH HEADERS FROM 'file:///sg_sessions.csv' AS r WITH r WHERE r.model <> ''
@@ -99,3 +103,36 @@ CALL apoc.periodic.iterate(
    UNWIND range(0, size(ms)-2) AS i WITH ms[i] AS a, ms[i+1] AS b WHERE a.sequence_num < b.sequence_num
    MERGE (a)-[:NEXT]->(b)",
   {batchSize:50, parallel:false}) YIELD total, failedOperations RETURN 'next' AS step, total, failedOperations;
+
+// ---- Prune empty-shell Session nodes (zero messages) ----
+// Mirrors the Postgres shell-prune: a Session with no messages is a stale shell
+// (real sessions always have messages). Additive Session MERGE would otherwise
+// retain sessions deleted upstream, so sweep them here. Self-maintaining.
+MATCH (s:Session) WHERE NOT (s)-[:HAS_MESSAGE]->() DETACH DELETE s;
+
+// ---- Codebase: cross-machine canonical identity (C) — derived, idempotent ----
+// One :Codebase per repo/leaf-dir name (machine-independent: the same repo on
+// VPS /workspace/... , Fedora /home/... and Windows C:\... shares one leaf name,
+// which also equals the UNIQUE sessions.git_repos.repo_name). Each per-machine
+// :Project links INSTANCE_OF its Codebase, so machine provenance is preserved and
+// "what am I working on" rolls up across machines. Depends on canonical Project
+// paths (run migration 001 first); otherwise leaf names are garbage.
+CREATE CONSTRAINT cb_key IF NOT EXISTS FOR (cb:Codebase) REQUIRE cb.key IS UNIQUE;
+
+// Authoritative: drop stale Codebase nodes (their keys derive from Project leaf
+// names, which change when projects are merged/renamed) before rebuilding.
+MATCH (cb:Codebase) DETACH DELETE cb;
+
+MATCH (p:Project) WHERE p.path IS NOT NULL
+WITH p, [x IN split(replace(p.path, '\\', '/'), '/') WHERE x <> ''] AS parts
+WITH p, parts[-1] AS key WHERE key IS NOT NULL AND key <> ''
+MERGE (cb:Codebase {key: key})
+MERGE (p)-[:INSTANCE_OF]->(cb);
+
+// Enrich + link to the real git repo where the name matches.
+MATCH (cb:Codebase)
+OPTIONAL MATCH (r:Repo {repo_name: cb.key})
+SET cb.is_git_repo = (r IS NOT NULL), cb.default_branch = r.default_branch;
+
+MATCH (cb:Codebase), (r:Repo {repo_name: cb.key})
+MERGE (cb)-[:HAS_REPO]->(r);
