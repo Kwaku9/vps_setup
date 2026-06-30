@@ -159,6 +159,11 @@ async def coder_stream(req: StreamRequest):
     binding = await db.get_owui_binding(req.owui_chat_id)
     workspace = binding["workspace"] if binding else req.workspace
     session_id = binding["session_id"] if binding else None
+    # The Historian has no workspace to resume — it answers from the recall DB.
+    # Give it a fixed cwd so the workspace-binding gate doesn't 409 it; follow-ups
+    # still resume via the per-chat binding upserted during the turn.
+    if not workspace and req.persona == "historian":
+        workspace = "/workspace"
     if not workspace:
         return Response(status_code=409, content="chat is not bound to a workspace")
 
