@@ -40,10 +40,11 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'session_ingest') THEN CREATE ROLE session_ingest LOGIN; END IF;
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ops_dashboard')  THEN CREATE ROLE ops_dashboard  LOGIN; END IF;
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'telegram_gw')    THEN CREATE ROLE telegram_gw    LOGIN; END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'recall_ro')      THEN CREATE ROLE recall_ro      LOGIN; END IF;
 END $$;
 
 -- 3. Assign tiers
-GRANT app_ro TO grafana_ro;                                 -- read-only (Grafana dashboards)
+GRANT app_ro TO grafana_ro, recall_ro;                      -- read-only (Grafana dashboards; session-recall MCP)
 GRANT app_rw TO session_ingest, ops_dashboard, telegram_gw; -- read-write consumers
 
--- Verify with:  \du   and   SELECT rolname FROM pg_roles WHERE rolname LIKE 'app\_%' OR rolname IN ('grafana_ro','session_ingest','ops_dashboard','telegram_gw');
+-- Verify with:  \du   and   SELECT rolname FROM pg_roles WHERE rolname LIKE 'app\_%' OR rolname IN ('grafana_ro','session_ingest','ops_dashboard','telegram_gw','recall_ro');
