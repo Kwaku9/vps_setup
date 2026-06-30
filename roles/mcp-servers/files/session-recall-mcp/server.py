@@ -11,10 +11,20 @@ import os
 
 import psycopg2
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 import recall
 
-mcp = FastMCP("session-recall")
+# FastMCP's streamable-http ships DNS-rebinding protection that only accepts
+# localhost/127.0.0.1 Host headers, which 421s the cross-container Host the
+# Historian dials (session-recall-mcp:8970). This server is internal-only
+# (enterprise_network), bearer-authed (see _run_http), and not browser-facing,
+# so that protection is irrelevant here — disable it.
+mcp = FastMCP(
+    "session-recall",
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False),
+)
 
 
 def _conn():
