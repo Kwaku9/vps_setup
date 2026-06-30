@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5"/>
+<title>Decks · aicortex</title>
+<style>
+  /* ── timeline.aicortex.cloud design tokens (dark glassmorphic, purple-blue) ── */
+  :root{
+    --src:#7b93ff; --dst:#9b6fd0; --accent:#a78bfa;
+    --glass:rgba(255,255,255,.05); --glass-brd:rgba(255,255,255,.10);
+    --glow:rgba(123,147,255,.40);
+    --ink:#e0e0f0; --ink2:#a8a8c0; --ink3:#6a6a80;
+  }
+  *{box-sizing:border-box}
+  html{ -webkit-text-size-adjust:100% }
+  body{ margin:0; color:var(--ink); min-height:100vh;
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,sans-serif;
+    background:linear-gradient(135deg,#0a0a14 0%,#1a1030 50%,#0a0a14 100%); background-attachment:fixed; }
+  /* ambient glow blobs behind everything */
+  body::before{ content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(42% 52% at 16% 16%, rgba(123,147,255,.22), transparent 70%),
+      radial-gradient(46% 56% at 84% 84%, rgba(155,111,208,.22), transparent 70%); }
+  header,main,footer{ position:relative; z-index:1; max-width:1040px; margin:0 auto; }
+  header{ padding:64px 28px 8px; }
+  h1{ margin:0; font-size:44px; font-weight:800; letter-spacing:-.02em;
+    background:linear-gradient(135deg,#fff 0%,#c7d2fe 40%,#a78bfa 72%,#fff 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 4px 16px rgba(123,147,255,.45)); }
+  .sub{ color:var(--ink2); font-size:15.5px; margin-top:10px; max-width:660px; }
+  .sub b{ color:var(--ink); font-weight:600; }
+  .legend{ margin-top:16px; display:flex; flex-wrap:wrap; gap:7px; }
+  .pill{ display:inline-block; padding:.18em .7em; border-radius:1em; font-size:12px; border:1px solid var(--glass-brd);
+    background:var(--glass); color:#cbd5e1; box-shadow:0 0 10px rgba(123,147,255,.16); }
+
+  main{ padding:26px 28px 40px; display:grid; grid-template-columns:repeat(2,1fr); gap:20px; align-items:stretch; }
+  .card{ position:relative; display:flex; flex-direction:column; overflow:hidden;
+    background:var(--glass); border:1px solid var(--glass-brd); border-radius:20px; padding:24px 24px 20px;
+    backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); box-shadow:0 8px 32px rgba(0,0,0,.4);
+    transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+  /* gradient accent strip along the top of each card */
+  .card::before{ content:""; position:absolute; top:0; left:0; right:0; height:3px;
+    background:linear-gradient(90deg,var(--src),var(--dst)); opacity:.9; }
+  .card:hover{ transform:translateY(-4px); border-color:rgba(167,139,250,.55);
+    box-shadow:0 14px 44px rgba(0,0,0,.5), 0 0 26px var(--glow); }
+  .card .ic{ font-size:26px; line-height:1; margin-bottom:12px; filter:drop-shadow(0 0 10px var(--glow)); }
+  .card h2{ margin:0 0 8px; font-size:20px; font-weight:700; letter-spacing:-.01em; line-height:1.25; }
+  /* primary link: gradient text + a stretched ::after so the whole card is clickable
+     (NO nested anchors — the extra links below sit above this hit-area via z-index) */
+  .card h2 a{ text-decoration:none;
+    background:linear-gradient(135deg,#e8ecff,#b9a7ff); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .card h2 a::after{ content:""; position:absolute; inset:0; z-index:1; }
+  .card h2 .arrow{ -webkit-text-fill-color:var(--accent); }
+  .card p{ margin:0; color:var(--ink2); font-size:14px; line-height:1.55; flex:1; }
+  .meta{ margin-top:14px; display:flex; flex-wrap:wrap; gap:6px; }
+  .tag{ font-size:11.5px; padding:.16em .62em; border-radius:1em; background:rgba(12,12,24,.55);
+    border:1px solid var(--glass-brd); color:#c4c4da; }
+  .tag.live{ color:#e2d6ff; border-color:rgba(167,139,250,.5); box-shadow:0 0 12px rgba(167,139,250,.3); }
+  .tag.live::before{ content:"● "; color:#a78bfa; }
+  .extra{ position:relative; z-index:2; margin-top:14px; padding-top:12px;
+    border-top:1px solid rgba(255,255,255,.07); font-size:13px; display:flex; flex-wrap:wrap; gap:16px; }
+  .extra a{ color:var(--accent); text-decoration:none; transition:color .12s; }
+  .extra a:hover{ color:#cbb6f4; text-decoration:underline; }
+
+  footer{ padding:8px 28px 56px; color:var(--ink3); font-size:12.5px; }
+  footer code{ color:var(--ink2); background:rgba(255,255,255,.05); padding:.1em .4em; border-radius:5px; }
+
+  @media (max-width:760px){
+    header{ padding:44px 20px 4px; } h1{ font-size:34px; }
+    main{ grid-template-columns:1fr; gap:16px; padding:22px 20px 32px; }
+    .card{ padding:20px 20px 18px; border-radius:18px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Decks</h1>
+  <div class="sub">Technical architecture presentations — how the systems behind <b>aicortex</b> actually work.
+    Each deck is self-contained <b>reveal.js</b> with <b>animated traffic-flow diagrams</b>, optional <b>live data</b>,
+    and a <b>cloned-voice narration</b> track. Built with the <code style="color:var(--ink2)">slide-deck</code> skill.</div>
+  <div class="legend">
+    <span class="pill">▶ arrows = navigate</span>
+    <span class="pill">S = speaker notes</span>
+    <span class="pill">F = fullscreen</span>
+    <span class="pill">🔊 = narration</span>
+  </div>
+</header>
+<main>
+
+  <article class="card">
+    <div class="ic">🛰️</div>
+    <h2><a href="./avatar-architecture-deck.html">Real-Time Avatar Agent — Architecture &amp; Topology <span class="arrow">→</span></a></h2>
+    <p>Self-hosted voice + talking-head avatar over WebRTC. What an SFU is, the UDP/NAT constraint, and the four
+       deployment topologies — Cloud relay / VPS SFU / local / permissive GPU — scored on quality, latency, hops &amp; geography.</p>
+    <div class="meta"><span class="tag">livekit-agent</span><span class="tag">WebRTC · SFU</span><span class="tag">13 slides</span></div>
+    <div class="extra"><a href="./architecture-explorer.html">↳ interactive explorer</a><a href="./avatar-architecture-narration.md">↳ narration (NotebookLM)</a></div>
+  </article>
+
+  <article class="card">
+    <div class="ic">💬</div>
+    <h2><a href="./chat-widget-deck.html">Buildfol.io "Ask-Me" Chat Widget <span class="arrow">→</span></a></h2>
+    <p>The graph-RAG chat widget end to end: the <b>overlay → BFF → Lambda → Gemini</b> request path, the token-handler
+       boundary, the persona, and where the external context service (and its graph) sits behind it all.</p>
+    <div class="meta"><span class="tag">buildfolio</span><span class="tag">RAG · BFF</span><span class="tag">13 slides</span></div>
+    <div class="extra"><a href="./chat-widget-narration.md">↳ narration (NotebookLM)</a></div>
+  </article>
+
+  <article class="card">
+    <div class="ic">🔐</div>
+    <h2><a href="./security-architecture-deck.html">Buildfol.io — Cloud &amp; Security Architecture <span class="arrow">→</span></a></h2>
+    <p>Closing the <b>"Postman hole"</b>: from UI-only auth the API never enforced, to a <b>token-handler BFF</b> with
+       httpOnly cookies (XSS-safe), every endpoint behind a gateway authorizer, <b>CloudFront + WAF</b> at the edge —
+       with a full before/after <b>threat model</b>. All codified in CDK.</p>
+    <div class="meta"><span class="tag">buildfolio</span><span class="tag">Cognito · WAF</span><span class="tag">17 slides</span></div>
+    <div class="extra"><a href="./security-architecture-narration.md">↳ narration (NotebookLM)</a></div>
+  </article>
+
+  <article class="card">
+    <div class="ic">🕸️</div>
+    <h2><a href="./graph-etl-deck.html">Journey Tracker — Graph ETL <span class="arrow">→</span></a></h2>
+    <p>The Neo4j pipeline behind the timeline: ingest → classify → graph build → extract, the session/artifact/file
+       data model, and the stage-9 shared-file join — ending on a <b>live graph</b> rendered straight from Bolt.</p>
+    <div class="meta"><span class="tag">journey-tracker</span><span class="tag">Neo4j · ETL</span><span class="tag">14 slides</span><span class="tag live">live graph</span></div>
+    <div class="extra"><a href="./graph-etl-narration.md">↳ narration (NotebookLM)</a></div>
+  </article>
+
+</main>
+<footer>Served by nginx on alpine-vps · behind Cloudflare Access · drop new <code>*-deck.html</code> into <code>/opt/compose/decks/</code> and add a card here.</footer>
+</body>
+</html>

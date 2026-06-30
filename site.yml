@@ -105,6 +105,10 @@
       tags: ['journey-tracker', 'timeline']
       when: journey_tracker.enabled | default(true)
 
+    - role: decks
+      tags: ['decks']
+      when: decks.enabled | default(true)
+
     # WorldView consolidated into frontend role (frontend-pod)
 
     # squid-proxy merged into security role (host-level service)
