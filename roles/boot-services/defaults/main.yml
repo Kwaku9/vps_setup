@@ -73,3 +73,8 @@ boot_services:
     # by traefik's file provider. Only reachable once traefik is up, so order it
     # after traefik (same as cloudflared).
     - { name: decks-nginx,      enabled: true, depends_on: [traefik] }
+    # session-recall MCP — gemma-512 retrieval over recall.chunks. Needs postgres
+    # (recall_ro on shared-db-pod) and ai-stack-pod (litellm embeddings) up first.
+    # Without its own OpenRC service it sits Exited after a reboot and the weekly
+    # `podman system prune -f` reaps it (same failure mode as telegram/owui-coder).
+    - { name: session-recall-mcp, enabled: true, depends_on: [ai-stack-pod, shared-db-pod] }
