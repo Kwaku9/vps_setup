@@ -1,0 +1,14 @@
+# GPU cross-encoder reranker for OWUI RAG (Fedora workstation GPU, tailnet-exposed).
+# Slim Python base + CUDA torch wheels (the wheels bundle the CUDA runtime libs,
+# so no full nvidia/cuda base image is needed — only the host driver + GPU device).
+FROM python:3.12-slim
+
+# CUDA 12.4 torch wheels work with the host's >=12.6 driver (forward compatible).
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu124 \
+ && pip install --no-cache-dir "sentence-transformers>=3.0" "fastapi>=0.110" "uvicorn[standard]>=0.29"
+
+ENV HF_HOME=/cache
+COPY app.py /app/app.py
+WORKDIR /app
+EXPOSE 18091
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "18091"]
