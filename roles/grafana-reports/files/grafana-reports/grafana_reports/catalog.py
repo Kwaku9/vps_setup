@@ -34,6 +34,7 @@ async def build_catalog(curation: dict, api: GrafanaAPI) -> list[Category]:
                     label=entry.get("label", title),
                     synonyms=entry.get("synonyms", []),
                     panel_type=lp.get("type", ""),
+                    variables=entry.get("variables", []),
                 ))
             dashboards.append(Dashboard(uid=uid, title=uid, panels=panels))
         categories.append(Category(name=tag, label=cat_def.get("label", tag), dashboards=dashboards))
