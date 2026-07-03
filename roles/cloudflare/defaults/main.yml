@@ -99,6 +99,26 @@ cloudflare_access:
   authentik_idp:
     enabled: "{{ authentication.authentik.cloudflare_integration.enabled | default(false) }}"
     admin_group: "admins"
+  # Branding for the Cloudflare Access login page (the first gate users hit on
+  # protected *.<domain> apps, before the Authentik login page). Applied to the
+  # Zero Trust *organization* via login_design, so it themes every Access app at
+  # once. Matches the AICORSEC/AICORTEX aesthetic used on the Authentik page
+  # (roles/ai-stack/tasks/authentik-branding.yml): dark slate/indigo + logo.
+  # Run with: ansible-playbook site.yml --tags access-branding
+  login_design:
+    enabled: true
+    # AI Cortex neuron wordmark. Cloudflare fetches this over HTTPS and only
+    # accepts a raster URL, so we host a PNG rendered from
+    # roles/ai-stack/files/aicortex-logo.svg. Bucket is hardcoded (not
+    # s3_assets_bucket, which is unset in vault and falls back to a placeholder).
+    logo_url: "https://aicortex-assets.s3.amazonaws.com/aicortex-logo.png"
+    # Hex colours must include the leading '#'. Ink ground + light text, matching
+    # the Authentik page and the approved design mockup.
+    background_color: "#080C14"
+    text_color: "#EAF2F5"
+    # Logo already shows the AI CORTEX wordmark, so the header carries the tagline.
+    header_text: "Your AI brain in the cloud."
+    footer_text: "Authorized users only · Protected by AI Cortex"
 
 # Default middleware chain applied to all Traefik routers unless overridden per-service
 traefik_default_middlewares:
