@@ -34,8 +34,10 @@ boot_services:
     # 2026-06-04, then reaped after the 2026-06-17 reboot (no boot unit -> Exited
     # -> pruned). Independent store; ai-stack-pod waits on it so embeddings are
     # ready before OWUI/LiteLLM come up.
-    - { name: llama-embed-pod,           enabled: true,  depends_on: [] }
-    - { name: ai-stack-pod,              enabled: true,  depends_on: [authentication-pod, shared-db-pod, llama-embed-pod] }
+    # llama-embed-pod DISABLED 2026-07-01: embedding runs only on the Fedora GPU (a resident
+    # VPS CPU embedder OOM-thrashed the box). No boot unit; ai-stack-pod no longer waits on it.
+    - { name: llama-embed-pod,           enabled: false, depends_on: [] }
+    - { name: ai-stack-pod,              enabled: true,  depends_on: [authentication-pod, shared-db-pod] }
     - { name: management-pod,            enabled: true,  depends_on: [authentication-pod] }
     - { name: backend-pod,               enabled: true,  depends_on: [shared-db-pod] }
     - { name: frontend-pod,              enabled: true,  depends_on: [backend-pod] }

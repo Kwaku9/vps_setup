@@ -192,6 +192,30 @@ right. Do NOT hand-respell words inside the deck's `<aside class="notes">`; add 
 - The map is shared by every deck the generator runs on, so one fix corrects the word across all decks; batch
   multiple new words before re-recording to save GPU passes.
 
+## Voice transformation (personas — step 6.5)
+
+Optional layer BETWEEN the narration companion (6) and voiceover synthesis (7): rewrite the spoken
+script in a **persona** so the audio is lively/TTS-ready, while the on-screen `<aside class="notes">`
+and `narration.md` stay plain and readable. It changes **delivery, not substance** — no added/removed
+technical claims, numbers, or product names.
+
+- **Persona prompts** live in `assets/voices/<name>.md` (each is a system prompt). `professor.md` ships
+  by default ("The Professor" — veteran architect, ownership thesis, dry humor, strict TTS rules). Add
+  more personas as new files; select with `--voice <name>`.
+- **Pipeline** (all keyed by reveal horizontal index, so audio maps to `slide-<i>.wav`):
+  1. `gen-voiceovers.py <deck> --dump-notes > <name>-narration.raw.md` — emits each slide's notes as
+     `SLIDE <i>:` blocks (index-aligned, no Voicebox needed).
+  2. Apply `assets/voices/<voice>.md` as the system prompt to that raw script → `<name>-narration.<voice>.md`,
+     **keeping every `SLIDE <i>:` marker** on its own line (the split point for per-slide audio).
+  3. `gen-voiceovers.py <deck> --script <name>-narration.<voice>.md --out-dir vo-<slug>` — synthesizes
+     from the persona script (`script_slides()` splits on the markers) instead of the deck notes.
+- **Composes with the pronunciation map:** `apply_pronunciations()` still runs at synth time on the
+  persona text, so both layers stack. (If a persona already letter-spaces an acronym, the map is a no-op
+  on it.)
+- **Reversible + non-destructive:** omit `--script` (or delete the file) to fall back to the plain
+  deck-note voice. On-screen notes are never touched.
+- Targeted re-records still work: `--only <indices>` filters the persona script too (matched by `SLIDE <i>:`).
+
 ## timeline.aicortex.cloud aesthetic (the DEFAULT — baked into template.html)
 
 This is the house style and `assets/template.html` already ships with it — you do NOT need to

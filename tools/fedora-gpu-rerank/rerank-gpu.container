@@ -1,0 +1,23 @@
+[Unit]
+Description=Reranker GPU server (ms-marco-MiniLM-L-12-v2 cross-encoder) - OWUI RAG hybrid rerank, tailnet-exposed
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/rerank-gpu:latest
+ContainerName=rerank-gpu
+AddDevice=nvidia.com/gpu=all
+# Persist the HF model cache so ms-marco-MiniLM-L-12-v2 downloads only once.
+Environment=HF_HOME=/cache
+Environment=RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L-12-v2
+Volume=%h/rerank-models:/cache:Z
+PublishPort=18092:18091
+# Serves POST /rerank in the {results:[{index, relevance_score}]} schema OWUI expects.
+
+[Service]
+Restart=always
+# First start downloads the ~130MB model; allow time.
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

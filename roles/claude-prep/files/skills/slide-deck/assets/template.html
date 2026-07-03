@@ -196,6 +196,36 @@
 <div id="vo-bar"><span>🔊 Narration</span><button id="vo-toggle">Off</button></div>
 <audio id="vo-audio" preload="none"></audio>
 <audio id="bg-audio" loop preload="auto"></audio>
+<!-- iOS-safe-audio-gain: HTMLMediaElement.volume is a no-op on iOS Safari, so the bg-music
+     ducking + fades were silently ignored on mobile. Route the vo + bg elements through Web
+     Audio GainNodes on the first Narration-toggle gesture and proxy their .volume to gain, so
+     the existing fade logic produces real, audible volume on mobile (and desktop). -->
+<script>
+(function(){
+  var bar=document.getElementById('vo-bar'),vo=document.getElementById('vo-audio'),bg=document.getElementById('bg-audio');
+  if(!bar||!vo||!bg)return;
+  var done=false;
+  function proxy(el,g,ctx){try{Object.defineProperty(el,'volume',{configurable:true,
+    get:function(){return g.gain.value;},
+    set:function(v){v=Math.max(0,Math.min(1,+v||0));try{g.gain.setValueAtTime(v,ctx.currentTime);}catch(e){g.gain.value=v;}}});}catch(e){}}
+  function install(){
+    if(done)return;
+    var C=window.AudioContext||window.webkitAudioContext; if(!C)return;   /* no Web Audio -> keep native volume */
+    var ctx;
+    try{
+      ctx=new C();
+      var gv=ctx.createGain(),gb=ctx.createGain();
+      ctx.createMediaElementSource(vo).connect(gv).connect(ctx.destination);
+      ctx.createMediaElementSource(bg).connect(gb).connect(ctx.destination);
+      gv.gain.value=1; gb.gain.value=0;                 /* voice full, music silent until faded in */
+      proxy(vo,gv,ctx); proxy(bg,gb,ctx); done=true;
+    }catch(e){return;}
+    if(ctx.state==='suspended')ctx.resume();
+    document.addEventListener('visibilitychange',function(){if(!document.hidden&&ctx.state==='suspended')ctx.resume();});
+  }
+  bar.addEventListener('click',install,true);   /* capture phase: build the graph before the deck's toggle handler runs */
+})();
+</script>
 
 <div class="reveal"><div class="slides">
 
