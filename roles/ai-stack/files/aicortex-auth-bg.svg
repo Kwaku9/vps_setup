@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" role="presentation">
+  <defs>
+    <radialGradient id="vig" cx="50%" cy="38%" r="78%">
+      <stop offset="0%" stop-color="#0B1220"/>
+      <stop offset="58%" stop-color="#080C14"/>
+      <stop offset="100%" stop-color="#05070C"/>
+    </radialGradient>
+    <pattern id="dots" width="48" height="48" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.1" fill="#12324a" opacity="0.45"/>
+    </pattern>
+  </defs>
+  <rect width="1600" height="900" fill="url(#vig)"/>
+  <rect width="1600" height="900" fill="url(#dots)"/>
+  <!-- faint neural edges -->
+  <g stroke="#46E0C1" stroke-width="1" opacity="0.16" fill="none">
+    <path d="M180 160 L420 300 L360 560 L120 640"/>
+    <path d="M420 300 L720 220"/>
+    <path d="M1200 180 L1420 340 L1320 620"/>
+    <path d="M1420 340 L1520 180"/>
+    <path d="M1200 180 L980 300"/>
+    <path d="M360 560 L640 700"/>
+    <path d="M1320 620 L1080 760"/>
+  </g>
+  <!-- nodes -->
+  <g fill="#46E0C1" opacity="0.32">
+    <circle cx="180" cy="160" r="3"/><circle cx="420" cy="300" r="3.5"/>
+    <circle cx="360" cy="560" r="3"/><circle cx="120" cy="640" r="2.6"/>
+    <circle cx="720" cy="220" r="2.6"/><circle cx="640" cy="700" r="2.6"/>
+    <circle cx="1200" cy="180" r="3.5"/><circle cx="1420" cy="340" r="3"/>
+    <circle cx="1320" cy="620" r="3"/><circle cx="1520" cy="180" r="2.6"/>
+    <circle cx="980" cy="300" r="2.6"/><circle cx="1080" cy="760" r="2.6"/>
+  </g>
+  <!-- rare synapse sparks -->
+  <g fill="#FFB259" opacity="0.55">
+    <circle cx="420" cy="300" r="2"/>
+    <circle cx="1320" cy="620" r="2"/>
+  </g>
+</svg>

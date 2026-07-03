@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 68" fill="none" role="img" aria-label="AI Cortex — Your AI brain in the cloud.">
+  <title>AI Cortex — Your AI brain in the cloud.</title>
+  <defs>
+    <radialGradient id="coret" cx="50%" cy="45%" r="60%">
+      <stop offset="0%" stop-color="#7cf0dc"/>
+      <stop offset="100%" stop-color="#2bb6a0"/>
+    </radialGradient>
+  </defs>
+  <!-- neuron: dendrites -->
+  <g stroke="#46E0C1" stroke-width="2" stroke-linecap="round">
+    <path d="M32 33 L32 10"/>
+    <path d="M32 33 L52 21"/>
+    <path d="M32 33 L52 45"/>
+    <path d="M32 33 L32 56"/>
+    <path d="M32 33 L12 45"/>
+    <path d="M32 33 L12 21"/>
+  </g>
+  <!-- terminal nodes -->
+  <g fill="#080C14" stroke="#46E0C1" stroke-width="2">
+    <circle cx="32" cy="9" r="2.6"/>
+    <circle cx="53" cy="20" r="2.3"/>
+    <circle cx="53" cy="46" r="2.3"/>
+    <circle cx="32" cy="57" r="2.3"/>
+    <circle cx="11" cy="46" r="2.3"/>
+    <circle cx="11" cy="20" r="2.3"/>
+  </g>
+  <!-- soma -->
+  <circle cx="32" cy="33" r="8.5" fill="#080C14" stroke="#46E0C1" stroke-width="2"/>
+  <circle cx="32" cy="33" r="4.4" fill="url(#coret)"/>
+  <!-- wordmark -->
+  <text x="72" y="40" font-family="system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="29" font-weight="600" letter-spacing="4">
+    <tspan fill="#46E0C1">AI</tspan><tspan fill="#EAF2F5">CORTEX</tspan>
+  </text>
+  <!-- tagline -->
+  <text x="73" y="60" font-family="system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" letter-spacing="0.4" fill="#8CA0B3">Your AI brain in the cloud.</text>
+</svg>
