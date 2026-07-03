@@ -18,6 +18,7 @@ class ReportBody(BaseModel):
     to_time: str | None = None
     width: int | None = None
     height: int | None = None
+    variables: dict[str, str] | None = None
 
 def build_router(engine: Engine) -> APIRouter:
     r = APIRouter()
