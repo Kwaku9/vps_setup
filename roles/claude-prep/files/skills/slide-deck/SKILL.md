@@ -1,7 +1,7 @@
 ---
 name: slide-deck
 description: Build a self-contained reveal.js technical presentation explaining a system or pipeline — Mermaid architecture diagrams, an optional LIVE Neo4j graph embed (neovis.js), mobile-responsive layout, optional per-slide voiceovers in a cloned Voicebox voice, speaker notes, a NotebookLM-ready narration companion, Playwright self-verification, and one-command PDF export. Use when the user asks to "make a presentation/deck/slides" about how some code, pipeline, service, or architecture works.
-argument-hint: <topic or path to the system> [--no-graph] [--voiceover] [--export]
+argument-hint: <topic or path to the system> [--no-graph] [--voiceover] [--voice <name>] [--export]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, mcp__playwright__browser_navigate, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_press_key, mcp__playwright__browser_console_messages
 ---
 
@@ -87,10 +87,22 @@ rather than guess (an Explore subagent is a good way to map an unfamiliar system
    (See reference.md for the Mermaid-in-reveal, `file://`-blocked, and pkill-self-match gotchas.)
 6. **Generate the narration companion.** Write `<name>-narration.md` — a plain-language
    walkthrough built from the speaker notes, structured for NotebookLM ingestion.
+6.5. **Voice transformation (optional — persona voiceovers; if `--voice` or asked).** Rewrite the
+   narration in a **selectable persona** so the *audio* is lively and TTS-ready, WITHOUT changing the
+   on-screen speaker notes or narration.md. Transform **delivery only** — never add/remove technical
+   substance, numbers, or product names.
+   a. Dump index-aligned raw notes:
+      `python3 assets/gen-voiceovers.py <name>-deck.html --dump-notes > <name>-narration.raw.md`.
+   b. Apply the persona system prompt in `assets/voices/<voice>.md` (default `professor`) to that raw
+      script. Keep every `SLIDE <i>:` marker on its own line. Save as `<name>-narration.<voice>.md`.
+   c. Step 7 synthesizes from it via `--script`. Reversible — omit `--script` (or delete the file) to
+      fall back to the plain deck-note voice. Add new personas as `assets/voices/<name>.md`.
+      See reference.md → "Voice transformation".
 7. **Voiceovers (if --voiceover or asked).** `python3 assets/gen-voiceovers.py <name>-deck.html`
    synthesizes each slide's notes into `voiceovers/slide-<i>.wav` via Voicebox (default
    Qwen "Him-Mentor"). Needs the Voicebox server up (and the GPU free — see reference.md
    "Enhancement 3"). The deck plays them via the `#vo-bar` toggle; missing files are ignored.
+   Add `--script <name>-narration.<voice>.md` to voice it in the persona from step 6.5.
    - **Pronunciation fixes:** mispronounced brand/jargon words are corrected in
      `apply_pronunciations()` in gen-voiceovers.py (a TTS lexicon applied before synthesis —
      keeps the notes readable). When the user reports a bad word, add a `re.sub` line there
@@ -114,6 +126,9 @@ rather than guess (an Explore subagent is a good way to map an unfamiliar system
 - `assets/export.sh` — deck → PDF + per-slide PNGs.
 - `assets/gen-voiceovers.py` — slide notes → per-slide WAVs via Voicebox (Him-Mentor). Has a
   TTS pronunciation lexicon (`apply_pronunciations()`) + `--only <indices>` / `--out-dir vo-<slug>`
-  for targeted re-records.
+  for targeted re-records, `--dump-notes` (emit `SLIDE <i>:` raw notes for step 6.5), and
+  `--script <file>` (synthesize from a persona-transformed script instead of the deck notes).
+- `assets/voices/*.md` — persona system prompts for step 6.5 (voice transformation). `professor.md`
+  ships by default; add more as `<name>.md` and select with `--voice <name>`.
 - `reference.md` — design system (colors, slide patterns), the animated-flow + Mermaid
   conventions, mobile/voiceover/aesthetic notes, the live-graph schema, and gotchas.

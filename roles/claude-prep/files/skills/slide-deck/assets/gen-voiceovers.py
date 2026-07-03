@@ -6,9 +6,18 @@ Each top-level <section>'s <aside class="notes"> is the narration for that slide
 Output: <deck-dir>/voiceovers/slide-<i>.wav  (i = reveal horizontal index, 0-based),
 which the deck plays on slide change when narration is toggled on.
 
+By default the narration text is each slide's <aside class="notes">. A persona/voice
+pipeline can override that source (see SKILL.md step 6.5): dump the raw per-slide notes,
+transform them into a spoken persona script (keeping `SLIDE <i>:` markers), then synthesize
+from that script with --script.
+
 Usage:
   python3 gen-voiceovers.py bruce-deck.html
   python3 gen-voiceovers.py bruce-deck.html --profile <id> --voicebox http://localhost:17493
+  # persona/voice pipeline (step 6.5):
+  python3 gen-voiceovers.py bruce-deck.html --dump-notes > bruce-narration.raw.md
+  #   → transform bruce-narration.raw.md into a persona script (SLIDE <i>: markers preserved), then:
+  python3 gen-voiceovers.py bruce-deck.html --script bruce-narration.professor.md --out-dir vo-bruce
 Requires the Voicebox server running (./serve note in voicebox/). Stdlib only.
 """
 import argparse
@@ -65,6 +74,27 @@ def slides_notes(deck_html: str):
     return out
 
 
+def script_slides(script_text: str):
+    """Return [(index, spoken_text)] from a persona-transformed script.
+
+    Slides are delimited by `SLIDE <i>:` markers (i = the reveal horizontal index,
+    matching slide-<i>.wav). Everything between one marker and the next is that slide's
+    spoken prose. Any `---` separator lines and surrounding whitespace are collapsed.
+    """
+    marks = list(re.finditer(r"(?im)^[ \t]*SLIDE[ \t]+(\d+)[ \t]*:", script_text))
+    out = []
+    for k, m in enumerate(marks):
+        idx = int(m.group(1))
+        start = m.end()
+        end = marks[k + 1].start() if k + 1 < len(marks) else len(script_text)
+        body = script_text[start:end]
+        body = re.sub(r"(?m)^\s*-{3,}\s*$", " ", body)   # drop '---' separators
+        body = re.sub(r"\s+", " ", body).strip()
+        if body:
+            out.append((idx, body))
+    return out
+
+
 def synth(text, out_path, voicebox, profile, model_size="0.6B"):
     payload = json.dumps({
         "profile_id": profile, "text": text,
@@ -94,10 +124,25 @@ def main():
                     help="output dir name under the deck dir (e.g. vo-bruce). Default: voiceovers")
     ap.add_argument("--only", default=None,
                     help="comma-separated slide indices to (re)record, e.g. 1,2,5 (default: all slides)")
+    ap.add_argument("--script", default=None,
+                    help="synthesize from a persona-transformed script (SLIDE <i>: markers) instead of "
+                         "the deck's <aside class='notes'>. See SKILL.md step 6.5.")
+    ap.add_argument("--dump-notes", dest="dump_notes", action="store_true",
+                    help="print the deck's per-slide notes as 'SLIDE <i>:' blocks (raw input for a voice "
+                         "transform) and exit — no synthesis, no Voicebox needed")
     args = ap.parse_args()
 
     deck_path = os.path.abspath(args.deck)
     deck_dir = os.path.dirname(deck_path)
+
+    # --dump-notes: emit index-aligned raw notes for the voice-transform step, then exit.
+    if args.dump_notes:
+        for i, t in slides_notes(open(deck_path, encoding="utf-8").read()):
+            print(f"SLIDE {i}:")
+            print(t)
+            print()
+        return
+
     vo_dir = os.path.join(deck_dir, args.out_dir)
     os.makedirs(vo_dir, exist_ok=True)
 
@@ -116,15 +161,22 @@ def main():
     except Exception:
         print(f"(could not list profiles; using {args.profile})")
 
-    notes = slides_notes(open(deck_path, encoding="utf-8").read())
-    if not notes:
-        sys.exit("no <aside class='notes'> slides found")
+    if args.script:
+        notes = script_slides(open(args.script, encoding="utf-8").read())
+        src = f"persona script {os.path.basename(args.script)}"
+        if not notes:
+            sys.exit(f"--script {args.script}: no 'SLIDE <i>:' markers found")
+    else:
+        notes = slides_notes(open(deck_path, encoding="utf-8").read())
+        src = "deck notes"
+        if not notes:
+            sys.exit("no <aside class='notes'> slides found")
     if args.only:
         want = {int(x) for x in args.only.split(",") if x.strip() != ""}
         notes = [(i, t) for (i, t) in notes if i in want]
         if not notes:
-            sys.exit(f"--only {args.only}: no slides with notes match those indices")
-    print(f"{len(notes)} slide(s) to narrate (Qwen3-TTS-12Hz-{args.model_size}-Base) -> {vo_dir}/")
+            sys.exit(f"--only {args.only}: no slides match those indices")
+    print(f"{len(notes)} slide(s) to narrate from {src} (Qwen3-TTS-12Hz-{args.model_size}-Base) -> {vo_dir}/")
     for idx, text in notes:
         spoken = apply_pronunciations(text)       # phonetic fixes (LiveKit->LyveKit, widget->wid-git)
         if spoken != text:
