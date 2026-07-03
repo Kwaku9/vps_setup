@@ -1,4 +1,6 @@
 %%{init: {'theme':'dark','flowchart':{'curve':'basis','nodeSpacing':40,'rankSpacing':55}}}%%
+%% VPS service dependency graph — reconciled to live 2026-07-03 (17 pods / 46 services).
+%% Source of truth: docs/service-map.cypher (loaded into neo4j-db). See SERVICE-MAP.md §13.
 flowchart TB
     %% ---------------- Edge / Ingress ----------------
     internet([Internet / Users]):::ext
@@ -9,31 +11,35 @@ flowchart TB
         tf[traefik v3.7<br/>:80/:443]:::edge
         cs[crowdsec<br/>LAPI :8180]:::sec
     end
-    internet --> cfedge -->|"*.aicortex.cloud<br/>(20 hostnames)"| cfd -->|https| tf
+    internet --> cfedge -->|"aicortex.cloud + *.<br/>(21 hostnames)"| cfd -->|https| tf
     tf -. bouncer .-> cs
 
     %% ---------------- AI stack ----------------
     subgraph AI["🤖 ai-stack-pod"]
         direction TB
-        owui[open-webui<br/>:8080]:::app
+        owui[open-webui<br/>v0.9.6 :8080]:::app
         llm[litellm<br/>:4000]:::app
         kok[kokoro-tts<br/>:8880]:::svc
         sxng[searxng]:::svc
         gtts[gemini-tts-proxy]:::svc
-        n8n[n8n-claude<br/>:5678]:::svc
-        aspg[(ai-stack-postgres<br/>litellm · n8n · memory⚠)]:::db
+        aspg[(ai-stack-postgres<br/>litellm · memory✓pgvector)]:::db
     end
     owui --> llm
     owui --> kok
     owui --> sxng
     llm --> gtts
     llm --> aspg
-    n8n --> aspg
+
+    %% ---------------- Embeddings ----------------
+    subgraph EMB["🧠 llama-embed-pod"]
+        lme[llama-embed<br/>⚠ degraded]:::svc
+    end
+    llm -. embeddings .-> lme
 
     %% ---------------- Auth ----------------
     subgraph AUTH["🔐 authentication-pod (+worker pod)"]
         direction TB
-        aks[authentik-server<br/>:9000]:::auth
+        aks[authentik-server<br/>2026.5.2 :9000]:::auth
         akw[authentik-worker]:::auth
         akpg[(authentik-postgres)]:::db
         rds[(redis ⚠no-auth)]:::db
@@ -43,20 +49,25 @@ flowchart TB
     akw --> akpg
     akw --> rds
     aks <--> akw
-    akprox[authentik-proxy<br/>standby/unwired]:::auth -.-> aks
 
-    %% ---------------- Shared data ----------------
+    %% ---------------- Shared data + graph ----------------
     subgraph DATA["🗄 shared-db-pod"]
-        pg[(postgres / enterprise<br/>sessions·gateway·trading)]:::db
+        pg[(postgres · pgvector<br/>sessions·gateway·trading<br/>openwebui·recall·spike)]:::db
     end
+    subgraph GRAPH["🕸 neo4j-pod"]
+        neo[(neo4j-db<br/>:7687 service-map+sessions)]:::db
+        nmcp[neo4j-mcp-server]:::mcp
+    end
+    nmcp --> neo
 
     %% ---------------- Observability ----------------
-    subgraph OBS["📊 monitoring (metrics / logs / tempo pods)"]
+    subgraph OBS["📊 monitoring (metrics / logs / tempo + reports)"]
         direction TB
         vm[(victoriametrics<br/>:8428 · 20y)]:::obs
         vma[vmalert<br/>BLACKHOLE]:::obs
-        graf[grafana<br/>:3000]:::app
+        graf[grafana<br/>13.1 :3000]:::app
         rend[renderer]:::svc
+        grep[grafana-reports<br/>reports-pod]:::app
         loki[(loki :3100<br/>14d)]:::obs
         alloy[alloy<br/>collector :4317/8]:::obs
         tempo[(tempo :3200<br/>traces 7d)]:::obs
@@ -71,6 +82,8 @@ flowchart TB
     graf --> tempo
     graf --> pg
     graf --> rend
+    grep --> graf
+    grep --> rend
 
     %% ---------------- Apps / frontend ----------------
     subgraph FE["🖥 frontend-pod"]
@@ -85,14 +98,19 @@ flowchart TB
     %% ---------------- Mgmt / integration / security ----------------
     subgraph MGMT["🛠 management + integration + security"]
         direction TB
-        port[portainer]:::mgmt
         ops[ops-dashboard<br/>:8090]:::app
         tg[telegram-gateway<br/>:7555]:::app
+        tgc[telegram-coder<br/>:7556]:::app
+        owc[owui-coder<br/>:7557]:::app
         gdocs[google-docs-mcp]:::mcp
         scrapy[scrapy-mcp]:::mcp
+        srm[session-recall-mcp]:::mcp
+        tca[timeline-context-api<br/>:8080]:::mcp
+        decks[decks-nginx]:::fe
         hp[honeypot]:::sec
         tm[threat-map]:::sec
-        ais[ais-relay]:::svc
+        ais[ais-relay ⚠down]:::svc
+        tetra[tetragon<br/>eBPF]:::sec
     end
     ops --> pg
     ops --> vm
@@ -100,22 +118,27 @@ flowchart TB
     tg --> llm
     tg --> kok
     tg --> graf
+    tgc --> llm
+    owc --> llm
+    srm --> pg
+    tca --> neo
     tm --> cs
     tm --> loki
 
     %% ---------------- OTLP fan-in ----------------
-    owui & llm & kok & n8n & tg & tf -. otlp .-> alloy
+    owui & llm & kok & tg & tf & tetra -. otlp .-> alloy
 
     %% ---------------- OIDC ----------------
-    graf & owui & port & tm -. OIDC .-> aks
+    graf & owui & tm -. OIDC .-> aks
 
     %% ---------------- Traefik routes (representative) ----------------
-    tf --> owui & llm & kok & n8n & graf & vm & aks & port & ops & ngx & wv & atl & jt & tg & tm & hp
+    tf --> owui & llm & kok & graf & vm & aks & ops & ngx & wv & atl & jt & tg & tgc & tm & hp & decks & tca
 
-    %% ---------------- Host / SSH edges ----------------
+    %% ---------------- Host / SSH / eBPF edges ----------------
     host[(alpine-vps host)]:::host
     tg -. ssh .-> host
     ops -. ssh .-> host
+    tetra -. ebpf .-> host
 
     %% ---------------- External ----------------
     llm -. api .-> extllm([LLM providers:<br/>OpenAI·Anthropic·Vertex·Groq·xAI...]):::ext
