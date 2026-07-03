@@ -18,3 +18,16 @@ categories:
           - title: "Cyberthreats Over Last Month / Granularity: 1m"
             label: "Cyberthreats Over Time"
             synonyms: ["threats over time", "threat volume", "threat trend", "cyberthreats over last month", "threats last month"]
+  containers:
+    label: "Containers"
+    dashboards:
+      # Container performance dashboard (uid: containers). Panels templated by
+      # the `container` variable -> the caller binds e.g. container=crowdsec.
+      - uid: containers
+        expose:
+          - title: "Memory Usage per Container"     # exact live Grafana panel title
+            label: "Container Memory Usage"
+            synonyms: ["container memory", "memory usage", "ram usage", "crowdsec memory",
+                       "memory usage for the crowdsec container", "snapshot of crowdsec memory",
+                       "past 7 days of memory usage", "memory usage per container"]
+            variables: ["container"]                 # NL binds container=<name>, e.g. crowdsec
