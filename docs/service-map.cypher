@@ -41,6 +41,9 @@ MATCH (c:Container) WHERE c.name IN ['authentik-proxy','portainer','n8n-claude']
 MATCH (r:Route) WHERE r.hostname IN ['n8n.aicortex.cloud','portainer.aicortex.cloud'] DETACH DELETE r;
 MATCH (ds:Datastore) WHERE ds.name IN ['portainer.db'] DETACH DELETE ds;
 MATCH (db:Database) WHERE db.name IN ['n8n'] DETACH DELETE db;
+// correct an earlier mis-modeled edge: timeline-context-api talks to neo4j-db (bolt), not postgres
+MATCH (:Container {name:'timeline-context-api'})-[r:USES_DATABASE]->(:Datastore {name:'pg-enterprise'}) DELETE r;
+MATCH (:Container {name:'timeline-context-api'})-[r:DEPENDS_ON]->(:Container {name:'postgres'}) DELETE r;
 
 // ---------- Host & Networks --------------------------------------------------
 MERGE (h:Host {name:'alpine-vps'})
@@ -209,7 +212,6 @@ UNWIND [
   {svc:'ops-dashboard',       store:'pg-enterprise', db:'enterprise', role:'ops_dashboard'},
   {svc:'grafana',             store:'pg-enterprise', db:'enterprise', role:'grafana_ro'},
   {svc:'session-recall-mcp',  store:'pg-enterprise', db:'enterprise', role:'session_ingest'},
-  {svc:'timeline-context-api',store:'pg-enterprise', db:'enterprise', role:'session_ingest'},
   {svc:'litellm',             store:'pg-ai-stack',   db:'litellm',    role:'aistack'},
   {svc:'authentik-server',    store:'pg-authentik',  db:'authentik',  role:'authentik'},
   {svc:'authentik-worker',    store:'pg-authentik',  db:'authentik',  role:'authentik'},
@@ -295,7 +297,7 @@ UNWIND [
   {src:'threat-map',           dst:'loki',             via:'http:3100',  purpose:'log query',        ev:'env'},
   {src:'neo4j-mcp-server',     dst:'neo4j-db',         via:'bolt:7687',  purpose:'graph queries',    ev:'live'},
   {src:'session-recall-mcp',   dst:'postgres',         via:'pg:5432',    purpose:'session recall',   ev:'env'},
-  {src:'timeline-context-api', dst:'postgres',         via:'pg:5432',    purpose:'timeline context', ev:'inferred'},
+  {src:'timeline-context-api', dst:'neo4j-db',         via:'bolt:7687',  purpose:'graph-RAG context',ev:'env'},
   {src:'grafana-reports',      dst:'grafana',          via:'http:3000',  purpose:'render+export reports', ev:'inferred'},
   {src:'grafana-reports',      dst:'renderer',         via:'http:8081',  purpose:'PDF render',       ev:'inferred'},
   {src:'traefik',              dst:'crowdsec',         via:'http:8180',  purpose:'bouncer LAPI',     ev:'plugin'},

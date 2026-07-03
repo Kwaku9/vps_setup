@@ -22,7 +22,7 @@
 <body>
 <header>
   <h1>VPS Service Map — <code>alpine-vps</code></h1>
-  <p>Live recon 2026-06-01 · 13 pods · 37 services · Cloudflare Tunnel → Traefik → pods · source of truth: <code>docs/SERVICE-MAP.md</code></p>
+  <p>Reconciled to live 2026-07-03 · 17 pods · 46 services · Cloudflare Tunnel → Traefik → pods · source of truth: <code>docs/service-map.cypher</code> (loaded into neo4j-db) · see <code>SERVICE-MAP.md §13</code></p>
   <div class="legend">
     <span style="border-color:#5b9bd5;color:#9cc">edge/ingress</span>
     <span style="border-color:#7cb342;color:#bd9">app</span>
@@ -41,7 +41,7 @@
   <button onclick="zoom(0.1)">＋ zoom in</button>
   <button onclick="zoom(-0.1)">－ zoom out</button>
   <button onclick="zoom(0,true)">reset</button>
-  <span style="color:#8b949e;font-size:12px;margin-left:12px">Dashed = OIDC / OTLP / scrape / SSH / external · ⚠ = known risk (see SERVICE-MAP.md §11)</span>
+  <span style="color:#8b949e;font-size:12px;margin-left:12px">Dashed = OIDC / OTLP / scrape / SSH / eBPF / external · ⚠ = known risk (see SERVICE-MAP.md §11/§13)</span>
 </div>
 <div id="wrap">
 <pre class="mermaid">
@@ -55,28 +55,31 @@ flowchart TB
         tf[traefik v3.7 :80/:443]:::edge
         cs[crowdsec LAPI :8180]:::sec
     end
-    internet --> cfedge -->|"*.aicortex.cloud (20 hosts)"| cfd -->|https| tf
+    internet --> cfedge -->|"aicortex.cloud + *. (21 hosts)"| cfd -->|https| tf
     tf -. bouncer .-> cs
 
     subgraph AI["ai-stack-pod"]
         direction TB
-        owui[open-webui :8080]:::app
+        owui[open-webui v0.9.6 :8080]:::app
         llm[litellm :4000]:::app
         kok[kokoro-tts :8880]:::svc
         sxng[searxng]:::svc
         gtts[gemini-tts-proxy]:::svc
-        n8n[n8n-claude :5678]:::svc
-        aspg[(ai-stack-postgres<br/>litellm n8n memory-broken)]:::db
+        aspg[(ai-stack-postgres<br/>litellm memory-ok-pgvector)]:::db
     end
     owui --> llm --> aspg
     owui --> kok
     owui --> sxng
     llm --> gtts
-    n8n --> aspg
+
+    subgraph EMB["llama-embed-pod"]
+        lme[llama-embed degraded]:::svc
+    end
+    llm -. embeddings .-> lme
 
     subgraph AUTH["authentication-pod (+worker pod)"]
         direction TB
-        aks[authentik-server :9000]:::auth
+        aks[authentik-server 2026.5.2 :9000]:::auth
         akw[authentik-worker]:::auth
         akpg[(authentik-postgres)]:::db
         rds[(redis no-auth)]:::db
@@ -86,18 +89,23 @@ flowchart TB
     akw --> akpg
     akw --> rds
     aks <--> akw
-    akprox[authentik-proxy standby]:::auth -.-> aks
 
     subgraph DATA["shared-db-pod"]
-        pg[(postgres / enterprise<br/>sessions gateway trading)]:::db
+        pg[(postgres pgvector<br/>sessions gateway trading<br/>openwebui recall spike)]:::db
     end
+    subgraph GRAPH["neo4j-pod"]
+        neo[(neo4j-db :7687<br/>service-map + sessions)]:::db
+        nmcp[neo4j-mcp-server]:::mcp
+    end
+    nmcp --> neo
 
-    subgraph OBS["monitoring (metrics/logs/tempo pods)"]
+    subgraph OBS["monitoring (metrics/logs/tempo + reports)"]
         direction TB
         vm[(victoriametrics :8428 20y)]:::obs
         vma[vmalert BLACKHOLE]:::obs
-        graf[grafana :3000]:::app
+        graf[grafana 13.1 :3000]:::app
         rend[renderer]:::svc
+        grep[grafana-reports]:::app
         loki[(loki :3100 14d)]:::obs
         alloy[alloy collector]:::obs
         tempo[(tempo :3200 7d)]:::obs
@@ -115,6 +123,8 @@ flowchart TB
     graf --> tempo
     graf --> pg
     graf --> rend
+    grep --> graf
+    grep --> rend
 
     subgraph FE["frontend-pod"]
         direction LR
@@ -127,14 +137,19 @@ flowchart TB
 
     subgraph MGMT["management + integration + security"]
         direction TB
-        port[portainer]:::mgmt
         ops[ops-dashboard :8090]:::app
         tg[telegram-gateway :7555]:::app
+        tgc[telegram-coder :7556]:::app
+        owc[owui-coder :7557]:::app
         gdocs[google-docs-mcp]:::mcp
         scrapy[scrapy-mcp]:::mcp
+        srm[session-recall-mcp]:::mcp
+        tca[timeline-context-api :8080]:::mcp
+        decks[decks-nginx]:::fe
         hp[honeypot]:::sec
         tm[threat-map]:::sec
-        ais[ais-relay]:::svc
+        ais[ais-relay down]:::svc
+        tetra[tetragon eBPF]:::sec
     end
     ops --> pg
     ops --> vm
@@ -142,16 +157,20 @@ flowchart TB
     tg --> llm
     tg --> kok
     tg --> graf
+    tgc --> llm
+    owc --> llm
+    srm --> pg
+    tca --> neo
     tm --> cs
     tm --> loki
 
     owui -. otlp .-> alloy
     llm -. otlp .-> alloy
     tg -. otlp .-> alloy
+    tetra -. otlp .-> alloy
 
     graf -. OIDC .-> aks
     owui -. OIDC .-> aks
-    port -. OIDC .-> aks
     tm -. OIDC .-> aks
 
     tf --> owui
@@ -159,21 +178,23 @@ flowchart TB
     tf --> graf
     tf --> vm
     tf --> aks
-    tf --> port
     tf --> ops
     tf --> ngx
     tf --> wv
     tf --> atl
     tf --> jt
     tf --> tg
+    tf --> tgc
     tf --> tm
     tf --> hp
-    tf --> n8n
+    tf --> decks
+    tf --> tca
     tf --> kok
 
     host[(alpine-vps host)]:::host
     tg -. ssh .-> host
     ops -. ssh .-> host
+    tetra -. ebpf .-> host
 
     llm -. api .-> extllm([LLM providers<br/>OpenAI Anthropic Vertex Groq xAI]):::ext
     tg -. api .-> exttg([api.telegram.org]):::ext
