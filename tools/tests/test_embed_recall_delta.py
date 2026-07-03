@@ -1,8 +1,8 @@
 import importlib.util
 import pathlib
 
-# load tools/embed_recall_delta.py as a module (sibling dir, no package)
-_p = pathlib.Path(__file__).resolve().parent.parent / "embed_recall_delta.py"
+# load tools/fedora-gpu-embed/embed_recall_delta.py as a module (no package)
+_p = pathlib.Path(__file__).resolve().parent.parent / "fedora-gpu-embed" / "embed_recall_delta.py"
 _spec = importlib.util.spec_from_file_location("embed_recall_delta", _p)
 m = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(m)
