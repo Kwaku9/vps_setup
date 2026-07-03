@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 88" fill="none" role="img" aria-label="AI Cortex">
+  <title>AI Cortex</title>
+  <!-- Light-background variant: deep teal + ink, for use on white/light cards
+       (e.g. the Cloudflare Access login card). The dark-bg lockup is
+       aicortex-logo.svg / aicortex-logo-tagline.svg. -->
+  <defs>
+    <radialGradient id="corel" cx="50%" cy="45%" r="60%">
+      <stop offset="0%" stop-color="#2bb6a0"/>
+      <stop offset="100%" stop-color="#0e8a78"/>
+    </radialGradient>
+  </defs>
+  <!-- neuron: dendrites -->
+  <g stroke="#15A08D" stroke-width="2.2" stroke-linecap="round">
+    <path d="M44 44 L44 12"/>
+    <path d="M44 44 L72 28"/>
+    <path d="M44 44 L72 60"/>
+    <path d="M44 44 L44 76"/>
+    <path d="M44 44 L16 60"/>
+    <path d="M44 44 L16 28"/>
+  </g>
+  <!-- terminal nodes -->
+  <g fill="#0B1220" stroke="#15A08D" stroke-width="2.2">
+    <circle cx="44" cy="10" r="3"/>
+    <circle cx="74" cy="27" r="2.6"/>
+    <circle cx="74" cy="61" r="2.6"/>
+    <circle cx="44" cy="78" r="2.6"/>
+    <circle cx="14" cy="61" r="2.6"/>
+    <circle cx="14" cy="27" r="2.6"/>
+  </g>
+  <!-- soma -->
+  <circle cx="44" cy="44" r="11.5" fill="#0B1220" stroke="#15A08D" stroke-width="2.2"/>
+  <circle cx="44" cy="44" r="6" fill="url(#corel)"/>
+  <!-- wordmark -->
+  <text x="104" y="56" font-family="system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="34" font-weight="600" letter-spacing="5">
+    <tspan fill="#15A08D">AI</tspan><tspan fill="#0B1220">CORTEX</tspan>
+  </text>
+</svg>
