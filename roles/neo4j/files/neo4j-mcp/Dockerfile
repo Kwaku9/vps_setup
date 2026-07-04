@@ -10,9 +10,15 @@ LABEL org.opencontainers.image.title="neo4j-mcp" \
 # Pinned to the version captured from the live container for reproducibility.
 RUN pip install --no-cache-dir mcp-neo4j-cypher==0.6.0
 
+# Description shim: relabels the 3 tools with project-specific guidance (when to
+# use the sessions+infra graph vs. semantic recall, and how to query it) without
+# forking the package. It monkeypatches create_mcp_server then calls the stock
+# argv-driven main(), so the CMD flags below pass straight through.
+COPY neo4j_mcp_shim.py /app/neo4j_mcp_shim.py
+
 # Non-root for K8s-friendliness; the server needs no writable paths.
 RUN useradd -r -u 10001 mcp
 USER mcp
 
-ENTRYPOINT ["mcp-neo4j-cypher"]
+ENTRYPOINT ["python", "/app/neo4j_mcp_shim.py"]
 CMD ["--transport", "http", "--server-host", "0.0.0.0", "--server-port", "8080"]
