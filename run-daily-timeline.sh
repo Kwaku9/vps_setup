@@ -63,18 +63,29 @@ fi
 log "Step 3a: ensure Neo4j is running"
 NEO4J_OK=0
 if docker ps --filter name=neo4j-local --filter status=running --format '{{.Names}}' | grep -q neo4j-local; then
-    NEO4J_OK=1
     log "Neo4j already running"
 else
     log "Neo4j not running, starting"
     (cd "$REPO/local/neo4j-graph" && docker compose up -d) >>"$LOG" 2>&1
     sleep 15
-    if docker exec neo4j-local cypher-shell -u neo4j -p sessiongraph2024 "RETURN 1" >>"$LOG" 2>&1; then
-        NEO4J_OK=1
-    else
-        log "WARN: Neo4j unreachable after start — proceeding without graph ETL"
-    fi
 fi
+
+# Authoritative gate: HOST bolt reachability on :17687 — what step 3c's ETL
+# actually connects to, NOT an in-container check. The stack remaps bolt to
+# host :17687 to coexist with the livekit-agent neo4j on the default :7687,
+# so a container that is "healthy"/running internally can still be
+# unreachable from the host if the publish/port-forward isn't up. Probe it
+# unconditionally (even when the container was already running) so this
+# blind spot can't silently pass through to a 3c connection-refused.
+for _try in 1 2 3 4 5 6; do
+    if (exec 3<>/dev/tcp/127.0.0.1/17687) 2>/dev/null; then
+        NEO4J_OK=1
+        log "Neo4j reachable on host :17687"
+        break
+    fi
+    sleep 5
+done
+[ "$NEO4J_OK" = "1" ] || log "WARN: Neo4j unreachable on host :17687 — proceeding without graph ETL"
 
 # -------------------------------------------------------------------
 # DB credentials — the database is accessed by a dedicated least-
