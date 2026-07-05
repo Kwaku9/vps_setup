@@ -1,0 +1,30 @@
+---
+# honeypot-threatmap role defaults
+# Two hand-built security services that were previously deployed by hand (never in
+# Ansible) and lost their images to the weekly `podman image prune` — see
+# SERVICE-MAP.md §11.4 / §13. This role makes them reproducible + reboot-persistent.
+#
+#   honeypot   : apex aicortex.cloud sink, open to bots (no middleware)
+#   threat-map : threat.aicortex.cloud live threat-intel viewer (CF Access + crowdsec)
+
+honeypot_threatmap:
+  network: enterprise_network
+  # MaxMind GeoLite2 City DB — reuse CrowdSec's copy (kept fresh by the crowdsec role).
+  geoip_db: /opt/podman-data/crowdsec/data/GeoLite2-City.mmdb
+
+  honeypot:
+    container_name: honeypot
+    image: localhost/honeypot:latest
+    memory: 256m
+    port: 8099
+
+  threat_map:
+    container_name: threat-map
+    image: localhost/threat-map:latest
+    memory: 256m
+    port: 8097
+    loki_url: "http://logs-pod:3100"
+    crowdsec_url: "http://security-infra-pod:8180"
+    # CrowdSec LAPI bouncer registered for threat-map to stream live decisions.
+    # Key comes from vault: threat_map_crowdsec_key
+    bouncer_name: threat-map-app

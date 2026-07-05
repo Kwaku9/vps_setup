@@ -85,6 +85,12 @@
     - role: security
       tags: ['security', 'hardening']
 
+    # honeypot (apex) + threat-map (threat.) — after security so crowdsec (LAPI
+    # bouncer backend) exists, and after shared-services so the traefik dynamic dir
+    # is present. Previously hand-deployed (SERVICE-MAP.md §11.4); now reproducible.
+    - role: honeypot-threatmap
+      tags: ['honeypot-threatmap', 'security']
+
     # tailscale must run AFTER security: the security role's configure-firewall.sh
     # flushes the INPUT chain on every run, which would wipe any tailscale ACCEPT
     # rule inserted earlier. Tailscale's role re-adds the rule (and persists it

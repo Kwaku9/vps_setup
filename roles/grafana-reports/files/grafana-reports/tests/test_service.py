@@ -16,7 +16,7 @@ async def test_do_render_resolves_query_then_renders(tmp_path, monkeypatch):
     # inject catalog directly (skip Grafana discovery)
     eng.catalog._categories = [Category("threats", "Threats", [Dashboard("crowdsec-threats", "t",
         [Panel(12, "Cyber Attack Map", "Cyber Attack Map", ["attack map"], "geomap")])])]
-    async def fake_render(uid, pid, frm, to, w, h, settings, client=None):
+    async def fake_render(uid, pid, frm, to, w, h, settings, client=None, variables=None):
         assert (uid, pid) == ("crowdsec-threats", 12)
         return b"\x89PNG-bytes"
     monkeypatch.setattr("grafana_reports.service.render", fake_render)
@@ -29,8 +29,13 @@ async def test_do_render_resolves_query_then_renders(tmp_path, monkeypatch):
 async def test_do_render_explicit_ids_skip_resolution(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCAL_DIR", str(tmp_path))
     eng = Engine(_s(tmp_path))
-    async def fake_render(uid, pid, frm, to, w, h, settings, client=None):
+    seen = {}
+    async def fake_render(uid, pid, frm, to, w, h, settings, client=None, variables=None):
+        seen["variables"] = variables
         return b"PNGX"
     monkeypatch.setattr("grafana_reports.service.render", fake_render)
-    out = await eng.do_render(dashboard_uid="u", panel_id=3, from_time="now-1h", to_time="now")
+    out = await eng.do_render(dashboard_uid="u", panel_id=3, from_time="now-1h", to_time="now",
+                              variables={"container": "crowdsec"})
     assert out["report_id"]
+    # template variables flow through to the renderer (the crowdsec-memory path)
+    assert seen["variables"] == {"container": "crowdsec"}
