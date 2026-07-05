@@ -2,97 +2,37 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; media-src 'self'; object-src 'none'; base-uri 'none'">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌐</text></svg>">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AICORTEX — Live Threat Map</title>
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --bg: #050a0f;
-    --panel: #0a1520;
-    --border: #1a3040;
-    --accent: #00ff88;
-    --red: #ff3355;
-    --yellow: #ffcc00;
-    --blue: #00aaff;
-    --text: #c8d8e8;
-    --dim: #4a6a7a;
-  }
-  body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
-
-  /* Header */
-  header { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--panel); z-index: 10; flex-shrink: 0; }
-  .logo { font-size: 1.1rem; font-weight: 700; letter-spacing: .15em; color: var(--accent); }
-  .logo span { color: var(--dim); font-weight: 400; font-size: .85rem; margin-left: 8px; }
-  .counters { display: flex; gap: 24px; }
-  .counter { text-align: center; }
-  .counter .val { font-size: 1.4rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
-  .counter .lbl { font-size: .6rem; color: var(--dim); letter-spacing: .1em; }
-  .status { display: flex; align-items: center; gap: 6px; font-size: .75rem; color: var(--dim); }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
-
-  /* Main layout */
-  main { flex: 1; display: grid; grid-template-columns: 1fr 320px; overflow: hidden; }
-
-  /* Globe */
-  #globe-container { position: relative; background: radial-gradient(ellipse at center, #0d1b2a 0%, #050a0f 100%); width: 100%; height: 100%; min-height: 400px; overflow: hidden; }
-  #globe-container canvas { display: block; width: 100% !important; height: 100% !important; }
-
-  /* Sidebar */
-  aside { display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--panel); overflow: hidden; }
-
-  /* Stats panels */
-  .panel { padding: 12px 14px; border-bottom: 1px solid var(--border); }
-  .panel h3 { font-size: .65rem; letter-spacing: .12em; color: var(--dim); margin-bottom: 8px; }
-
-  .stat-row { display: flex; justify-content: space-between; align-items: center; margin: 4px 0; font-size: .75rem; }
-  .stat-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 2px; }
-  .stat-bar-fill { height: 100%; border-radius: 2px; background: var(--accent); transition: width .5s ease; }
-  .stat-count { color: var(--accent); font-weight: 700; min-width: 40px; text-align: right; font-size: .8rem; }
-
-  .type-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: .62rem; background: #0f2030; color: var(--blue); border: 1px solid #1a3550; }
-  .type-badge.wp   { color: #80c0ff; }
-  .type-badge.env  { color: #ffcc00; }
-  .type-badge.db   { color: #ff9944; }
-  .type-badge.shell { color: var(--red); }
-  .type-badge.ban  { color: var(--red); }
-
-  /* Live feed */
-  .feed-wrapper { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-  .feed-header { padding: 10px 14px 6px; }
-  .feed-header h3 { font-size: .65rem; letter-spacing: .12em; color: var(--dim); }
-  #feed { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
-  #feed::-webkit-scrollbar { width: 3px; }
-  #feed::-webkit-scrollbar-track { background: var(--bg); }
-  #feed::-webkit-scrollbar-thumb { background: var(--border); }
-
-  .feed-item { display: flex; gap: 8px; padding: 6px 6px; border-bottom: 1px solid #0d1e2e; align-items: flex-start; animation: fadein .3s ease; }
-  @keyframes fadein { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
-  .feed-flag { font-size: 1rem; flex-shrink: 0; width: 22px; text-align: center; }
-  .feed-body { flex: 1; min-width: 0; }
-  .feed-path { font-size: .72rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .feed-meta { font-size: .62rem; color: var(--dim); margin-top: 2px; }
-  .feed-time { font-size: .6rem; color: var(--dim); flex-shrink: 0; align-self: center; }
-
-  /* Responsive */
-  @media (max-width: 700px) {
-    main { grid-template-columns: 1fr; grid-template-rows: 1fr 220px; }
-    aside { border-left: none; border-top: 1px solid var(--border); flex-direction: row; overflow-x: auto; }
-    .feed-wrapper { min-width: 260px; }
-  }
-</style>
+<link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body>
 
 <header>
   <div class="logo">AICORTEX <span>LIVE THREAT INTELLIGENCE</span></div>
+
   <div class="counters">
     <div class="counter"><div class="val" id="cnt-total">0</div><div class="lbl">TOTAL 24H</div></div>
     <div class="counter"><div class="val" id="cnt-rate">0</div><div class="lbl">/ HOUR</div></div>
     <div class="counter"><div class="val" id="cnt-countries">0</div><div class="lbl">COUNTRIES</div></div>
+    <div class="src-chips">
+      <span class="src-chip"><span class="src-dot" style="background:#00a95e"></span>HP <b id="chip-honeypot">0</b></span>
+      <span class="src-chip"><span class="src-dot" style="background:#2789cc"></span>PRB <b id="chip-probes">0</b></span>
+      <span class="src-chip"><span class="src-dot" style="background:#e8304b"></span>BAN <b id="chip-bans">0</b></span>
+    </div>
   </div>
-  <div class="status"><div class="dot"></div><span id="status-text">Connecting…</span></div>
+
+  <div class="header-right">
+    <button id="btn-audio-arm" aria-label="Enable audio">🔊 ARM AUDIO</button>
+    <div id="audio-panel">
+      <button id="btn-audio-mute" class="active" aria-label="Toggle sound effects">SFX</button>
+      <input id="audio-vol" type="range" min="0" max="0.6" step="0.02" aria-label="Volume">
+      <button id="btn-ambient" aria-label="Toggle ambient soundtrack">AMBIENT</button>
+    </div>
+    <div class="status"><div class="dot" id="status-dot"></div><span id="status-text">Connecting…</span></div>
+  </div>
 </header>
 
 <main>
@@ -115,254 +55,46 @@
     </div>
 
     <div class="feed-wrapper">
-      <div class="feed-header"><h3>LIVE FEED</h3></div>
+      <div class="feed-header"><h3>EVENT FEED</h3></div>
       <div id="feed"></div>
     </div>
   </aside>
 </main>
 
-<!-- Globe.gl -->
-<script src="/static/vendor/globe.gl.min.js"></script>
-
-<script>
-// ---------------------------------------------------------------------------
-// Country flag emoji helper
-// ---------------------------------------------------------------------------
-function flag(cc) {
-  if (!cc || cc.length !== 2) return '🌐';
-  const base = 0x1F1E6 - 65;
-  return String.fromCodePoint(base + cc.charCodeAt(0), base + cc.charCodeAt(1));
-}
-
-// Attack type → badge class
-function badgeClass(type) {
-  if (!type) return '';
-  if (type.includes('wordpress')) return 'wp';
-  if (type.includes('env'))       return 'env';
-  if (type.includes('db'))        return 'db';
-  if (type.includes('shell'))     return 'shell';
-  if (type === 'ban')             return 'ban';
-  return '';
-}
-
-function shortType(type) {
-  const map = {
-    wordpress_probe: 'WordPress', env_probe: '.env scan', git_probe: '.git probe',
-    db_probe: 'DB probe', admin_probe: 'Admin probe', shell_probe: 'Shell probe',
-    api_probe: 'API scan', backup_probe: 'Backup scan', path_traversal: 'Path traversal',
-    credential_probe: 'Cred probe', cms_probe: 'CMS probe', generic_probe: 'Generic scan',
-    banned: 'BANNED', recon: 'Recon',
-  };
-  return map[type] || type;
-}
-
-function timeAgo(ts) {
-  const d = typeof ts === 'string' ? new Date(ts) : new Date(ts / 1e6);
-  const diff = Math.round((Date.now() - d) / 1000);
-  if (diff < 5)   return 'now';
-  if (diff < 60)  return `${diff}s`;
-  if (diff < 3600) return `${Math.round(diff/60)}m`;
-  return `${Math.round(diff/3600)}h`;
-}
-
-// ---------------------------------------------------------------------------
-// Globe setup
-// ---------------------------------------------------------------------------
-const VPS = { lat: 40.7128, lng: -74.006 }; // default NYC, overridden by stats
-const ARCS_LIMIT = 60;
-let globe, arcs = [];
-
-function initGlobe() {
-  const container = document.getElementById('globe-container');
-  // Defer until browser has painted layout so container has real dimensions
-  requestAnimationFrame(() => {
-    const w = container.offsetWidth || window.innerWidth - 320;
-    const h = container.offsetHeight || window.innerHeight - 50;
-
-    globe = Globe()(container)
-      .globeImageUrl('/static/vendor/earth-night.jpg')
-      .bumpImageUrl('/static/vendor/earth-topology.png')
-      .width(w)
-      .height(h)
-      .arcsData([])
-      .arcStartLat(d => d.startLat)
-      .arcStartLng(d => d.startLng)
-      .arcEndLat(d => d.endLat)
-      .arcEndLng(d => d.endLng)
-      .arcColor(d => d.color)
-      .arcAltitudeAutoScale(0.3)
-      .arcStroke(0.5)
-      .arcDashLength(0.4)
-      .arcDashGap(0.2)
-      .arcDashAnimateTime(1800)
-      .pointsData([{ lat: VPS.lat, lng: VPS.lng }])
-      .pointColor(() => '#00ff88')
-      .pointAltitude(0.01)
-      .pointRadius(0.5)
-      .pointLabel(() => 'AICORTEX VPS')
-      .backgroundColor('rgba(0,0,0,0)');
-
-    globe.controls().autoRotate = true;
-    globe.controls().autoRotateSpeed = 0.35;
-    globe.pointOfView({ lat: 20, lng: 0, altitude: 2.5 });
-
-    // Make canvas transparent so CSS gradient shows as background
-    const canvas = container.querySelector('canvas');
-    if (canvas) canvas.style.background = 'transparent';
-
-    window.addEventListener('resize', () => {
-      globe.width(container.offsetWidth).height(container.offsetHeight);
-    });
-  });
-}
-
-function addArc(event) {
-  if (!event.lat || !event.lon) return;
-  const color = event.attack_type === 'banned'
-    ? ['rgba(255,0,60,0)','rgba(255,0,60,0.9)','rgba(255,0,60,0)']
-    : ['rgba(0,255,136,0)','rgba(0,200,255,0.9)','rgba(0,255,136,0)'];
-
-  const arc = {
-    startLat: event.lat, startLng: event.lon,
-    endLat:   event.target_lat || VPS.lat,
-    endLng:   event.target_lon || VPS.lng,
-    color,
-    _ts: Date.now(),
-  };
-  arcs.push(arc);
-  if (arcs.length > ARCS_LIMIT) arcs = arcs.slice(-ARCS_LIMIT);
-  globe.arcsData([...arcs]);
-
-  // Fade out after 8 seconds
-  setTimeout(() => {
-    arcs = arcs.filter(a => a !== arc);
-    globe.arcsData([...arcs]);
-  }, 8000);
-}
-
-// ---------------------------------------------------------------------------
-// Stats
-// ---------------------------------------------------------------------------
-let statsTimeout;
-async function loadStats() {
-  try {
-    const r = await fetch('/api/stats');
-    const s = await r.json();
-
-    document.getElementById('cnt-total').textContent = s.total_24h.toLocaleString();
-    document.getElementById('cnt-countries').textContent = s.top_countries.length;
-
-    // Countries
-    const maxC = s.top_countries[0]?.count || 1;
-    document.getElementById('country-list').innerHTML = s.top_countries.slice(0, 7).map(c => `
-      <div class="stat-row">
-        <span>${flag(c.country?.slice(-2))} ${c.country}</span>
-        <span class="stat-count">${c.count}</span>
-      </div>
-      <div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.round(c.count/maxC*100)}%"></div></div>
-    `).join('');
-
-    // Types
-    const maxT = s.attack_types[0]?.count || 1;
-    document.getElementById('type-list').innerHTML = s.attack_types.slice(0, 6).map(t => `
-      <div class="stat-row">
-        <span class="type-badge ${badgeClass(t.type)}">${shortType(t.type)}</span>
-        <span class="stat-count">${t.count}</span>
-      </div>
-    `).join('');
-
-    // Paths
-    document.getElementById('path-list').innerHTML = s.top_paths.slice(0, 5).map(p => `
-      <div class="stat-row">
-        <span style="font-size:.68rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px">${p.path}</span>
-        <span class="stat-count">${p.count}</span>
-      </div>
-    `).join('');
-
-  } catch(e) { console.warn('stats fetch failed', e); }
-  statsTimeout = setTimeout(loadStats, 30000);
-}
-
-// ---------------------------------------------------------------------------
-// Live feed
-// ---------------------------------------------------------------------------
-const FEED_LIMIT = 80;
-let feedCount = 0;
-
-function addFeedItem(event, type) {
-  const feed = document.getElementById('feed');
-  const ts = event.ts || event.timestamp || '';
-  const div = document.createElement('div');
-  div.className = 'feed-item';
-  div.innerHTML = `
-    <div class="feed-flag">${flag(event.country_code)}</div>
-    <div class="feed-body">
-      <div class="feed-path">${event.path || event.msg || '/'}</div>
-      <div class="feed-meta">
-        <span class="type-badge ${badgeClass(event.attack_type)}">${shortType(event.attack_type || type)}</span>
-        ${event.city ? `&nbsp;${event.city},` : ''} ${event.country || ''}
-      </div>
+<footer>
+  <div class="transport">
+    <button id="btn-live">◉ LIVE</button>
+    <button id="btn-play">▶ PLAY</button>
+    <div class="group" id="speed-buttons" role="group" aria-label="Replay speed"></div>
+    <div class="group" id="range-presets" role="group" aria-label="Timeline range"></div>
+    <span id="replay-range"></span>
+    <span id="replay-clock"></span>
+    <button id="btn-intel">◈ INTEL</button>
+    <div class="legend" role="group" aria-label="Event sources">
+      <button id="legend-honeypot"><span class="src-dot" style="background:#00a95e"></span>HONEYPOT</button>
+      <button id="legend-probes"><span class="src-dot" style="background:#2789cc"></span>PROBES</button>
+      <button id="legend-bans"><span class="src-dot" style="background:#e8304b"></span>BANS</button>
     </div>
-    <div class="feed-time">${timeAgo(ts)}</div>
-  `;
-  feed.insertBefore(div, feed.firstChild);
-  feedCount++;
-  while (feed.children.length > FEED_LIMIT) feed.removeChild(feed.lastChild);
-  document.getElementById('cnt-rate').textContent = feedCount;
-}
+  </div>
+  <div class="timeline-wrap">
+    <canvas id="timeline-canvas" aria-label="Attack density timeline — drag to select a replay range"></canvas>
+    <div id="timeline-tooltip"></div>
+  </div>
+</footer>
 
-// ---------------------------------------------------------------------------
-// Recent events on load
-// ---------------------------------------------------------------------------
-async function loadRecent() {
-  try {
-    const r = await fetch('/api/recent');
-    const events = await r.json();
-    for (const e of events) {
-      addFeedItem(e, 'attack');
-      addArc(e);
-    }
-  } catch(e) { console.warn('recent fetch failed', e); }
-}
+<div id="intel-modal" role="dialog" aria-modal="true" aria-label="Grafana intel report">
+  <div class="intel-box">
+    <div class="intel-header">
+      <h2>◈ INTEL REPORT</h2>
+      <span id="intel-range"></span>
+      <div id="intel-tabs"></div>
+      <button id="intel-close" aria-label="Close">✕</button>
+    </div>
+    <div id="intel-body"></div>
+  </div>
+</div>
 
-// ---------------------------------------------------------------------------
-// WebSocket
-// ---------------------------------------------------------------------------
-let ws, reconnectDelay = 2000;
-
-function connect() {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws`);
-
-  ws.onopen = () => {
-    document.getElementById('status-text').textContent = 'Live';
-    reconnectDelay = 2000;
-  };
-
-  ws.onmessage = (msg) => {
-    try {
-      const { event, data } = JSON.parse(msg.data);
-      if (event === 'attack' || event === 'ban') {
-        addFeedItem(data, event);
-        addArc(data);
-      }
-    } catch(e) {}
-  };
-
-  ws.onclose = () => {
-    document.getElementById('status-text').textContent = `Reconnecting in ${Math.round(reconnectDelay/1000)}s…`;
-    setTimeout(connect, reconnectDelay);
-    reconnectDelay = Math.min(reconnectDelay * 1.5, 30000);
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Init
-// ---------------------------------------------------------------------------
-initGlobe();
-loadRecent();
-loadStats();
-connect();
-</script>
+<script src="/static/vendor/globe.gl.min.js"></script>
+<script type="module" src="/static/js/app.js"></script>
 </body>
 </html>
