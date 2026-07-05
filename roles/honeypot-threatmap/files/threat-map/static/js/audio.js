@@ -44,8 +44,7 @@ class AudioEngine {
     this.muted = store.get('tm_mute', false);
     this.volume = store.get('tm_vol', 0.22);
     this.ambientOn = store.get('tm_ambient', false);
-    this.ambientEl = null;
-    this.ambientAvailable = null;   // null = unprobed
+    this.ambient = null;            // procedural ambient node graph
     this._voiceWindow = [];
     this._lastSwarm = 0;
     this._noiseBuf = null;
@@ -76,40 +75,106 @@ class AudioEngine {
     this.volume = clamp(v, 0, 1);
     store.set('tm_vol', this.volume);
     this._applyGain();
-    if (this.ambientEl) this.ambientEl.volume = this._ambientVol();
+    if (this.ambient) this.ambient.gain.gain.value = this._ambientVol();
   }
 
   setMuted(m) {
     this.muted = !!m;
     store.set('tm_mute', this.muted);
     this._applyGain();
-    if (this.ambientEl) this.ambientEl.muted = this.muted;
   }
 
   toggleAmbient() {
     this.ambientOn = !this.ambientOn;
     store.set('tm_ambient', this.ambientOn);
     if (this.ambientOn && this.armed) this._startAmbient();
-    if (!this.ambientOn && this.ambientEl) this.ambientEl.pause();
+    else this._stopAmbient();
     return this.ambientOn;
   }
 
-  _ambientVol() { return clamp(this.volume * 0.55, 0, 0.4); }
+  _ambientVol() { return clamp(this.volume * 0.5, 0, 0.35); }
 
+  // Procedural "dark ops-center" bed: two low drones (root + fifth), a slow
+  // filtered-noise swell (LFO on a lowpass), and a sonar ping every ~11s.
   _startAmbient() {
-    if (this.ambientAvailable === false) return;
-    if (!this.ambientEl) {
-      this.ambientEl = new Audio('/static/audio/ambient-ops.ogg');
-      this.ambientEl.loop = true;
-      this.ambientEl.addEventListener('error', () => {
-        this.ambientAvailable = false;
-        document.dispatchEvent(new CustomEvent('ambient-unavailable'));
-      });
-    }
-    this.ambientEl.volume = this._ambientVol();
-    this.ambientEl.muted = this.muted;
-    this.ambientEl.play().then(() => { this.ambientAvailable = true; })
-      .catch(() => { /* not armed yet or missing file */ });
+    if (!this.ctx || this.ambient) return;
+    const ctx = this.ctx;
+    const bus = ctx.createGain();
+    bus.gain.value = this._ambientVol();
+    bus.connect(this.master);
+
+    const drone = (freq, level) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sawtooth';
+      o.frequency.value = freq;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 220;
+      g.gain.value = level;
+      o.connect(lp).connect(g).connect(bus);
+      o.start();
+      return { o, g, lp };
+    };
+    const root = drone(55, 0.16);    // A1
+    const fifth = drone(82.4, 0.1);  // E2
+
+    // Slow detune shimmer on the fifth.
+    const lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+    lfo.frequency.value = 0.05;
+    lfoGain.gain.value = 1.5;
+    lfo.connect(lfoGain).connect(fifth.o.frequency);
+    lfo.start();
+
+    // Filtered-noise wind swell.
+    const noise = ctx.createBufferSource();
+    noise.buffer = this._noiseBuffer();
+    noise.loop = true;
+    const nbp = ctx.createBiquadFilter();
+    nbp.type = 'bandpass';
+    nbp.frequency.value = 480;
+    nbp.Q.value = 0.7;
+    const ng = ctx.createGain();
+    ng.gain.value = 0.04;
+    const swell = ctx.createOscillator();
+    const swellGain = ctx.createGain();
+    swell.frequency.value = 0.03;
+    swellGain.gain.value = 0.03;
+    swell.connect(swellGain).connect(ng.gain);
+    noise.connect(nbp).connect(ng).connect(bus);
+    noise.start();
+    swell.start();
+
+    // Periodic sonar ping.
+    const ping = setInterval(() => {
+      if (!this.ctx || document.hidden) return;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(880, t);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.05, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+      o.connect(g).connect(bus);
+      o.start(t);
+      o.stop(t + 1.7);
+    }, 11000);
+
+    this.ambient = { bus, gain: bus, nodes: [root, fifth], lfo, noise, swell, ping };
+  }
+
+  _stopAmbient() {
+    if (!this.ambient) return;
+    const a = this.ambient;
+    clearInterval(a.ping);
+    try {
+      a.nodes.forEach((n) => n.o.stop());
+      a.lfo.stop(); a.noise.stop(); a.swell.stop();
+    } catch { /* already stopped */ }
+    a.bus.disconnect();
+    this.ambient = null;
   }
 
   _applyGain() {

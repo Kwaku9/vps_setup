@@ -25,8 +25,7 @@ class WorldAudio {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
-  private ambientEl: HTMLAudioElement | null = null;
-  private ambientAvailable: boolean | null = null;
+  private ambient: { bus: GainNode; stop: () => void } | null = null;
   private voiceWindow: number[] = [];
   public armed = false;
   public muted = store.get('wv_mute', false);
@@ -64,25 +63,22 @@ class WorldAudio {
     this.volume = Math.min(0.6, Math.max(0, v));
     store.set('wv_vol', this.volume);
     this.applyGain();
-    if (this.ambientEl) this.ambientEl.volume = this.ambientVol();
+    if (this.ambient) this.ambient.bus.gain.value = this.ambientVol();
   }
 
   setMuted(m: boolean): void {
     this.muted = m;
     store.set('wv_mute', m);
     this.applyGain();
-    if (this.ambientEl) this.ambientEl.muted = m;
   }
 
   toggleAmbient(): boolean {
     this.ambientOn = !this.ambientOn;
     store.set('wv_ambient', this.ambientOn);
     if (this.ambientOn && this.armed) this.startAmbient();
-    else if (!this.ambientOn && this.ambientEl) this.ambientEl.pause();
+    else this.stopAmbient();
     return this.ambientOn;
   }
-
-  get ambientMissing(): boolean { return this.ambientAvailable === false; }
 
   // ── SFX entry points ──────────────────────────────────────────────────
   ui(): void { this.play('click'); }
@@ -93,20 +89,94 @@ class WorldAudio {
   alert(): void { this.play('alert'); }
 
   // ── internals ─────────────────────────────────────────────────────────
-  private ambientVol(): number { return Math.min(0.35, this.volume * 0.6); }
+  private ambientVol(): number { return Math.min(0.3, this.volume * 0.55); }
 
+  // Procedural cinematic spy bed: a low minor-triad drone (A1/C2/E2) with a
+  // slow detune shimmer, an airy filtered-noise layer, and a distant sonar
+  // ping every ~14s. Synthesized — no asset, no CSP media dependency.
   private startAmbient(): void {
-    if (this.ambientAvailable === false) return;
-    if (!this.ambientEl) {
-      this.ambientEl = new Audio('/audio/ambient-spy.ogg');
-      this.ambientEl.loop = true;
-      this.ambientEl.addEventListener('error', () => { this.ambientAvailable = false; });
-    }
-    this.ambientEl.volume = this.ambientVol();
-    this.ambientEl.muted = this.muted;
-    this.ambientEl.play()
-      .then(() => { this.ambientAvailable = true; })
-      .catch(() => { /* missing file or not yet armed */ });
+    if (!this.ctx || !this.master || this.ambient) return;
+    const ctx = this.ctx;
+    const bus = ctx.createGain();
+    bus.gain.value = this.ambientVol();
+    bus.connect(this.master);
+
+    const oscs: OscillatorNode[] = [];
+    const noises: AudioBufferSourceNode[] = [];
+    const drone = (freq: number, level: number, detuneLfo = false) => {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = freq;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 240;
+      const g = ctx.createGain();
+      g.gain.value = level;
+      o.connect(lp).connect(g).connect(bus);
+      o.start();
+      oscs.push(o);
+      if (detuneLfo) {
+        const lfo = ctx.createOscillator();
+        const lg = ctx.createGain();
+        lfo.frequency.value = 0.04;
+        lg.gain.value = 2;
+        lfo.connect(lg).connect(o.frequency);
+        lfo.start();
+        oscs.push(lfo);
+      }
+    };
+    drone(55, 0.14);          // A1
+    drone(65.4, 0.09, true);  // C2
+    drone(82.4, 0.08, true);  // E2
+
+    const noise = ctx.createBufferSource();
+    noise.buffer = this.noiseBuffer();
+    noise.loop = true;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 600;
+    bp.Q.value = 0.6;
+    const ng = ctx.createGain();
+    ng.gain.value = 0.03;
+    const swell = ctx.createOscillator();
+    const sg = ctx.createGain();
+    swell.frequency.value = 0.025;
+    sg.gain.value = 0.025;
+    swell.connect(sg).connect(ng.gain);
+    noise.connect(bp).connect(ng).connect(bus);
+    noise.start();
+    swell.start();
+    oscs.push(swell);
+    noises.push(noise);
+
+    const ping = window.setInterval(() => {
+      if (!this.ctx || document.hidden) return;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = 990;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.04, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
+      o.connect(g).connect(bus);
+      o.start(t);
+      o.stop(t + 1.9);
+    }, 14000);
+
+    this.ambient = {
+      bus,
+      stop: () => {
+        clearInterval(ping);
+        try { oscs.forEach((o) => o.stop()); noises.forEach((n) => n.stop()); }
+        catch { /* already stopped */ }
+        bus.disconnect();
+      },
+    };
+  }
+
+  private stopAmbient(): void {
+    if (this.ambient) { this.ambient.stop(); this.ambient = null; }
   }
 
   private applyGain(): void {
