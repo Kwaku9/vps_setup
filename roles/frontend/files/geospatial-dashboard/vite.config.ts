@@ -16,11 +16,15 @@ function wigleProxy(): Plugin {
   let tokens = BUCKET_BURST;
   let lastRefill = Date.now();
 
+  const WIGLE_ORIGIN = "https://api.wigle.net";
+
   return {
     name: "wigle-proxy",
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
-        if (!req.url?.startsWith("/api/wigle")) return next();
+        // Strict prefix: next char must be / or ? (or end) so "/api/wiglexyz"
+        // and userinfo-smuggling paths like "/api/wigle@host" don't match.
+        if (!req.url || !/^\/api\/wigle(?:[/?]|$)/.test(req.url)) return next();
         const token = process.env.WIGLE_API_TOKEN;
         if (!token) {
           res.writeHead(503, { "Content-Type": "application/json" });
@@ -28,7 +32,25 @@ function wigleProxy(): Plugin {
           return;
         }
 
-        const target = "https://api.wigle.net" + req.url.replace(/^\/api\/wigle/, "");
+        // Build the upstream URL by RELATIVE resolution against a fixed base
+        // (never string concatenation — that let "/api/wigle@evil.com" resolve
+        // to https://api.wigle.net@evil.com, leaking the token to evil.com).
+        // Then assert the origin is exactly WiGLE before sending credentials.
+        let targetUrl: URL;
+        try {
+          const rel = req.url.replace(/^\/api\/wigle/, "") || "/";
+          targetUrl = new URL(rel, WIGLE_ORIGIN);
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "bad request path" }));
+          return;
+        }
+        if (targetUrl.origin !== WIGLE_ORIGIN) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "target host not allowed" }));
+          return;
+        }
+        const target = targetUrl.toString();
 
         const hit = cache.get(target);
         if (hit && Date.now() - hit.ts < CACHE_TTL_MS) {
