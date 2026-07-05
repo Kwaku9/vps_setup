@@ -332,9 +332,6 @@ class App {
     ambBtn.addEventListener('click', () => {
       ambBtn.classList.toggle('active', audio.toggleAmbient());
     });
-    document.addEventListener('ambient-unavailable', () => {
-      ambBtn.style.display = 'none';
-    });
   }
 
   _playBtn() {
