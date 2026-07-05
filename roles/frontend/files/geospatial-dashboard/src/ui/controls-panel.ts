@@ -32,7 +32,7 @@ export class ControlsPanel {
 
     this.buildPanel();
 
-    const { wrapper, state } = makeRetractable(this.container, 'left');
+    const { wrapper, state } = makeRetractable(this.container, 'left', 'wv_panel_controls');
     this.panelState = state;
     document.body.appendChild(wrapper);
   }
@@ -104,6 +104,7 @@ export class ControlsPanel {
       "Threats",
       "Maritime",
       "Artemis",
+      "Borders",
     ];
     for (const name of layers) {
       const btn = this.createButton(`${name}: --`, () =>
@@ -129,7 +130,7 @@ export class ControlsPanel {
     // Layer keys hint
     this.addSectionLabel("LAYER KEYS");
     const layerHint = document.createElement("div");
-    layerHint.textContent = "B=Bloom C=CCTV V=Traffic G=WiGLE X=FIRMS Z=ACLED 9=Threats 6=Maritime A=Artemis";
+    layerHint.textContent = "B=Bloom C=CCTV V=Traffic G=WiGLE X=FIRMS Z=ACLED 9=Threats 6=Maritime A=Artemis 8=Borders";
     layerHint.style.opacity = "0.6";
     layerHint.style.lineHeight = "1.4";
     this.container.appendChild(layerHint);
@@ -137,7 +138,7 @@ export class ControlsPanel {
     // Panel keys hint
     this.addSectionLabel("PANEL KEYS");
     const panelHint = document.createElement("div");
-    panelHint.textContent = "[=Left ]=Right \=Params /=Locations H=HUD";
+    panelHint.textContent = "[=Left ]=Right \=Params /=Locations H=HUD `=Clean";
     panelHint.style.opacity = "0.6";
     panelHint.style.lineHeight = "1.4";
     this.container.appendChild(panelHint);

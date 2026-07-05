@@ -12,6 +12,7 @@ import { ACLEDLayer } from "./acled/acled-layer";
 import { ThreatLayer } from "./threats/threat-layer";
 import { MaritimeLayer } from "./maritime/maritime-layer";
 import { ArtemisLayer } from "./artemis/artemis-layer";
+import { BorderLayer } from "./borders/border-layer";
 
 export interface LayerStatus {
   name: string;
@@ -32,7 +33,8 @@ export type LayerName =
   | "acled"
   | "threats"
   | "maritime"
-  | "artemis";
+  | "artemis"
+  | "borders";
 
 export class LayerManager {
   public satellites: SatelliteLayer;
@@ -48,6 +50,7 @@ export class LayerManager {
   public threats: ThreatLayer;
   public maritime: MaritimeLayer;
   public artemis: ArtemisLayer;
+  public borders: BorderLayer;
 
   constructor(viewer: Viewer) {
     this.satellites = new SatelliteLayer(viewer);
@@ -63,6 +66,7 @@ export class LayerManager {
     this.threats = new ThreatLayer(viewer);
     this.maritime = new MaritimeLayer(viewer);
     this.artemis = new ArtemisLayer(viewer);
+    this.borders = new BorderLayer(viewer);
   }
 
   async loadAll(): Promise<void> {
@@ -80,6 +84,7 @@ export class LayerManager {
       this.threats.load(),
       this.maritime.start(),
       this.artemis.load(),
+      this.borders.load(),
     ]);
 
     for (const result of results) {
@@ -109,6 +114,7 @@ export class LayerManager {
       { name: "Threats",     visible: this.threats.visible,     count: this.threats.count },
       { name: "Maritime",  visible: this.maritime.visible,  count: this.maritime.count },
       { name: "Artemis",   visible: this.artemis.visible,   count: this.artemis.count },
+      { name: "Borders",   visible: this.borders.visible,   count: this.borders.count },
     ];
   }
 
@@ -126,5 +132,6 @@ export class LayerManager {
     this.threats.destroy();
     this.maritime.destroy();
     this.artemis.destroy();
+    this.borders.destroy();
   }
 }
