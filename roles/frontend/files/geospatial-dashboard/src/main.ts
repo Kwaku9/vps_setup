@@ -1,5 +1,6 @@
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import { Cartesian3 } from "cesium";
+import { installOrchestrator } from "@/net/orchestrator";
 import { createViewer } from "@/globe/viewer";
 import { CameraController } from "@/globe/camera";
 import { getPOIByKey } from "@/globe/poi";
@@ -12,8 +13,27 @@ import { HUDOverlay } from "@/ui/hud-overlay";
 import { LocationsBar } from "@/ui/locations-bar";
 import { ParametersPanel } from "@/ui/parameters-panel";
 import { RightSidebar } from "@/ui/right-sidebar";
+import { HUDDock } from "@/ui/hud-dock";
+import { worldAudio } from "@/audio/engine";
+
+// Cinematic hide-all: fade every HUD panel out for a clean globe.
+function installCinematicStyles(): void {
+  const style = document.createElement("style");
+  style.textContent = `
+    .wv-hud-panel { transition: opacity 300ms ease; }
+    body.wv-cinematic .wv-hud-panel { opacity: 0 !important; pointer-events: none !important; }
+    @media (prefers-reduced-motion: reduce) { .wv-hud-panel { transition: none; } }
+  `;
+  document.head.appendChild(style);
+}
 
 async function init() {
+  // Must precede every layer: wraps window.fetch with per-upstream rate
+  // budgets, coalescing, backoff, and circuit breakers.
+  installOrchestrator();
+  installCinematicStyles();
+  worldAudio.installAutoArm();
+
   const viewer = await createViewer("cesiumContainer");
   const camera = new CameraController(viewer);
   const shaders = new ShaderManager(viewer.scene);
@@ -25,6 +45,10 @@ async function init() {
   const locationsBar = new LocationsBar(camera);
   const params = new ParametersPanel(viewer.scene);
   const rightSidebar = new RightSidebar(shaders, layers, controls);
+  const hudDock = new HUDDock(layers);
+  hudDock.setOnHideAll((hidden) => {
+    document.body.classList.toggle("wv-cinematic", hidden);
+  });
 
   // Wire up controls panel
   controls.setOnModeChange((mode: VisionMode) => {
@@ -64,10 +88,25 @@ async function init() {
       return;
     }
 
+    // Cinematic hide-all HUD
+    if (key === "`") {
+      hudDock.toggleHideAll();
+      return;
+    }
+
+    // Country borders overlay
+    if (key === "8") {
+      layers.toggleLayer("borders");
+      controls.updateLayers(layers.getStatus());
+      worldAudio.layerToggle();
+      return;
+    }
+
     // POI keys
     const poi = getPOIByKey(key);
     if (poi) {
       camera.flyTo(poi.target);
+      worldAudio.flyTo();
       return;
     }
 

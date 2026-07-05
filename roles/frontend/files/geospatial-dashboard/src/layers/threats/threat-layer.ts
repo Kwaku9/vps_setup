@@ -21,6 +21,7 @@ import {
   DEFAULT_THREAT_COLOR,
   getScenarioLabel,
 } from "./crowdsec-api";
+import { worldAudio } from "@/audio/engine";
 
 const MAX_THREATS = 200;
 const POLL_INTERVAL = 30_000;
@@ -109,6 +110,9 @@ export class ThreatLayer {
   private impactFlashTimer: number | null = null;
 
   private countryFilter: string | null = null;
+  // "all" keeps the community-blocklist atmosphere; "local" shows only
+  // decisions actually triggered by attacks on this host.
+  private originMode: "all" | "local" = "all";
 
   constructor(private viewer: Viewer) {
     const toRemove: Entity[] = [];
@@ -125,11 +129,30 @@ export class ThreatLayer {
    *  Pass null to show all threats. */
   setCountryFilter(country: string | null): void {
     this.countryFilter = country ? country.toUpperCase() : null;
+    this.refreshGroupVisibility();
+  }
+
+  setOriginMode(mode: "all" | "local"): void {
+    this.originMode = mode;
+    this.refreshGroupVisibility();
+  }
+
+  get originModeActive(): "all" | "local" {
+    return this.originMode;
+  }
+
+  private groupVisible(g: ThreatEntityGroup): boolean {
+    const countryOk = !this.countryFilter ||
+      g.event.country?.toUpperCase() === this.countryFilter;
+    const originOk = this.originMode === "all" || !g.event.community;
+    return this._visible && countryOk && originOk;
+  }
+
+  private refreshGroupVisibility(): void {
     for (const g of this.groups) {
-      const match = !this.countryFilter ||
-        g.event.country?.toUpperCase() === this.countryFilter;
-      g.source.show = this._visible && match;
-      g.arc.show = this._visible && match;
+      const show = this.groupVisible(g);
+      g.source.show = show;
+      g.arc.show = show;
     }
     this.viewer.scene.requestRender();
   }
@@ -209,6 +232,7 @@ export class ThreatLayer {
   }
 
   private triggerImpact(color: Color): void {
+    worldAudio.threatImpact();
     if (!this.impactFlash) return;
 
     // Flash the impact marker
@@ -240,12 +264,8 @@ export class ThreatLayer {
     if (!this._visible || this.groups.length === 0) return;
     if (this.missiles.length >= MAX_CONCURRENT_MISSILES) return;
 
-    // Respect country filter — only launch from visible groups
-    const launchable = this.countryFilter
-      ? this.groups.filter(
-          (g) => g.event.country?.toUpperCase() === this.countryFilter
-        )
-      : this.groups;
+    // Only launch from groups that pass the country + origin filters
+    const launchable = this.groups.filter((g) => this.groupVisible(g));
     if (launchable.length === 0) return;
 
     // Cycle through threats round-robin
@@ -261,6 +281,7 @@ export class ThreatLayer {
     const travelMs = MISSILE_MIN_TRAVEL +
       (arcLen / ARC_SEGMENTS) * (MISSILE_MAX_TRAVEL - MISSILE_MIN_TRAVEL);
 
+    worldAudio.threatLaunch();
     this.fireMissile(group.arcPositions, color, travelMs);
   }
 

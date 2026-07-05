@@ -2,6 +2,73 @@ import { defineConfig, loadEnv, type Plugin } from "vite";
 import cesium from "vite-plugin-cesium-build";
 import { resolve } from "path";
 
+/**
+ * WiGLE proxy as a middleware (replaces the raw proxy entry) so the server can
+ * enforce a shared rate budget + short response cache across every open tab.
+ * WiGLE's daily quota is tiny — the browser-side orchestrator throttles per
+ * client, this gate protects the account globally.
+ */
+function wigleProxy(): Plugin {
+  const CACHE_TTL_MS = 120_000;
+  const BUCKET_PER_MIN = 10;
+  const BUCKET_BURST = 3;
+  const cache = new Map<string, { ts: number; status: number; body: string }>();
+  let tokens = BUCKET_BURST;
+  let lastRefill = Date.now();
+
+  return {
+    name: "wigle-proxy",
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (!req.url?.startsWith("/api/wigle")) return next();
+        const token = process.env.WIGLE_API_TOKEN;
+        if (!token) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "WIGLE_API_TOKEN not configured" }));
+          return;
+        }
+
+        const target = "https://api.wigle.net" + req.url.replace(/^\/api\/wigle/, "");
+
+        const hit = cache.get(target);
+        if (hit && Date.now() - hit.ts < CACHE_TTL_MS) {
+          res.writeHead(hit.status, { "Content-Type": "application/json", "X-Cache": "HIT" });
+          res.end(hit.body);
+          return;
+        }
+
+        tokens = Math.min(BUCKET_BURST, tokens + ((Date.now() - lastRefill) / 60_000) * BUCKET_PER_MIN);
+        lastRefill = Date.now();
+        if (tokens < 1) {
+          res.writeHead(429, { "Content-Type": "application/json", "Retry-After": "30" });
+          res.end(JSON.stringify({ error: "wigle budget exhausted, retry later" }));
+          return;
+        }
+        tokens -= 1;
+
+        try {
+          const proxyResp = await fetch(target, {
+            headers: { Authorization: "Basic " + token, Accept: "application/json" },
+          });
+          const body = await proxyResp.text();
+          if (proxyResp.ok) {
+            cache.set(target, { ts: Date.now(), status: proxyResp.status, body });
+            if (cache.size > 300) {
+              const oldest = cache.keys().next().value;
+              if (oldest) cache.delete(oldest);
+            }
+          }
+          res.writeHead(proxyResp.status, { "Content-Type": "application/json", "X-Cache": "MISS" });
+          res.end(body);
+        } catch (err: any) {
+          res.writeHead(502, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+    },
+  };
+}
+
 function abuseipdbProxy(): Plugin {
   return {
     name: "abuseipdb-proxy",
@@ -39,9 +106,10 @@ function abuseipdbProxy(): Plugin {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   if (env.ABUSEIPDB_API_KEY) process.env.ABUSEIPDB_API_KEY = env.ABUSEIPDB_API_KEY;
+  if (env.WIGLE_API_TOKEN) process.env.WIGLE_API_TOKEN = env.WIGLE_API_TOKEN;
 
   return {
-    plugins: [cesium(), abuseipdbProxy()],
+    plugins: [cesium(), abuseipdbProxy(), wigleProxy()],
     resolve: {
       alias: { "@": resolve(__dirname, "src") },
     },
@@ -174,26 +242,8 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/overpass/, ""),
         },
-        "/api/wigle": {
-          target: "https://api.wigle.net",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/wigle/, ""),
-          configure: (proxy) => {
-            proxy.on("proxyReq", (proxyReq) => {
-              const token = env.WIGLE_API_TOKEN || "";
-              for (const h of proxyReq.getHeaderNames()) {
-                const lower = h.toLowerCase();
-                if (lower.startsWith("cf-") || lower.startsWith("x-forwarded") ||
-                    lower.startsWith("x-real") || lower === "origin" ||
-                    lower === "referer" || lower === "cookie" ||
-                    lower === "authorization" || lower.startsWith("sec-fetch")) {
-                  proxyReq.removeHeader(h);
-                }
-              }
-              if (token) proxyReq.setHeader("Authorization", "Basic " + token);
-            });
-          },
-        },
+        // /api/wigle is handled by the wigleProxy() middleware above
+        // (shared rate budget + cache + server-side auth).
         "/api/ais": {
           target: "http://backend-pod:9100",
           changeOrigin: true,
