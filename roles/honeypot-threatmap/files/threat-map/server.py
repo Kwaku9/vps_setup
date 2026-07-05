@@ -677,7 +677,8 @@ async def report(req: Request):
         body = await req.json()
     except Exception:
         raise HTTPException(status_code=400, detail="invalid JSON body")
-    panel = REPORT_PANELS.get(body.get("panel", ""))
+    panel_key = body.get("panel", "")
+    panel = REPORT_PANELS.get(panel_key) if isinstance(panel_key, str) else None
     if not panel:
         raise HTTPException(status_code=400,
                             detail=f"panel must be one of {sorted(REPORT_PANELS)}")
