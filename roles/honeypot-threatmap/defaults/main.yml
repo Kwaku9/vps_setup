@@ -9,8 +9,18 @@
 
 honeypot_threatmap:
   network: enterprise_network
-  # MaxMind GeoLite2 City DB — reuse CrowdSec's copy (kept fresh by the crowdsec role).
+  # MaxMind GeoLite2 City DB — shared with CrowdSec. Refreshed weekly by the
+  # geoip-refresh cron below (maxmind_account_id/maxmind_license_key from vault).
   geoip_db: /opt/podman-data/crowdsec/data/GeoLite2-City.mmdb
+  geoip_dir: /opt/podman-data/crowdsec/data
+
+  # Weekly GeoLite2 refresh (Sun 04:15). No-ops with a warning if the vault
+  # creds are missing. Restarts honeypot + threat-map so mmap'd handles reopen;
+  # crowdsec picks the new DB up on its next natural restart.
+  geoip_refresh:
+    enabled: true
+    editions: ["GeoLite2-City", "GeoLite2-ASN"]
+    cron: { minute: "15", hour: "4", weekday: "0" }
 
   honeypot:
     container_name: honeypot
@@ -25,6 +35,14 @@ honeypot_threatmap:
     port: 8097
     loki_url: "http://logs-pod:3100"
     crowdsec_url: "http://security-infra-pod:8180"
+    vm_url: "http://metrics-pod:8428"
+    # grafana-reports render engine (loopback-published, pod-DNS reachable);
+    # bearer = grafana_reports_auth_token from vault, injected server-side only.
+    reports_url: "http://reports-pod:8765"
+    # Attack-arc destination = real VPS coords (same vault vars WorldView uses).
+    target_lat: "{{ vault_vps_lat | default('40.7128') }}"
+    target_lon: "{{ vault_vps_lon | default('-74.0060') }}"
+    allowed_ws_origins: "https://threat.{{ domain_name | default('aicortex.cloud') }}"
     # CrowdSec LAPI bouncer registered for threat-map to stream live decisions.
     # Key comes from vault: threat_map_crowdsec_key
     bouncer_name: threat-map-app
