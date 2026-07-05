@@ -8,6 +8,9 @@ class Panel:
     label: str
     synonyms: list[str] = field(default_factory=list)
     panel_type: str = ""
+    # Grafana template variables this panel accepts (e.g. ["container"]); the
+    # caller/LLM binds values -> rendered as &var-<name>=<value>.
+    variables: list[str] = field(default_factory=list)
 
 @dataclass
 class Dashboard:

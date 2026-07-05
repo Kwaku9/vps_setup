@@ -80,3 +80,8 @@ boot_services:
     # Without its own OpenRC service it sits Exited after a reboot and the weekly
     # `podman system prune -f` reaps it (same failure mode as telegram/owui-coder).
     - { name: session-recall-mcp, enabled: true, depends_on: [ai-stack-pod, shared-db-pod] }
+    # honeypot (apex sink) + threat-map (threat. viewer) — hand-deployed until
+    # 2026-07-03, so they had no OpenRC unit and vanished on reboot / prune. Both
+    # reachable only via traefik; threat-map also streams crowdsec decisions.
+    - { name: honeypot,         enabled: true, depends_on: [traefik] }
+    - { name: threat-map,       enabled: true, depends_on: [traefik, crowdsec] }
