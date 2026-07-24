@@ -48,6 +48,14 @@ if ! "$REPO/sync-sessions-to-vps.sh" >>"$LOG" 2>&1; then
 fi
 
 # -------------------------------------------------------------------
+# Step 1b — Sync Codex sessions to VPS staging (non-fatal)
+# -------------------------------------------------------------------
+log "Step 1b: sync Codex sessions to VPS"
+if ! "$REPO/sync-codex-sessions-to-vps.sh" >>"$LOG" 2>&1; then
+    log "WARN step 1b: Codex sync failed (continuing)"
+fi
+
+# -------------------------------------------------------------------
 # Step 2 — Trigger ingestion on VPS
 # (VPS also has its own 03:00 cron — this is idempotent re-run)
 # -------------------------------------------------------------------
@@ -77,14 +85,33 @@ fi
 # unreachable from the host if the publish/port-forward isn't up. Probe it
 # unconditionally (even when the container was already running) so this
 # blind spot can't silently pass through to a 3c connection-refused.
-for _try in 1 2 3 4 5 6; do
-    if (exec 3<>/dev/tcp/127.0.0.1/17687) 2>/dev/null; then
+probe_bolt() {
+    for _try in 1 2 3 4 5 6; do
+        if (exec 3<>/dev/tcp/127.0.0.1/17687) 2>/dev/null; then
+            return 0
+        fi
+        sleep 5
+    done
+    return 1
+}
+
+if probe_bolt; then
+    NEO4J_OK=1
+    log "Neo4j reachable on host :17687"
+else
+    # Running-but-unreachable is a real, recurring state: the 05:30
+    # neo4j-sync.service oneshot used to leave conmon/rootlessport in its own
+    # cgroup, and systemd SIGABRTed them on unit teardown — killing the port
+    # forwarder while the container itself stayed "Up (healthy)". Self-heal
+    # with one forced restart rather than silently skipping the graph ETL.
+    log "WARN: Neo4j container up but :17687 unreachable — forcing restart"
+    docker stop -t 30 neo4j-local >>"$LOG" 2>&1 || true
+    docker start neo4j-local >>"$LOG" 2>&1 || true
+    if probe_bolt; then
         NEO4J_OK=1
-        log "Neo4j reachable on host :17687"
-        break
+        log "Neo4j reachable on host :17687 after restart"
     fi
-    sleep 5
-done
+fi
 [ "$NEO4J_OK" = "1" ] || log "WARN: Neo4j unreachable on host :17687 — proceeding without graph ETL"
 
 # -------------------------------------------------------------------
@@ -132,7 +159,23 @@ if [ "$NEO4J_OK" = "1" ]; then
         ssh -L "15432:$PG_IP:5432" -N "$VPS" &
         TUNNEL_PID=$!
         sleep 3
-        (cd "$REPO/local/etl" && PG_PORT=15432 PG_USER="$DB_USER" PG_PASSWORD="$DB_PASSWORD" PYTHONIOENCODING=utf-8 python sync_sessions_to_neo4j.py) >>"$LOG" 2>&1 \
+        # Run the ETL from its own venv. The system interpreter is a moving
+        # target — Fedora's jump to python3.14 silently orphaned the psycopg2
+        # and neo4j installs, and because this step is non-fatal the graph just
+        # stopped updating without anything failing loudly. Rebuild the venv
+        # whenever its interpreter or deps go missing.
+        ETL_PY="$REPO/local/etl/.venv/bin/python"
+        if ! "$ETL_PY" -c 'import psycopg2, neo4j, dotenv' 2>/dev/null; then
+            log "Step 3c: (re)building ETL venv — deps missing or interpreter stale"
+            rm -rf "$REPO/local/etl/.venv"
+            if python3 -m venv "$REPO/local/etl/.venv" >>"$LOG" 2>&1 \
+               && "$ETL_PY" -m pip install -q -r "$REPO/local/etl/requirements.txt" >>"$LOG" 2>&1; then
+                log "Step 3c: ETL venv rebuilt"
+            else
+                log "WARN step 3c: could not build ETL venv"
+            fi
+        fi
+        (cd "$REPO/local/etl" && PG_PORT=15432 PG_USER="$DB_USER" PG_PASSWORD="$DB_PASSWORD" PYTHONIOENCODING=utf-8 "$ETL_PY" sync_sessions_to_neo4j.py) >>"$LOG" 2>&1 \
             || log "WARN step 3c: ETL failed (continuing without graph data)"
         kill "$TUNNEL_PID" 2>/dev/null || true
     else
@@ -182,6 +225,23 @@ if ! scp timeline.html "$VPS:$VPS_DATA/timeline.html" >>"$LOG" 2>&1; then
 fi
 scp timeline.html "$VPS:$VPS_DATA/index.html" >>"$LOG" 2>&1
 scp journey-dataset.json "$VPS:$VPS_DATA/journey-dataset.json" >>"$LOG" 2>&1
+
+# -------------------------------------------------------------------
+# Step 5 — Publish a compact stats.json to the buildfol.io CDN so the
+# modern Overview page (TimelineStats.jsx) auto-updates. NON-FATAL: a
+# stats hiccup must never fail the timeline deploy above.
+# -------------------------------------------------------------------
+log "Step 5: publish stats.json to buildfol.io CDN (non-fatal)"
+if node "$JT_DIR/emit-stats.cjs" "$DS" "$JT_DIR/stats.json" >>"$LOG" 2>&1; then
+    if aws s3 cp "$JT_DIR/stats.json" s3://buildfolio-modern-assets/modern/stats.json \
+        --content-type application/json --cache-control "public, max-age=300" >>"$LOG" 2>&1; then
+        log "✓ stats.json published to buildfol.io CDN"
+    else
+        log "WARN step 5: aws s3 cp of stats.json failed (non-fatal)"
+    fi
+else
+    log "WARN step 5: emit-stats.cjs failed (non-fatal)"
+fi
 
 log "✓ Pipeline complete — https://timeline.aicortex.cloud"
 log "================================================================"
