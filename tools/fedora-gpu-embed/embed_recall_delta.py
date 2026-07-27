@@ -69,6 +69,12 @@ def embed(inputs):
         raise
 
 
+# Filter on a non-whitespace char (~ '[^[:space:]]'), NOT length(trim())>0:
+# PG trim() strips only spaces, so whitespace-only bodies (e.g. two newlines)
+# pass it, but Python .strip() empties them -> chunk_text() yields nothing ->
+# they never persist and get re-selected every run (a never-converging delta).
+# (Keep this note in Python, not inside the SQL string: a backslash-n in a
+# triple-quoted string becomes a real newline and would break an SQL comment.)
 SELECT_NEW = """
     SELECT m.id, s.session_uuid,
            COALESCE(p.display_name, p.project_path) AS project,
@@ -78,7 +84,7 @@ SELECT_NEW = """
     JOIN sessions.projects p ON p.id = s.project_id
     WHERE m.type IN ('user','assistant')
       AND m.content_text IS NOT NULL
-      AND length(trim(m.content_text)) > 0
+      AND m.content_text ~ '[^[:space:]]'
       AND NOT EXISTS (SELECT 1 FROM recall.chunks rc WHERE rc.message_id = m.id)
     ORDER BY m.id
 """
