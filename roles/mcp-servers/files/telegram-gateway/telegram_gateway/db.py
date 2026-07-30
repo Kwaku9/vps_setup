@@ -442,6 +442,35 @@ async def get_pending_approvals(limit: int = 10) -> list[asyncpg.Record]:
     )
 
 
+async def abandon_approval(approval_id: int, reason: str | None = None) -> bool:
+    """Close a row whose requester stopped waiting for a decision.
+
+    The PreToolUse hook polls for a fraction of APPROVAL_TIMEOUT_MINUTES and
+    then falls back to the local CLI prompt, so its row would otherwise sit
+    'pending' until the reaper's TTL sweep. Guarded on status='pending' so a
+    real decision landing in the race window is never clobbered — the caller
+    learns it lost by getting False back.
+    """
+    p = await get_pool()
+    result = await p.execute(
+        """
+        UPDATE gateway.approvals
+        SET status = 'abandoned',
+            decided_by_username = 'requester-timeout',
+            decided_at = now(),
+            metadata = coalesce(metadata, '{}'::jsonb)
+                       || jsonb_build_object('abandon_reason', $2::text)
+        WHERE id = $1 AND status = 'pending'
+        """,
+        approval_id, reason or "requester stopped waiting",
+    )
+    # result is like "UPDATE 1" (won the race) or "UPDATE 0" (already decided)
+    try:
+        return int(result.split()[-1]) == 1
+    except (IndexError, ValueError):
+        return False
+
+
 async def expire_stale_approvals() -> int:
     """Mark expired approvals. Returns count of expired rows."""
     p = await get_pool()

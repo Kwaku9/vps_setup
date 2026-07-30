@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Query
 
 from telegram_gateway import db
-from telegram_gateway.models import UpdateCommandStatusRequest
+from telegram_gateway.models import AbandonApprovalRequest, UpdateCommandStatusRequest
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,57 @@ async def get_pending_approvals(limit: int = Query(10, ge=1, le=100)):
         }
         for r in rows
     ]
+
+
+@router.post("/abandon_approval", summary="Close an approval whose requester gave up")
+async def abandon_approval(req: AbandonApprovalRequest):
+    """Called by the PreToolUse hook when its poll window closes undecided.
+
+    By then the hook has already fallen back to the local CLI prompt, so the
+    Telegram card is dead — nobody is listening to it. Without this the row
+    stays 'pending' until the TTL reaper catches it, and the card keeps live
+    buttons that can't affect anything.
+
+    Lives on the commands router (not send) so it is mounted in every BOT_MODE,
+    including owui — the hook's /get_approval_status poll is here for the same
+    reason.
+    """
+    row = await db.get_approval(req.approval_id)
+    if not row:
+        return {"ok": False, "error": "Approval not found"}
+
+    if not await db.abandon_approval(req.approval_id, req.reason):
+        # A decision beat us to it. Report what actually stuck.
+        current = await db.get_approval(req.approval_id)
+        return {
+            "ok": True,
+            "abandoned": False,
+            "status": current["status"] if current else "unknown",
+        }
+
+    # Best-effort: strip the dead buttons off the card so a late tap can't look
+    # like it did something. A Telegram failure must not fail the call — the row
+    # is already closed, which is the part that matters.
+    if row["telegram_message_id"]:
+        try:
+            from telegram_gateway.bot import edit_message_text
+            from telegram_gateway.formatter import format_approval_result
+
+            await edit_message_text(
+                row["telegram_chat_id"],
+                row["telegram_message_id"],
+                format_approval_result(row["prompt_text"], "abandoned", "no response"),
+                parse_mode="HTML",
+                reply_markup={"inline_keyboard": []},
+            )
+        except Exception:
+            logger.warning(
+                "abandon_approval %d: could not update the Telegram card",
+                req.approval_id, exc_info=True,
+            )
+
+    logger.info("Approval %d abandoned: %s", req.approval_id, req.reason or "-")
+    return {"ok": True, "abandoned": True, "status": "abandoned"}
 
 
 @router.get("/get_approval_status", summary="Check an approval's current status")
