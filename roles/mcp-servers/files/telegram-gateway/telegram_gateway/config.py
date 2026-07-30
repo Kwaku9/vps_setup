@@ -23,6 +23,12 @@ APPROVAL_HMAC_SECRET: str = os.environ.get("APPROVAL_HMAC_SECRET", "")
 # Approval timeout in minutes (pending approvals expire after this)
 APPROVAL_TIMEOUT_MINUTES: int = int(os.environ.get("APPROVAL_TIMEOUT_MINUTES", "10"))
 
+# How often the background reaper sweeps 'pending' approvals past expires_at
+# into 'expired'. 0 disables the sweep.
+APPROVAL_REAPER_INTERVAL_SECONDS: int = int(
+    os.environ.get("APPROVAL_REAPER_INTERVAL_SECONDS", "60")
+)
+
 DB_HOST: str = os.environ.get("DB_HOST", "shared-db-pod")
 DB_PORT: int = int(os.environ.get("DB_PORT", "5432"))
 DB_NAME: str = os.environ.get("DB_NAME", "enterprise")
@@ -45,7 +51,7 @@ CLAUDE_MCP_CONFIG: str = os.environ.get("CLAUDE_MCP_CONFIG", "")
 CLAUDE_ALLOWED_TOOLS: str = os.environ.get("CLAUDE_ALLOWED_TOOLS", "")
 
 OTEL_EXPORTER_OTLP_ENDPOINT: str = os.environ.get(
-    "OTEL_EXPORTER_OTLP_ENDPOINT", "http://monitoring-pod:4318"
+    "OTEL_EXPORTER_OTLP_ENDPOINT", "http://logs-pod:4318"
 )
 
 AUTH_TOKEN: str = os.environ.get("AUTH_TOKEN", "")
@@ -91,7 +97,7 @@ MCP_SERVER_PORT: int = int(os.environ.get("MCP_SERVER_PORT", "7555"))
 KOKORO_TTS_URL: str = os.environ.get("KOKORO_TTS_URL", "http://ai-stack-pod:8880")
 
 # Grafana screenshot rendering
-GRAFANA_URL: str = os.environ.get("GRAFANA_URL", "http://monitoring-pod:3000")
+GRAFANA_URL: str = os.environ.get("GRAFANA_URL", "http://metrics-pod:3000")
 GRAFANA_USER: str = os.environ.get("GRAFANA_USER", "admin")
 GRAFANA_PASSWORD: str = os.environ.get("GRAFANA_PASSWORD", "")
 

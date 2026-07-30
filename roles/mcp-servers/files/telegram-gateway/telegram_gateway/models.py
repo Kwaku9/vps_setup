@@ -32,6 +32,9 @@ class ApprovalStatus(str, Enum):
     APPROVED = "approved"
     DENIED = "denied"
     EXPIRED = "expired"
+    # Requester stopped waiting (its poll window is shorter than our TTL) and
+    # closed the row itself. Distinct from EXPIRED, which is the TTL elapsing.
+    ABANDONED = "abandoned"
 
 
 class Command(BaseModel):
@@ -131,6 +134,11 @@ class SendApprovalRequest(BaseModel):
     command_id: int | None = Field(None, description="Optional originating command ID")
     requested_by: str | None = Field(None, description="Username of the person requesting approval")
     metadata: dict[str, Any] | None = Field(None, description="Optional metadata for the approval")
+
+
+class AbandonApprovalRequest(BaseModel):
+    approval_id: int = Field(..., ge=1, description="Approval to close out")
+    reason: str | None = Field(None, description="Why the requester stopped waiting")
 
 
 class ApprovalResponse(BaseModel):

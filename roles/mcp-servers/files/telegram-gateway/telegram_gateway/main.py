@@ -9,7 +9,11 @@ import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastmcp import FastMCP
 
-from telegram_gateway.config import AUTH_TOKEN, MCP_SERVER_PORT
+from telegram_gateway.config import (
+    APPROVAL_REAPER_INTERVAL_SECONDS,
+    AUTH_TOKEN,
+    MCP_SERVER_PORT,
+)
 from telegram_gateway import db
 from telegram_gateway.bot import (
     router as bot_router,
@@ -33,6 +37,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 _listen_task: asyncio.Task | None = None
+_reaper_task: asyncio.Task | None = None
+
+
+async def _expire_approvals():
+    """Background task: sweep approvals past expires_at into 'expired'.
+
+    Nothing else does this in bulk. The two inline expiry paths only fire on a
+    row someone touches again — a late button tap (bot.py) or the
+    /permission_prompt poll timing out — so without this sweep every request
+    whose requester walked away sits 'pending' forever.
+    """
+    while True:
+        await asyncio.sleep(APPROVAL_REAPER_INTERVAL_SECONDS)
+        try:
+            n = await db.expire_stale_approvals()
+            if n:
+                logger.info("Expired %d stale approval(s)", n)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Never let a transient DB error kill the sweep loop.
+            logger.exception("Approval expiry sweep failed")
 
 
 async def _listen_responses():
@@ -127,7 +153,7 @@ async def _deliver_response(payload_str: str):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _listen_task
+    global _listen_task, _reaper_task
     # Startup
     await db.init_pool()
     from telegram_gateway.config import BOT_MODE, CODER_APPROVER_MCP_CONFIG
@@ -148,15 +174,21 @@ async def lifespan(app: FastAPI):
             json.dump({"mcpServers": {}}, f)
         logger.info("OWUI mode: empty mcp-config (hook-gated), per-workspace concurrency")
     _listen_task = asyncio.create_task(_listen_responses())
+    if APPROVAL_REAPER_INTERVAL_SECONDS > 0:
+        _reaper_task = asyncio.create_task(_expire_approvals())
+        logger.info(
+            "Approval expiry sweep every %ds", APPROVAL_REAPER_INTERVAL_SECONDS
+        )
     logger.info("Telegram Gateway started")
     yield
     # Shutdown
-    if _listen_task:
-        _listen_task.cancel()
-        try:
-            await _listen_task
-        except asyncio.CancelledError:
-            pass
+    for task in (_listen_task, _reaper_task):
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
     await job_queue.shutdown()
     await db.close_pool()
     logger.info("Telegram Gateway stopped")
