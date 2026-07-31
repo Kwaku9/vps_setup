@@ -6,11 +6,16 @@ backup:
   enabled: true
   # Base backup directory
   backup_dir: /opt/backups
-  # Retention: number of daily backups to keep
-  retention_days: 3
+  # Retention: number of daily backups to keep. Reduced 3->2: disk sits at ~91%
+  # and each (trimmed) backup is ~4.5G, so 2 copies (~9G) is the safe ceiling.
+  retention_days: 2
   # Pre-flight aborts the run (writing nothing) if free space on the backup
   # filesystem is below this many GB after pruning old backups. Peak usage is
-  # ~2x one backup (staging dir + final archive held at once), so keep headroom.
+  # ~2x one backup (staging dir + final archive held at once). Post-trim a
+  # backup is ~3G (obs TSDBs + node_modules + *.bak excluded), so peak ~6G and
+  # 8G guards it with headroom. The mid-run tar/gzip failure detection is the
+  # real backstop; if this gate aborts, the disk is genuinely too full — free
+  # space / enable S3, don't just lower this further.
   min_free_gb: 8
   # S3 sync (optional)
   s3_enabled: false
@@ -18,40 +23,55 @@ backup:
   s3_region: "us-east-1"
 
   # Data directories to backup (bind mounts under /opt/podman-data)
+  # Sizes noted 2026-07-05. victoriametrics (metrics TSDB, 2.3G) intentionally
+  # DROPPED: transient time-series with no DR value — it rebuilds after restore.
   data_dirs:
-    - /opt/podman-data/postgres
-    - /opt/podman-data/ai-stack/postgres
-    - /opt/podman-data/ai-stack/openwebui
-    - /opt/podman-data/ai-stack/litellm
-    - /opt/podman-data/redis
-    - /opt/podman-data/crowdsec/data
-    - /opt/podman-data/crowdsec/config
-    - /opt/podman-data/journey-tracker
-    - /opt/podman-data/mcp
-    - /opt/podman-data/victoriametrics
+    - /opt/podman-data/postgres            # 2.7G  session history + recall vectors — CRITICAL
+    - /opt/podman-data/ai-stack/postgres   # 104M  OWUI/litellm postgres
+    - /opt/podman-data/ai-stack/openwebui  # 2.3G  OWUI data/RAG
+    - /opt/podman-data/ai-stack/litellm    # 19K
+    - /opt/podman-data/redis               # 5K
+    - /opt/podman-data/crowdsec/data       # (part of 923M) security decisions
+    - /opt/podman-data/crowdsec/config     # security config
+    - /opt/podman-data/neo4j               # 428M store (1.0G txn logs excluded). Added 2026-07-31:
+                                           # the graph (~394k nodes incl. infra topology + risk
+                                           # register) had NO daily backup, only a stale 06-03 dump.
+    - /opt/podman-data/journey-tracker     # 2.9M
+    - /opt/podman-data/mcp                 # 99M
+    # - /opt/podman-data/victoriametrics   # 2.3G  DROPPED — transient metrics TSDB
 
   # Named Podman volumes to export
+  # loki-data (2.4G logs), tempo-data (1.3G traces), trivy-cache (1.1G vuln-db
+  # cache) DROPPED: transient/regenerable, ~4.8G of low-value data removed.
   named_volumes:
-    - grafana-data
-    - loki-data
-    - tempo-data
-    - authentik-postgres-data
-    - trivy-cache
-    - traefik-plugins
+    - grafana-data            # 74M   dashboards — keep
+    - authentik-postgres-data # 261M  identity/users — CRITICAL
+    - traefik-plugins         # 670K
+    # - loki-data             # 2.4G  DROPPED — transient log TSDB
+    # - tempo-data            # 1.3G  DROPPED — transient trace TSDB
+    # - trivy-cache           # 1.1G  DROPPED — regenerable vuln-db cache
 
   # Config directories to backup
   config_dirs:
     - /opt/compose
 
-  # Exclude patterns for tar
+  # Exclude patterns for tar. Beyond transient junk, drop regenerable/stale
+  # bloat that inflated the /opt/compose "config" backup to 2.7G:
+  #   node_modules  — reinstalled via npm/yarn, never restore-critical
+  #   *.bak / *.bak.* — stale hand-made backup dirs (e.g. decks.bak.<ts>, ~340M)
   exclude_patterns:
     - "*.tmp"
     - "*.log"
     - "*.pid"
+    - "node_modules"
+    - "*.bak"
+    - "*.bak.*"
+    - "neo4j/data/transactions"   # WAL only; safe to drop because the pod is stopped
 
   # Pods to stop during backup for consistent snapshots
   # security-infra-pod stays running (Traefik serves traffic)
   stop_pods:
+    - neo4j-pod          # 2026-07-31: stop for a consistent, checkpointed graph snapshot
     - metrics-pod
     - logs-pod
     - tempo-pod
