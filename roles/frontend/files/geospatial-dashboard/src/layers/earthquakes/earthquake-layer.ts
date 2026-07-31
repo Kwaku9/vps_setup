@@ -36,6 +36,7 @@ export class EarthquakeLayer {
   private entities: Entity[] = [];
   private refreshInterval: number | null = null;
   private _visible = true;
+  private minMagnitude = 0;
 
   constructor(private viewer: Viewer) {
     const toRemove: Entity[] = [];
@@ -58,6 +59,16 @@ export class EarthquakeLayer {
     this.update();
   }
 
+  /** Sidebar filter: hide quakes below this magnitude. */
+  setMinMagnitude(mag: number): void {
+    this.minMagnitude = mag;
+    this.update();
+  }
+
+  get minMagnitudeActive(): number {
+    return this.minMagnitude;
+  }
+
   private async update(): Promise<void> {
     try {
       const allQuakes = await fetchEarthquakes();
@@ -69,6 +80,7 @@ export class EarthquakeLayer {
       const alt = cam.height;
       const spanDeg = Math.min(90, Math.max(2, (alt / 1000000) * 15));
       const quakes = allQuakes.filter(q => {
+        if (q.magnitude < this.minMagnitude) return false;
         const dLat = Math.abs(q.latitude - lat);
         const dLon = Math.abs(q.longitude - lon);
         return dLat < spanDeg && dLon < spanDeg;
