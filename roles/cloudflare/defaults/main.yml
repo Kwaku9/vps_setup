@@ -116,6 +116,16 @@ cloudflare_access:
     enabled: true
     subdomain: "breakglass"
     backend: "http://management-pod:8090"
+  # lab.<domain> — client-review hosting (roles/lab). Its own Access app (more
+  # specific than the wildcard, so it overrides the Authentik admin gate) with
+  # Cloudflare One-Time PIN only: listed client emails get a code, no Authentik
+  # account needed. Same mechanism as breakglass, different audience.
+  lab:
+    enabled: true
+    subdomain: "lab"
+    allowed_emails:
+      - "40-blintz.commute@icloud.com"
+      - "lilyangel2012@gmail.com"
   # Branding for the Cloudflare Access login page (the first gate users hit on
   # protected *.<domain> apps, before the Authentik login page). Applied to the
   # Zero Trust *organization* via login_design, so it themes every Access app at

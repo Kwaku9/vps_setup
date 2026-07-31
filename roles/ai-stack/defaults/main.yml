@@ -68,7 +68,9 @@ ai_stack:
     # Primary embedder is the Fedora laptop GPU (llama.cpp CUDA, SAME GGUF) over the
     # tailnet; this VPS CPU pod is the LiteLLM FALLBACK for when the laptop is asleep/
     # off-tailnet. Fedora service: tools/fedora-gpu-embed/ (Quadlet llama-embed-gpu).
-    gpu_tailnet_url: "http://100.123.173.86:18090/v1"   # Fedora GPU (primary) over tailnet
+    # Tailnet IP has drifted before (was 100.123.173.86) — re-verify via `tailscale status`.
+    gpu_tailnet_url: "http://100.79.60.27:18090/v1"     # Fedora GPU (primary) over tailnet — verified 2026-07-30
+    gpu_rerank_url: "http://100.79.60.27:18092/rerank"  # Fedora GPU cross-encoder — verified 2026-07-30
     data_dir: "/opt/podman-data/llama-embed"
     model_file: "embeddinggemma-300M-Q8_0.gguf"
     model_url: "https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf"
