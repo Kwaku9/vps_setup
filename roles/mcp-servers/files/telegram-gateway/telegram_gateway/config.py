@@ -23,6 +23,12 @@ APPROVAL_HMAC_SECRET: str = os.environ.get("APPROVAL_HMAC_SECRET", "")
 # Approval timeout in minutes (pending approvals expire after this)
 APPROVAL_TIMEOUT_MINUTES: int = int(os.environ.get("APPROVAL_TIMEOUT_MINUTES", "10"))
 
+# How often the background reaper sweeps 'pending' approvals past expires_at
+# into 'expired'. 0 disables the sweep.
+APPROVAL_REAPER_INTERVAL_SECONDS: int = int(
+    os.environ.get("APPROVAL_REAPER_INTERVAL_SECONDS", "60")
+)
+
 DB_HOST: str = os.environ.get("DB_HOST", "shared-db-pod")
 DB_PORT: int = int(os.environ.get("DB_PORT", "5432"))
 DB_NAME: str = os.environ.get("DB_NAME", "enterprise")
