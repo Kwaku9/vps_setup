@@ -26,7 +26,13 @@ boot_services:
     - { name: shared-db-pod,            enabled: true,  depends_on: [] }
     - { name: logs-pod,                  enabled: true,  depends_on: [shared-db-pod] }
     - { name: tempo-pod,                 enabled: true,  depends_on: [] }
-    - { name: monitoring-pod,            enabled: true,  depends_on: [logs-pod] }
+    # Renamed 2026-07-29: this entry said `monitoring-pod`, but no such pod has
+    # ever existed — the real pod is `metrics-pod` (grafana, victoriametrics,
+    # vmalert, renderer). The consequence was silent and long-lived: the boot
+    # unit could never report started, so `rc-status` showed it stopped while
+    # the containers ran, and metrics had no *managed* boot unit at all. A
+    # hand-made /etc/init.d/metrics-pod was carrying it as live-only drift.
+    - { name: metrics-pod,               enabled: true,  depends_on: [logs-pod] }
     - { name: authentication-pod,        enabled: true,  depends_on: [shared-db-pod] }
     - { name: authentication-worker-pod, enabled: true,  depends_on: [authentication-pod] }
     # llama-embed-pod (EmbeddingGemma via llama.cpp): OWUI RAG embeddings, dialed
@@ -75,6 +81,9 @@ boot_services:
     # by traefik's file provider. Only reachable once traefik is up, so order it
     # after traefik (same as cloudflared).
     - { name: decks-nginx,      enabled: true, depends_on: [traefik] }
+    # lab.aicortex.cloud — public client-review static hosting; same shape as
+    # decks (standalone nginx behind traefik), so same boot ordering.
+    - { name: lab-nginx,        enabled: true, depends_on: [traefik] }
     # session-recall MCP — gemma-512 retrieval over recall.chunks. Needs postgres
     # (recall_ro on shared-db-pod) and ai-stack-pod (litellm embeddings) up first.
     # Without its own OpenRC service it sits Exited after a reboot and the weekly

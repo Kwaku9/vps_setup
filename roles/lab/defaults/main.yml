@@ -1,0 +1,18 @@
+---
+# lab.aicortex.cloud — client-review hosting for work-in-progress sites.
+#
+# Mirrors the decks pattern: standalone nginx container on enterprise_network,
+# routed by Traefik's file provider. NO Cloudflare Access app is created for
+# this hostname — it is intentionally PUBLIC so clients can review without a
+# login. Don't host anything sensitive here.
+#
+# The site itself is DATA, published by rsync-ing a production build into
+# data_dir (currently: the la-rouge-brows website/dist — built with absolute
+# asset paths, so it owns the domain root; give future projects their own
+# vite `base` + a subdirectory).
+lab:
+  enabled: true
+  container_name: "lab-nginx"
+  image: "docker.io/library/nginx:1.29-alpine"
+  data_dir: "/opt/compose/lab"
+  domain: "lab"
