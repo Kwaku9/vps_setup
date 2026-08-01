@@ -3,3 +3,13 @@
   service:
     name: node-exporter
     state: restarted
+
+- name: reload vmalert
+  # vmalert re-reads its rule files on SIGHUP. Without this, `Deploy alert rules`
+  # writes the file and vmalert keeps evaluating the OLD rules until something
+  # else restarts it — so rule changes deployed silently INERT (found 2026-08-01,
+  # when a new alert group sat on disk unloaded until a manual HUP).
+  command: podman exec vmalert kill -HUP 1
+  listen: reload vmalert
+  changed_when: false
+  failed_when: false
