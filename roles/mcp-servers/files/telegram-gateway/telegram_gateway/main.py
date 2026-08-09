@@ -233,10 +233,15 @@ if BOT_MODE == "owui":
     app.include_router(owui_router)
     app.include_router(commands_router)
 else:
+    from telegram_gateway.alerts import router as alerts_router
+
     app.include_router(bot_router)
     app.include_router(send_router)
     app.include_router(commands_router)
     app.include_router(permission_router)
+    # vmalert notifier target (/api/v2/alerts). Bearer-authed by the middleware
+    # above — not added to its exemption list on purpose.
+    app.include_router(alerts_router)
 
 
 @app.get("/health")
