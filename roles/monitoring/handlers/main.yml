@@ -4,6 +4,27 @@
     name: node-exporter
     state: restarted
 
+- name: reload alloy
+  # MUST be a restart, not a signal or /-/reload. alloy-config.alloy is bind
+  # mounted as a SINGLE FILE, and Ansible's template module writes atomically
+  # (temp file + rename), which produces a NEW INODE. A single-file bind mount
+  # stays pinned to the inode captured at container start, so after any template
+  # run the container keeps reading the OLD file — the host path and the
+  # container path are different inodes with the same name.
+  #
+  # Both in-place reloads therefore report success and change nothing: Alloy logs
+  # "config reloaded" and goes right on serving the stale config. Discovered
+  # 2026-08-06 — the file inside the container was from 2026-06-27 with 13 scrape
+  # blocks while the host file had 4, meaning ~6 weeks of Alloy config changes
+  # had deployed completely inert.
+  #
+  # Restarting re-establishes the mount against the current inode. Tailing
+  # positions survive because they live in the alloy-data volume, not in memory.
+  command: podman restart alloy
+  listen: reload alloy
+  changed_when: false
+  failed_when: false
+
 - name: reload vmalert
   # vmalert re-reads its rule files on SIGHUP. Without this, `Deploy alert rules`
   # writes the file and vmalert keeps evaluating the OLD rules until something
