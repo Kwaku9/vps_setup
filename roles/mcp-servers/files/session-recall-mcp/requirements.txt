@@ -1,4 +1,10 @@
-mcp>=1.2.0
+# CAP AT <2. mcp 2.0.0 moved FastMCP out of `mcp.server.fastmcp` into a separate
+# package, so `from mcp.server.fastmcp import FastMCP` in server.py raises
+# ModuleNotFoundError. The image had run fine for two weeks on 1.x; a rebuild on
+# 2026-08-09 resolved the unbounded `mcp>=1.2.0` to 2.0.0 and put the container
+# into a crash loop (1,431 restarts before it was caught), taking semantic search
+# down. Do not lift this cap without porting server.py to the 2.x API.
+mcp>=1.2.0,<2.0
 psycopg2-binary>=2.9.9
 requests>=2.31.0  # used by recall.py for LiteLLM query embedding
 uvicorn>=0.30
