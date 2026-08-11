@@ -62,6 +62,22 @@ neo4j:
   # Lambda's AWS secret). The container is registered in boot-services regardless,
   # so it auto-starts on reboot once it exists.
   context_api:
+    # ── UNMANAGED IN PRODUCTION — read before touching (investigated 2026-08-11) ──
+    # This is `false`, yet the timeline-context-api container IS live and serving the
+    # PUBLIC buildfol.io chat widget. Consequence: the "Deploy timeline-context-api"
+    # task SKIPS on every deploy, so ansible does not manage the running service at
+    # all, and a source edit synced to the repo copy has NO effect.
+    #
+    # Flipping this to `true` is the right fix, but it is blocked: the role asserts
+    # `timeline_api_key` is in vault.yml, and it is not there. Enabling without it makes
+    # the assert fail, which aborts the play and blocks every later role — so do BOTH
+    # together, in this order:
+    #   1. ansible-vault edit vault.yml   ->  timeline_api_key: <must equal
+    #      TIMELINE_API_KEY in the chatWidget Lambda's AWS "Buildfol.io" secret>
+    #   2. verify with `ansible-vault view vault.yml` (it has been left unencrypted
+    #      by a bad edit before), then set enabled: true here
+    # Do NOT enable it from all.yml with a partial `neo4j:` block — ansible's default
+    # hash behaviour is `replace`, so that would clobber pod_name, network, db, mcp, …
     enabled: false
     container_name: "timeline-context-api"
     image: "localhost/timeline-context-api:latest"
