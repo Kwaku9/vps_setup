@@ -27,7 +27,13 @@ ai_stack:
   litellm:
     enabled: true
     name: "litellm"
-    image: "ghcr.io/berriai/litellm-database:main-latest"
+    # PINNED BY DIGEST 2026-08-11. Was `:main-latest`, a FLOATING tag: an unrelated
+    # `--tags context-api` deploy recreated this container, pulled a newer LiteLLM whose
+    # Prisma schema had drifted from the DB, and it crash-looped -- taking the public
+    # buildfol.io chat widget down with `Upstream error 500`. A digest is immutable, so a
+    # recreate can never silently change versions. To upgrade: change this digest
+    # deliberately, then watch RestartCount stay flat (a crash-loop reports status=running).
+    image: "ghcr.io/berriai/litellm-database@sha256:b6f3888c75e09ba23e89387d3e1e03c29ba748fa1fc078e0decb91d1dd08d8b1"
     port: 4000
     config_file: "config.yml"
     env:
