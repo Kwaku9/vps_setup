@@ -62,23 +62,22 @@ neo4j:
   # Lambda's AWS secret). The container is registered in boot-services regardless,
   # so it auto-starts on reboot once it exists.
   context_api:
-    # ── UNMANAGED IN PRODUCTION — read before touching (investigated 2026-08-11) ──
-    # This is `false`, yet the timeline-context-api container IS live and serving the
-    # PUBLIC buildfol.io chat widget. Consequence: the "Deploy timeline-context-api"
-    # task SKIPS on every deploy, so ansible does not manage the running service at
-    # all, and a source edit synced to the repo copy has NO effect.
+    # ENABLED 2026-08-11. Until then this was `false` while the container was already
+    # live in production serving the PUBLIC buildfol.io chat widget — so the "Deploy
+    # timeline-context-api" task SKIPPED on every run, ansible did not manage the
+    # running service, and a source edit synced to the repo copy had NO effect. That is
+    # how a fix can appear deployed and change nothing; if this ever reads `false`
+    # again, check whether the container is still running before assuming it is off.
     #
-    # Flipping this to `true` is the right fix, but it is blocked: the role asserts
-    # `timeline_api_key` is in vault.yml, and it is not there. Enabling without it makes
-    # the assert fail, which aborts the play and blocks every later role — so do BOTH
-    # together, in this order:
-    #   1. ansible-vault edit vault.yml   ->  timeline_api_key: <must equal
-    #      TIMELINE_API_KEY in the chatWidget Lambda's AWS "Buildfol.io" secret>
-    #   2. verify with `ansible-vault view vault.yml` (it has been left unencrypted
-    #      by a bad edit before), then set enabled: true here
+    # Enabling requires `timeline_api_key` in vault.yml (the role asserts it, and a
+    # failed assert aborts the play and blocks every later role). Added to vault
+    # 2026-08-11, verified by sha256 to equal TIMELINE_API_KEY in the chatWidget
+    # Lambda's AWS "Buildfol.io" secret — they must stay equal or /context 401s and the
+    # widget silently falls back to persona-only.
+    #
     # Do NOT enable it from all.yml with a partial `neo4j:` block — ansible's default
     # hash behaviour is `replace`, so that would clobber pod_name, network, db, mcp, …
-    enabled: false
+    enabled: true
     container_name: "timeline-context-api"
     image: "localhost/timeline-context-api:latest"
     memory: "256m"
