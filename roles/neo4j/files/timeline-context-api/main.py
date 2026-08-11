@@ -46,8 +46,27 @@ _DENY = [
 ]
 
 
+# TOPIC-level deny, separate from the value-shape rules above. _DENY catches
+# credential *values* and `NAME=value` assignments; this catches lines that merely
+# DISCUSS security posture. Added 2026-08-11 after a scan of the live payload found
+# two commit subjects on the public endpoint — one about a "salt key for credential
+# encryption", one naming GRAFANA_URL/USER/PASSWORD env vars. No credential leaked,
+# but describing where secrets live is free reconnaissance. Applied to commit
+# subjects and, belt-and-braces, to summaries at serve time.
+_TOPIC_DENY = re.compile(
+    r"(?i)\b(password|passwd|secret|credential|vault|salt[ _-]?key|api[ _-]?key|token|"
+    r"rotate|rotation|revoke|leaked?|exposed|breach|xss|csrf|vulnerab|exploit|"
+    r"private[ _-]?key|ssh[ _-]?key)\b"
+)
+
+
 def _is_sensitive(text: str) -> bool:
     return any(p.search(text) for p in _DENY)
+
+
+def _is_sensitive_topic(text: str) -> bool:
+    """True if the text merely TALKS about secrets/security, even with no value in it."""
+    return _is_sensitive(text) or bool(_TOPIC_DENY.search(text))
 
 
 # NOTE: the title is used only as a "this session was substantive" FILTER — it is
@@ -64,6 +83,20 @@ WHERE s.title IS NOT NULL AND size(s.title) > 20
 RETURN p.display_name AS project, s.started_at AS date
 ORDER BY s.started_at DESC
 LIMIT 60
+"""
+
+# Authored, per-session summaries — the good substrate. `visibility` defaults to
+# 'private' in sessions.session_summaries and a row only becomes 'public' when BOTH
+# the summarising model and a local deny-list agreed it was safe. This query must
+# ALWAYS filter on summary_visibility = 'public'; dropping that filter would publish
+# summaries of security work. If no public summaries exist yet the endpoint falls
+# back to the project+date block, which is safe but thin.
+SUMMARIES_QUERY = """
+MATCH (p:Project)-[:HAS_SESSION]->(s:Session)
+WHERE s.summary_visibility = 'public' AND s.summary IS NOT NULL AND s.summary <> ''
+RETURN p.display_name AS project, s.summary AS summary, s.started_at AS date
+ORDER BY s.started_at DESC
+LIMIT 25
 """
 
 COMMITS_QUERY = """
@@ -85,6 +118,9 @@ async def get_context(x_api_key: str = Header(None)):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     async with driver.session() as db_session:
+        summaries_result = await db_session.run(SUMMARIES_QUERY)
+        raw_summaries = await summaries_result.data()
+
         sessions_result = await db_session.run(SESSIONS_QUERY)
         raw_sessions = await sessions_result.data()
 
@@ -93,7 +129,33 @@ async def get_context(x_api_key: str = Header(None)):
 
     lines: list[str] = ["=== RECENT ACTIVITY (live from timeline graph) ===\n"]
 
-    lines.append("## What I've been working on (recent sessions, by project):")
+    # Prefer authored summaries. They describe what was ACHIEVED rather than what was
+    # asked, and unlike the old title field they cannot contain a pasted credential,
+    # because they are written rather than excerpted.
+    emitted_summaries = 0
+    if raw_summaries:
+        lines.append("## What I've been working on (recent sessions):")
+        seen: set[str] = set()
+        for s in raw_summaries:
+            summary = (s.get("summary") or "").strip()
+            project = (s.get("project") or "misc").strip()
+            if not summary or summary in seen:
+                continue
+            # belt and braces: the deny-list runs again at serve time, so a summary
+            # that slipped through generation still cannot reach the public endpoint.
+            if _is_sensitive_topic(summary) or _is_sensitive(project):
+                continue
+            seen.add(summary)
+            date = str(s.get("date", ""))[:10]
+            lines.append(f"- [{date}] ({project[:60]}): {summary[:220]}")
+            emitted_summaries += 1
+            if emitted_summaries >= 15:
+                break
+        lines.append("")
+
+    # Fallback / supplement: project + date only. Never emits session titles, which
+    # are raw user prompts. Kept unconditionally so the blob is never empty.
+    lines.append("## Recent project activity (by project):")
     seen_days: set[tuple[str, str]] = set()
     count = 0
     for s in raw_sessions:
@@ -119,7 +181,7 @@ async def get_context(x_api_key: str = Header(None)):
             continue
         if any(first_line.startswith(p) for p in SKIP_PREFIXES):
             continue
-        if _is_sensitive(first_line):
+        if _is_sensitive_topic(first_line):
             continue
         date = str(c.get("date", ""))[:10]
         project = c.get("project") or "misc"
