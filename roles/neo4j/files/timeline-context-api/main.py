@@ -32,6 +32,17 @@ _DENY = [
     re.compile(r"\b172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}\b"),
     re.compile(r"(?i)xox[baprs]-[0-9A-Za-z-]{8,}"),        # slack tokens
     re.compile(r"gh[pousr]_[0-9A-Za-z]{20,}"),             # github tokens
+    # --- value-shape patterns (added 2026-08-11) -------------------------------
+    # The keyword rules above only fire on `NAME=value` / `NAME: value` forms, so a
+    # BARE pasted credential sailed straight through. An audit of the corpus's 41
+    # unrotated credentials found ~31 of them were shapes nothing here matched.
+    re.compile(r"sk-ant-[0-9A-Za-z_-]{20,}"),              # anthropic
+    re.compile(r"sk-proj-[0-9A-Za-z_-]{20,}"),             # openai project keys
+    re.compile(r"\bsk-[0-9A-Za-z]{20,}"),                  # openai / litellm
+    re.compile(r"\bAIza[0-9A-Za-z_-]{30,}"),               # google api keys
+    re.compile(r"\b\d{8,10}:AA[0-9A-Za-z_-]{30,}"),        # telegram bot tokens
+    re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://[^\s/@]+:[^\s/@]+@"),  # creds in a URI
+    re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\."),  # JWTs
 ]
 
 
@@ -39,19 +50,18 @@ def _is_sensitive(text: str) -> bool:
     return any(p.search(text) for p in _DENY)
 
 
-def _clean_title(title: str) -> str | None:
-    t = title.strip()
-    if any(t.startswith(p) for p in SKIP_PREFIXES):
-        return None
-    if _is_sensitive(t):
-        return None
-    return t[:160]
-
-
+# NOTE: the title is used only as a "this session was substantive" FILTER — it is
+# deliberately NOT returned. Session titles are first_user_msg[:200] from
+# ingest-sessions.py, i.e. RAW USER PROMPTS. This blob is appended to a public chat
+# widget's system prompt and sent to a third-party LLM on EVERY request, so emitting
+# titles published verbatim prompts (and, since ~21 credential hits in the corpus came
+# from user pastes, would eventually publish a pasted secret). Project name + date
+# carries the "what am I working on lately" signal with none of that risk.
+# Do not add s.title back to the RETURN.
 SESSIONS_QUERY = """
 MATCH (p:Project)-[:HAS_SESSION]->(s:Session)
 WHERE s.title IS NOT NULL AND size(s.title) > 20
-RETURN p.display_name AS project, s.title AS title, s.started_at AS date
+RETURN p.display_name AS project, s.started_at AS date
 ORDER BY s.started_at DESC
 LIMIT 60
 """
@@ -83,17 +93,21 @@ async def get_context(x_api_key: str = Header(None)):
 
     lines: list[str] = ["=== RECENT ACTIVITY (live from timeline graph) ===\n"]
 
-    lines.append("## What I've been working on (recent sessions):")
-    seen_titles: set[str] = set()
+    lines.append("## What I've been working on (recent sessions, by project):")
+    seen_days: set[tuple[str, str]] = set()
     count = 0
     for s in raw_sessions:
-        title = _clean_title(s.get("title") or "")
-        if not title or title in seen_titles:
-            continue
-        seen_titles.add(title)
         date = str(s.get("date", ""))[:10]
-        project = s.get("project") or "misc"
-        lines.append(f"- [{date}] ({project}): {title}")
+        project = (s.get("project") or "misc").strip()
+        # project names are directory names, but filter them anyway — cheap, and this
+        # blob reaches a public endpoint.
+        if not project or _is_sensitive(project):
+            continue
+        key = (date, project)
+        if key in seen_days:
+            continue
+        seen_days.add(key)
+        lines.append(f"- [{date}] {project[:60]}")
         count += 1
         if count >= 20:
             break
