@@ -30,7 +30,10 @@ MERGE (s:Session {uuid: r.session_uuid})
   SET s.title=r.title, s.source=r.source, s.model=r.model, s.status=r.status, s.category=r.category,
       s.started_at=r.started_at, s.ended_at=r.ended_at, s.duration_seconds=toInteger(r.duration_seconds),
       s.total_messages=toInteger(r.total_messages), s.total_turns=toInteger(r.total_turns),
-      s.total_tool_calls=toInteger(r.total_tool_calls), s.git_branch=r.git_branch, s.cli_version=r.cli_version;
+      s.total_tool_calls=toInteger(r.total_tool_calls), s.git_branch=r.git_branch, s.cli_version=r.cli_version,
+      // Authored summary + its visibility. The public chat widget reads ONLY
+      // summary_visibility='public'; default is 'private' (see session_summaries).
+      s.summary=r.summary, s.summary_visibility=r.summary_visibility;
 
 LOAD CSV WITH HEADERS FROM 'file:///sg_sessions.csv' AS r WITH r WHERE r.project_path <> ''
 MATCH (p:Project {path: r.project_path}), (s:Session {uuid: r.session_uuid})
