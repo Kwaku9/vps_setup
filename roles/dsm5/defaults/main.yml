@@ -29,6 +29,12 @@ dsm5:
   container_name: "dsm5-nginx"
   image: "docker.io/library/nginx:1.29-alpine"
   data_dir: "/opt/compose/dsm5"
+  # A DIRECTORY, not a single file. Ansible's template module writes atomically
+  # (temp + rename), which allocates a NEW inode; a single-file bind mount stays
+  # pinned to the old one, so the container serves a stale config forever and
+  # `podman restart` does not help — only recreation re-resolves the bind.
+  # Mounting the containing directory makes the update visible on restart.
+  conf_dir: "/opt/compose/dsm5-conf"
   log_dir: "/opt/compose/dsm5-logs"
   domain: "dsm"
   # How long captured queries are kept before logrotate discards them.

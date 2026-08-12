@@ -1,4 +1,0 @@
----
-- name: restart dsm5 nginx
-  command: podman restart {{ dsm5.container_name }}
-  listen: restart dsm5 nginx
