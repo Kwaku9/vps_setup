@@ -1,0 +1,10 @@
+[Unit]
+Description=MarketWatch pre-open brief (weekdays 08:47 America/New_York)
+
+[Timer]
+OnCalendar=Mon-Fri 08:47 America/New_York
+Persistent=false
+Unit=marketwatch@preopen.service
+
+[Install]
+WantedBy=timers.target

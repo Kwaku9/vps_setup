@@ -1,0 +1,19 @@
+[Unit]
+Description=Postgres VPS → local clone (enterprise DB into postgres-local container)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/general/scripts/pg-sync.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+# 2.6 GB dump + restore with HNSW/index rebuilds can take a while
+TimeoutStartSec=3600
+# The script leaves the detached postgres-local container in our cgroup;
+# without KillMode=process systemd would SIGTERM it when the unit exits.
+KillMode=process
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pg-sync

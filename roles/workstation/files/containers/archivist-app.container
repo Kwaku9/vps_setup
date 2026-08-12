@@ -1,0 +1,38 @@
+# ARCHIVIST web UI + CPU pipeline (talks to the archivist-pg quadlet over host loopback).
+# Uses Network=host so the container reaches 127.0.0.1:5436 (where archivist-pg publishes).
+[Unit]
+Description=ARCHIVIST web UI + CPU pipeline
+Wants=archivist-pg.service network-online.target
+After=archivist-pg.service network-online.target
+
+[Container]
+ContainerName=archivist-app
+Image=localhost/archivist-app:latest
+Network=host
+# The DB creds — POSTGRES_PASSWORD from the same env file archivist-pg uses.
+EnvironmentFile=/home/general/Projects/VScdeProjects/archivist/deploy/.pg-env
+# Override the in-container defaults: talk to the host quadlet, not a compose sibling.
+Environment=ARCHIVIST_DB__HOST=127.0.0.1
+Environment=ARCHIVIST_DB__PORT=5436
+# Bind to loopback since Network=host — otherwise it would publish on 0.0.0.0.
+Environment=ARCHIVIST_WEB_HOST=127.0.0.1
+# Media sources (read-only). Do NOT unplug the Ventoy USB while this is running.
+Volume=/run/media/general/Ventoy/iCloud:/run/media/general/Ventoy/iCloud:ro
+Volume=/run/media/general/GOPRO:/run/media/general/GOPRO:ro
+# Derived data (thumbnails, keyframes, models cache).
+Volume=%h/.local/share/archivist/derived:/home/archivist/.local/share/archivist/derived:Z
+Volume=%h/.local/share/archivist/models:/home/archivist/.local/share/archivist/models:ro,Z
+# The SigLIP2 text tower, kept locally inside the app's own models dir (already
+# mounted, already SELinux-relabeled :Z). HF_HOME points transformers here, so
+# with HF_HUB_OFFLINE=1 the semantic search arm loads from disk and NEVER calls
+# HuggingFace. Populated by a reflink copy from the host HF cache; survives
+# restores because it lives in the archivist data dir, not the shared ~/.cache.
+Environment=HF_HOME=/home/archivist/.local/share/archivist/models/hf
+Exec=web --port 8099
+
+[Service]
+Restart=always
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

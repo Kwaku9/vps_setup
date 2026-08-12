@@ -1,0 +1,60 @@
+# Ansible controller for the FEDORA WORKSTATION (the laptop) — not the VPS.
+#
+# Sibling to ./Dockerfile, which builds localhost/ansible-vps:latest for the VPS.
+# That image is python:3.12-alpine and deliberately has no systemd: Alpine uses
+# OpenRC, so `apk search systemd` returns nothing and `systemctl` cannot exist
+# there. The VPS never needed it.
+#
+# The laptop is the opposite case. The workstation role's whole job is managing
+# `systemd --user` units, and Ansible's systemd_service module shells out to the
+# `systemctl` binary — so the controller image must be systemd-based. Fedora is
+# chosen to match the laptop itself, keeping the container's systemctl aligned
+# with the host user-manager it talks to.
+#
+# Build + run via tools/ansible-workstation.sh (do not `podman run` by hand —
+# the mounts and env below are load-bearing).
+#     podman exec ansible-workstation \
+#       ansible-playbook -i inventory/hosts workstation.yml --check --diff
+
+FROM fedora:43
+
+# ── OS tooling ─────────────────────────────────────────────────────
+# systemd: provides /usr/bin/systemctl. Installed for the CLIENT binary only —
+#          this container never runs an init system. systemctl talks to the
+#          HOST's user manager over the bind-mounted $XDG_RUNTIME_DIR.
+# openssh-clients / rsync / git: Ansible transport + synchronize/git modules
+# python3-libdnf5: required by Ansible's dnf module on Fedora
+RUN dnf -y install --setopt=install_weak_deps=False \
+        systemd \
+        python3 \
+        python3-pip \
+        python3-libdnf5 \
+        openssh-clients \
+        rsync \
+        git \
+        jq \
+        which \
+        procps-ng \
+    && dnf clean all
+
+# ── Python packages ────────────────────────────────────────────────
+# Pinned to match the VPS controller (ansible-core 2.20.3) so playbook
+# behaviour is identical across the two images.
+RUN pip install --no-cache-dir --root-user-action=ignore \
+    "ansible>=13.2.0" \
+    "ansible-lint" \
+    "cryptography>=46.0" \
+    "passlib" \
+    "jmespath" \
+    "netaddr"
+
+WORKDIR /ansible
+
+ENV ANSIBLE_HOST_KEY_CHECKING=False \
+    ANSIBLE_FORCE_COLOR=true \
+    ANSIBLE_RETRY_FILES_ENABLED=False \
+    ANSIBLE_CALLBACK_RESULT_FORMAT=yaml \
+    ANSIBLE_STDOUT_CALLBACK=default \
+    PYTHONUNBUFFERED=1
+
+CMD ["/bin/bash", "-c", "echo 'ansible-workstation ready'; exec sleep infinity"]

@@ -1,0 +1,140 @@
+---
+# ============================================================================
+# GPU FLEET -- DECLARED DESIRED STATE (Infrastructure as Code)
+# ============================================================================
+# This file is the SOURCE OF TRUTH for the ephemeral vast.ai GPU fleet used to
+# generate synthetic parentheticals for the CourtListener corpus.
+#
+# Nothing about this fleet is created by hand. `gpu-fleet.yml` reconciles live
+# vast.ai instances against the `gpu_fleet_members` list below: it rents what is
+# missing, leaves what already matches, and `gpu-fleet-teardown.yml` destroys
+# what is no longer declared. Editing this file is how you change the fleet.
+#
+# WHY THAT MATTERS HERE SPECIFICALLY
+# ----------------------------------
+# vast.ai bills from instance CREATION until instance DESTRUCTION -- stopping a
+# container does not stop the meter. A hand-rented box that someone forgets is a
+# silent recurring charge with no record of why it existed. Declaring the fleet
+# means every instance is traceable to a line in this file, and teardown is a
+# playbook run rather than an act of memory.
+#
+# COST CONTROL IS A HARD LIMIT, NOT A COMMENT
+# -------------------------------------------
+# gpu_fleet_max_dph is enforced in the provisioning role: if the sum of the
+# chosen offers' hourly prices exceeds it, the play FAILS before renting
+# anything. A typo in gpu_min_vram_mb that lands the fleet on H100s should stop
+# the run, not quietly cost 5x.
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# Fleet-wide policy
+# ---------------------------------------------------------------------------
+gpu_fleet_enabled: true
+
+# Label prefix. Every instance this playbook creates is labelled
+# "<prefix>-<member name>", which is also how reconciliation finds instances it
+# already owns. Never rename this without tearing down first, or the next run
+# will not recognise the existing fleet and will rent a duplicate one.
+gpu_fleet_label_prefix: "cl-paren"
+
+# Hard ceiling on combined $/hr across the whole fleet. Provisioning aborts
+# above this. Three ~$0.45 cards plus headroom.
+gpu_fleet_max_dph: 2.00
+
+# Offer selection constraints, applied server-side in the vast bundles query.
+gpu_fleet_offer:
+  verified: true
+  rentable: true
+  num_gpus: 1
+  min_reliability: 0.98
+  min_inet_down_mbps: 2000      # weights are 15-60GB per model; download is real cost
+  min_disk_gb: 200
+  type: "on-demand"             # interruptible is cheaper but a killed 5h run costs more
+
+# GPUs excluded regardless of price. Turing and Ampere-consumer parts lack BF16
+# or FP8 throughput; the prefill-heavy workload here is compute-bound, so the
+# cheap-per-hour options are the expensive-per-job ones.
+gpu_fleet_banned_gpus:
+  - "Q RTX 8000"
+  - "Tesla V100"
+  - "RTX A5000"
+  - "RTX 3090"
+  - "RTX 3090 Ti"
+  - "Titan RTX"
+
+# Each member MUST land on a different physical host. Three GPUs in one chassis
+# share CPU, PCIe and NIC, and one host failing would take the whole comparison
+# with it.
+gpu_fleet_distinct_hosts: true
+
+# ---------------------------------------------------------------------------
+# The fleet itself. One member == one rented instance == one model.
+# ---------------------------------------------------------------------------
+# Each model gets its own instance rather than sharing one: this workload is
+# throughput-bound, and co-residency would split VRAM between models, shrinking
+# each one's KV cache and therefore its batch size. Sequential-on-one-GPU beats
+# concurrent-on-one-GPU; separate instances beat both on wall-clock at the same
+# total cost, because vast bills per instance-hour.
+# ---------------------------------------------------------------------------
+gpu_fleet_members:
+
+  - name: gemma3-27b
+    enabled: true
+    # ~16GB at 4-bit; 40GB card leaves ample KV cache for large batches.
+    model_repo: "google/gemma-3-27b-it"
+    model_quant: "bitsandbytes"       # vLLM in-flight quant; no separate download
+    gpu_min_vram_mb: 40000
+    served_name: "gemma-3-27b"
+    api_port: 18101
+    max_model_len: 8192
+
+  - name: qwen35-27b
+    enabled: true
+    model_repo: "Qwen/Qwen3.5-27B-Instruct"
+    model_quant: "bitsandbytes"
+    gpu_min_vram_mb: 40000
+    served_name: "qwen3.5-27b"
+    api_port: 18102
+    max_model_len: 8192
+
+  - name: saul-54b
+    enabled: true
+    # The domain hypothesis: SaulLM is continued-pretrained on 540B legal tokens
+    # and fine-tuned on US case law. It is a 2024 Mixtral derivative, so the
+    # honest expectation is that the 2026 general models beat it -- which is
+    # exactly why it is in the fleet rather than assumed either way.
+    model_repo: "Equall/SaulLM-54B-Instruct"
+    model_quant: "bitsandbytes"
+    gpu_min_vram_mb: 46000            # ~30GB at 4-bit + KV headroom
+    served_name: "saul-54b"
+    api_port: 18103
+    max_model_len: 8192
+
+# ---------------------------------------------------------------------------
+# Instance image and runtime
+# ---------------------------------------------------------------------------
+# A vast "instance" is itself a container. Running podman inside it is nested
+# containerisation and needs a privileged host, which not every vast machine
+# grants. So the base image is a plain CUDA userland and podman is installed and
+# driven ROOTLESS inside it -- see roles/gpu_inference for the capability probe
+# that decides whether nesting is actually available, and the documented
+# fallback when it is not.
+gpu_fleet_instance:
+  image: "nvidia/cuda:12.4.1-runtime-ubuntu22.04"
+  disk_gb: 200
+  runtype: "ssh"
+  # Bind the model server to loopback ONLY. vast instances have public IPs; a
+  # 0.0.0.0 bind would expose an unauthenticated inference endpoint to the
+  # internet. Reached over an SSH tunnel from the VPS instead.
+  bind_address: "127.0.0.1"
+
+gpu_fleet_podman:
+  # Serving image run *inside* each instance under podman.
+  serving_image: "docker.io/vllm/vllm-openai:latest"
+  container_name_prefix: "cl-paren"
+  # HF cache lives on the instance's big disk, not the container overlay, so a
+  # container restart does not re-download 30GB of weights.
+  hf_cache_dir: "/workspace/hf-cache"
+  gpu_memory_utilization: 0.90
+  # Generation happens in large batches; latency per request is irrelevant.
+  max_num_seqs: 64

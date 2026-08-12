@@ -1,0 +1,8 @@
+[Unit]
+Description=MarketWatch autonomous market observer (%i)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/general/Projects/VScdeProjects/market-regime/run_agent.sh %i
+TimeoutStartSec=2700

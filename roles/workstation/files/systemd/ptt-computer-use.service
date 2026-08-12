@@ -1,0 +1,28 @@
+[Unit]
+Description=UI-TARS Computer-Use PTT — Right Ctrl+Alt push-to-talk (hold, speak, act)
+After=pipewire.service whisper-gpu.service
+Wants=whisper-gpu.service
+
+[Service]
+Type=simple
+ExecStart=/home/general/.venvs/mcp-tools/bin/python /home/general/Projects/VScdeProjects/ui-tars-desktop/ptt-computer-use.py
+Restart=on-failure
+RestartSec=3
+# --- hotkey ---
+Environment=PTT_MODS=rctrl+ralt
+Environment=PTT_ARM_DELAY=0.35
+# --- safety: dry-run by default (aims, never clicks). Flip to 0 to go live. ---
+Environment=DRY_RUN=1
+# --- agent config (all swappable) ---
+Environment=BRAIN=uitars-2b
+Environment=UITARS_MONITOR=auto
+Environment=TTS_VOICE=piper
+Environment=UITARS_PY=/usr/bin/python3
+# --- backends ---
+Environment=WHISPER_URL=http://127.0.0.1:8787
+Environment=WHISPER_MODEL=large-v3-turbo
+Environment=KOKORO_URL=http://127.0.0.1:3456
+Environment=YDOTOOL_SOCKET=/run/user/1000/.ydotool_socket
+
+[Install]
+WantedBy=default.target

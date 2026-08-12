@@ -1,0 +1,74 @@
+# Whisper GPU STT container (faster-whisper, port 8787) — backend for push-to-talk.
+#
+# Migrated from podman-compose to a quadlet on 2026-07-30 so the container can
+# carry a liveness probe. Rationale: on 2026-07-30 the laptop suspended mid-
+# transcription, nvidia-suspend failed to save VRAM (NVRM ... NV_ERR_NO_MEMORY),
+# and the CUDA call never returned. The single uvicorn worker parked in
+# futex_do_wait forever — service "active", container "Up", port LISTENing, but
+# every request including /health hung. PTT silently dropped every recording
+# until a manual restart. podman-compose cannot emit --health-on-failure, hence
+# this unit. docker-compose.yml is kept for `podman compose build` only.
+#
+# The Health* keys below are a direct analog of a Kubernetes livenessProbe and
+# are meant to be DELETED at migration, not ported:
+#   HealthCmd/HealthInterval/HealthTimeout/HealthRetries -> livenessProbe
+#                                            httpGet: {path: /health, port: 8787}
+#   HealthOnFailure=kill + Restart=always    -> kubelet restart (restartPolicy)
+#   AddDevice=nvidia.com/gpu=all             -> resources.limits nvidia.com/gpu
+#   PublishPort                              -> Service
+# Nothing here is laptop- or suspend-specific; it recovers from any wedge.
+
+[Unit]
+Description=Whisper GPU STT container (faster-whisper, port 8787)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+ContainerName=whisper-gpu
+Image=localhost/whisper-gpu:latest
+AddDevice=nvidia.com/gpu=all
+SecurityLabelDisable=true
+PublishPort=8787:8787
+# Pre-existing compose-created volume — holds the baked model cache. Keep this
+# exact name or faster-whisper loses the offline model and HF_HUB_OFFLINE fails.
+Volume=whisper-mcp_whisper-models:/root/.cache/huggingface
+Volume=/home/general:/host-home:ro
+# Other containers (e.g. the livekit voice agent) resolve this by alias.
+Network=livekit-voice-net
+NetworkAlias=whisper-gpu
+
+# Keep the shared 6GB GPU usable by Voicebox: load the ~2GB distilled model
+# only while transcribing, then release its VRAM.
+Environment=WHISPER_DEFAULT_MODEL=distil-large-v3
+Environment=WHISPER_DEVICE=cuda
+Environment=WHISPER_PRELOAD=0
+Environment=WHISPER_UNLOAD_AFTER_REQUEST=1
+Environment=WHISPER_PORT=8787
+Environment=NVIDIA_VISIBLE_DEVICES=all
+# Model is baked into the whisper-models volume; run fully offline so
+# faster-whisper never phones home to HuggingFace to validate the cache.
+Environment=HF_HUB_OFFLINE=1
+Environment=TRANSFORMERS_OFFLINE=1
+
+# Liveness probe. Only python3 exists in the image (no curl/wget).
+HealthCmd=python3 -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8787/health',timeout=5)"
+# server.py's transcribe() is `async def` but calls faster-whisper SYNCHRONOUSLY,
+# so the event loop — /health included — is blocked for the whole transcription.
+# A tight probe would therefore kill legitimate long jobs. 10 retries x 30s
+# tolerates ~5min of blocking work before declaring the server wedged.
+# Tighten this only after transcription is moved off the event loop.
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=10
+HealthStartPeriod=30s
+# `kill` rather than `restart`: podman-run(1) says not to combine the restart
+# action with systemd-managed containers — let systemd's Restart= policy act.
+HealthOnFailure=kill
+
+[Service]
+Restart=always
+RestartSec=5
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,19 @@
+[Unit]
+Description=Voice Hotkey — Ctrl+Alt push-to-talk with auto STT backend detection
+After=pipewire.service kokoro-tts.service
+
+[Service]
+Type=simple
+ExecStart=/home/general/.venvs/mcp-tools/bin/python /home/general/Projects/VScdeProjects/voice-hotkey/voice-hotkey.py
+Restart=on-failure
+RestartSec=3
+Environment=STT_BACKEND=auto
+Environment=OLLAMA_URL=http://localhost:11434
+Environment=OLLAMA_STT_MODEL=gemma4-fast
+Environment=WHISPER_API_URL=http://localhost:8787
+Environment=WHISPER_MODEL=large-v3-turbo
+Environment=KOKORO_API_URL=http://localhost:3456
+Environment=KOKORO_VOICE=af_heart
+
+[Install]
+WantedBy=default.target

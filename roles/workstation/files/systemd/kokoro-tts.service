@@ -1,0 +1,15 @@
+[Unit]
+Description=Kokoro TTS container (port 3456)
+After=podman.socket
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/podman stop kokoro-tts
+ExecStartPre=-/usr/bin/podman rm kokoro-tts
+ExecStart=/usr/bin/podman compose -f /home/general/Projects/VScdeProjects/kokoro-tts/docker-compose.yml up --no-color
+ExecStop=/usr/bin/podman compose -f /home/general/Projects/VScdeProjects/kokoro-tts/docker-compose.yml down
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

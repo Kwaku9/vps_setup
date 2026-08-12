@@ -1,0 +1,14 @@
+[Unit]
+Description=Nightly session-recall embedding at 04:35 (after the 04:00 timeline sync freshens Postgres)
+
+[Timer]
+# 04:35 local (AST) — 35 min after sync-claude-timeline fires at 04:00, so the
+# laptop push + VPS ingest have landed today's sessions in Postgres before we embed.
+OnCalendar=*-*-* 04:35:00
+# Run at next boot/wake if the machine was off when it should have fired.
+Persistent=true
+RandomizedDelaySec=120
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target

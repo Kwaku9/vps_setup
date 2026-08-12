@@ -1,0 +1,15 @@
+[Unit]
+Description=Daily Neo4j VPS → local sync (5:30 AM)
+
+[Timer]
+# 05:30 AST — must run AFTER both:
+#   - sync-claude-timeline (04:00, ≤30 min): it writes to neo4j-local; firing
+#     together made this sync stop the container mid-ETL.
+#   - the VPS's own sessions-graph sync (03:30 ET = 04:30 AST): running after
+#     it means we mirror today's VPS graph, not yesterday's.
+OnCalendar=*-*-* 05:30:00
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

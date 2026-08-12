@@ -1,0 +1,12 @@
+[Unit]
+Description=TTS queue daemon (persistent) — plays local + remote VPS speech on :5000
+After=default.target
+
+[Service]
+Environment=TTS_DAEMON_PERSIST=1
+ExecStart=/usr/bin/python3 /home/general/.claude/hooks/tts_daemon.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

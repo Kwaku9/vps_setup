@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily VPS backup pull at 05:00 (after the VPS 02:00 backup and the 04:xx sync cluster)
+
+[Timer]
+# 05:00 local (AST). The VPS writes its daily backup at 02:00 (~18 min), and the
+# 04:00-04:35 timers (timeline sync, neo4j, embed-recall) have finished by then.
+OnCalendar=*-*-* 05:00:00
+# Run at next boot/wake if the laptop was asleep when it should have fired.
+Persistent=true
+RandomizedDelaySec=300
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target
