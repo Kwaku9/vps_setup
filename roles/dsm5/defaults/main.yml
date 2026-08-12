@@ -39,3 +39,18 @@ dsm5:
   domain: "dsm"
   # How long captured queries are kept before logrotate discards them.
   query_log_retain_days: 90
+  # Ingest the log into SQLite on a schedule. The LOG remains the source of
+  # truth; the database is a derived, queryable view, so a failed run costs
+  # nothing but freshness and the next run catches up.
+  ingest:
+    enabled: true
+    hour: "4"
+    minute: "20"        # avoids the 02:00/03:00 backup+prune+session-ingest cluster
+    # Rows to keep, in days. 0 = keep everything, and that is the default ON
+    # PURPOSE: these anonymous queries ARE the evaluation corpus this project
+    # exists to build (HANDOFF §3), so expiring them would delete the
+    # deliverable. They carry no IP, no name and no school — only a programme
+    # the student volunteered. Set a number here if you decide the cohort tag
+    # makes indefinite retention inappropriate; it is a judgement call, not a
+    # default worth making silently.
+    retain_days: 0

@@ -51,6 +51,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--log", default="/opt/compose/dsm5-logs/queries.log")
     ap.add_argument("--db", default="/opt/compose/dsm5-logs/queries.sqlite")
+    ap.add_argument("--retain-days", type=int, default=0,
+                    help="drop rows older than N days; 0 keeps everything")
     a = ap.parse_args()
 
     log = pathlib.Path(a.log)
@@ -90,9 +92,23 @@ def main():
     db.commit()
     added = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
 
+    # Retention. Default 0 = keep everything, deliberately: these anonymous
+    # queries are the evaluation corpus, so expiring them deletes the thing the
+    # capture exists to produce. Set --retain-days only as a conscious choice.
+    pruned = 0
+    if a.retain_days and a.retain_days > 0:
+        cur = db.execute(
+            "DELETE FROM queries WHERE ts < datetime('now', ?)",
+            (f"-{a.retain_days} days",))
+        pruned = cur.rowcount or 0
+        db.commit()
+        if pruned:
+            db.execute("VACUUM")
+
     total = db.execute("SELECT count(*) FROM queries").fetchone()[0]
     print(f"  log lines read : {seen} (skipped {skipped} empty)")
-    print(f"  rows now in db : {total}  (+{added} this run)")
+    print(f"  rows now in db : {total}  (+{added} this run"
+          + (f", -{pruned} pruned)" if pruned else ")"))
     print(f"  db             : {a.db}")
     print()
     for kind, n in db.execute("SELECT kind, count(*) FROM queries GROUP BY kind"):
