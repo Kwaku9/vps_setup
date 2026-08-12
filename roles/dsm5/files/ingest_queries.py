@@ -29,7 +29,7 @@ DDL = """
 CREATE TABLE IF NOT EXISTS queries (
     id         TEXT PRIMARY KEY,      -- sha1 of the raw line; makes re-runs no-ops
     ts         TEXT NOT NULL,         -- ISO8601 from nginx
-    kind       TEXT NOT NULL,         -- 'term' | 'question'
+    kind       TEXT NOT NULL,         -- 'term' | 'question' | 'miss'
     text       TEXT NOT NULL,         -- what the student actually typed
     program    TEXT,                  -- cohort, opted in
     course     TEXT
@@ -69,15 +69,21 @@ def main():
             continue
         seen += 1
         parts = raw.split("\t")
-        # Older lines have fewer columns (the format grew from 2 -> 5 fields as
-        # question capture and cohort were added). Pad rather than drop them.
-        parts += [""] * (5 - len(parts))
-        ts, term, question, program, course = parts[:5]
+        # Older lines have fewer columns (the format grew from 2 -> 5 -> 6 as
+        # question capture, cohort, and the miss flag were added). Pad rather
+        # than drop them: the early rows are still real student searches, and
+        # the fields only ever get APPENDED so the positions stay stable.
+        parts += [""] * (6 - len(parts))
+        ts, term, question, program, course, miss = parts[:6]
         term, question = dec(term), dec(question)
         if question:
             kind, text = "question", question
         elif term:
-            kind, text = "term", term
+            # A miss is still a term search — it is recorded as its own kind
+            # because it is the only row type that describes something the app
+            # could not do, which makes it the queue for the alias layer.
+            kind = "miss" if (miss or "").strip() == "1" else "term"
+            text = term
         else:
             skipped += 1
             continue
@@ -113,6 +119,16 @@ def main():
     print()
     for kind, n in db.execute("SELECT kind, count(*) FROM queries GROUP BY kind"):
         print(f"    {kind:9} {n}")
+    print()
+    print("  top misses (searches the index could not answer):")
+    misses = db.execute(
+        "SELECT text, count(*) n FROM queries WHERE kind='miss' "
+        "GROUP BY lower(text) ORDER BY n DESC, text LIMIT 12"
+    ).fetchall()
+    if not misses:
+        print("    (none yet)")
+    for text, n in misses:
+        print(f"    {text[:46]:46} {n}")
     print()
     print("  by cohort:")
     for prog, n in db.execute(
