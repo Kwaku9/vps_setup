@@ -1,0 +1,56 @@
+---
+# dsm.aicortex.cloud — DSM-5-TR study tool (MVP-0).
+#
+# A static PWA served by a standalone nginx container on enterprise_network,
+# routed by Traefik's file provider. Same shape as roles/decks.
+#
+# WHY THIS IS PUBLIC AND decks IS NOT
+#   The hostname must be listed in cloudflare.public_services or Cloudflare
+#   Access challenges every visitor. Students are not in the Access directory,
+#   so without that entry the tool is unreachable for its entire audience.
+#   See [[cloudflare-access-bypass-rule]] — a hostname is PRIVATE by default.
+#
+# WHAT IS SHIPPED
+#   Only the PWA bundle: a term -> printed-page index (4,025 entries taken from
+#   the manual's own back-of-book index) plus the app shell. The DSM's prose is
+#   NOT shipped to the browser. That keeps the payload at ~450 KB and avoids
+#   putting the manual's copyrighted text on a public origin.
+#
+#   The "Ask" surface is deliberately absent: VITE_API_BASE is unset at build
+#   time, so the tab is hidden. MVP-0 is the deterministic lookup only — no
+#   model, no backend, nothing that can hallucinate a page number.
+#
+# QUERY CAPTURE
+#   /q returns 204 and logs ONLY the search term, to its own log file, using a
+#   log_format with no $remote_addr. The privacy claim shown to students in the
+#   UI is enforced here, in the config, rather than asserted in a policy.
+dsm5:
+  enabled: true
+  container_name: "dsm5-nginx"
+  image: "docker.io/library/nginx:1.29-alpine"
+  data_dir: "/opt/compose/dsm5"
+  # A DIRECTORY, not a single file. Ansible's template module writes atomically
+  # (temp + rename), which allocates a NEW inode; a single-file bind mount stays
+  # pinned to the old one, so the container serves a stale config forever and
+  # `podman restart` does not help — only recreation re-resolves the bind.
+  # Mounting the containing directory makes the update visible on restart.
+  conf_dir: "/opt/compose/dsm5-conf"
+  log_dir: "/opt/compose/dsm5-logs"
+  domain: "dsm"
+  # How long captured queries are kept before logrotate discards them.
+  query_log_retain_days: 90
+  # Ingest the log into SQLite on a schedule. The LOG remains the source of
+  # truth; the database is a derived, queryable view, so a failed run costs
+  # nothing but freshness and the next run catches up.
+  ingest:
+    enabled: true
+    hour: "4"
+    minute: "20"        # avoids the 02:00/03:00 backup+prune+session-ingest cluster
+    # Rows to keep, in days. 0 = keep everything, and that is the default ON
+    # PURPOSE: these anonymous queries ARE the evaluation corpus this project
+    # exists to build (HANDOFF §3), so expiring them would delete the
+    # deliverable. They carry no IP, no name and no school — only a programme
+    # the student volunteered. Set a number here if you decide the cohort tag
+    # makes indefinite retention inappropriate; it is a judgement call, not a
+    # default worth making silently.
+    retain_days: 0
