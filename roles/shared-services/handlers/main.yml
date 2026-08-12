@@ -1,6 +1,10 @@
 ---
 # Shared-services handlers
 - name: restart traefik
+  # tags: always — a handler without tags is FILTERED OUT by --tags, so a
+  # tagged deploy would render new config and never restart the service.
+  # 'always' affects filtering only; handlers still run only when notified.
+  tags: ['always']
   # Traefik's STATIC config (/opt/compose/traefik.yml: entryPoints, forwardedHeaders,
   # accessLog, providers, certResolvers) is read ONLY at process start — unlike the
   # dynamic file provider, which hot-reloads. So a change to traefik.yml.j2 must

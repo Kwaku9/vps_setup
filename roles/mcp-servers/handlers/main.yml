@@ -3,12 +3,17 @@
 # Triggered by notify directives in tasks
 
 - name: reload claude mcp
+  # tags: always — a handler without tags is FILTERED OUT by --tags, so a
+  # tagged deploy would render new config and never restart the service.
+  # 'always' affects filtering only; handlers still run only when notified.
+  tags: ['always']
   debug:
     msg: "MCP settings updated. Run 'claude mcp list' to verify configuration."
   # Note: Claude CLI automatically reloads mcp_settings.json on each invocation
   # No explicit reload command needed
 
 - name: verify mcp containers
+  tags: ['always']
   shell: |
     podman ps --filter "name=mcp" --format "{{ '{{' }}.Names{{ '}}' }}: {{ '{{' }}.Status{{ '}}' }}"
   register: mcp_container_status
@@ -16,12 +21,14 @@
   listen: "verify mcp containers"
 
 - name: display mcp container status
+  tags: ['always']
   debug:
     var: mcp_container_status.stdout_lines
   when: mcp_container_status is defined
   listen: "verify mcp containers"
 
 - name: restart mcp container
+  tags: ['always']
   containers.podman.podman_container:
     name: "{{ mcp_container_to_restart }}"
     state: started
@@ -30,6 +37,7 @@
   listen: "restart mcp container"
 
 - name: rebuild mcp container
+  tags: ['always']
   shell: |
     podman stop {{ mcp_container_to_rebuild }} || true
     podman rm {{ mcp_container_to_rebuild }} || true
