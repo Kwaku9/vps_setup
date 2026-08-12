@@ -1,10 +1,15 @@
 ---
 - name: restart node-exporter
+  # tags: always — a handler without tags is FILTERED OUT by --tags, so a
+  # tagged deploy would render new config and never restart the service.
+  # 'always' affects filtering only; handlers still run only when notified.
+  tags: ['always']
   service:
     name: node-exporter
     state: restarted
 
 - name: reload vmalert
+  tags: ['always']
   # vmalert re-reads its rule files on SIGHUP. Without this, `Deploy alert rules`
   # writes the file and vmalert keeps evaluating the OLD rules until something
   # else restarts it — so rule changes deployed silently INERT (found 2026-08-01,

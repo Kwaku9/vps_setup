@@ -1,10 +1,9 @@
 ---
-- name: restart cloudflared
+- name: Reload systemd user daemon
   # tags: always — a handler without tags is FILTERED OUT by --tags, so a
   # tagged deploy would render new config and never restart the service.
   # 'always' affects filtering only; handlers still run only when notified.
   tags: ['always']
-  containers.podman.podman_container:
-    name: "{{ cloudflared.container_name }}"
-    state: started
-    force_restart: true
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+    scope: user
