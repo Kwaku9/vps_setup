@@ -1,0 +1,10 @@
+[Unit]
+Description=Neo4j VPS → local sync
+After=network-online.target neo4j-vps-tunnel.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/general/scripts/neo4j-sync.sh
+StandardOutput=journal
+StandardError=journal

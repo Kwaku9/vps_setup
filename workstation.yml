@@ -1,0 +1,35 @@
+---
+# Converge the Fedora laptop, the way site.yml converges the VPS.
+#
+#   ansible-playbook -i inventory/hosts workstation.yml --check --diff   # drift report
+#   ansible-playbook -i inventory/hosts workstation.yml                  # apply
+#
+# Runs against the local machine (connection: local). It manages only user-level
+# state under $HOME, so it needs no sudo and must NOT be run as root — a root run
+# would write units into root's ~/.config and leave the desktop user untouched.
+
+- name: Configure the Fedora workstation
+  hosts: fedora_workstations
+  gather_facts: true
+
+  # ansible.cfg sets `inject_facts_as_vars = False`, so facts must be referenced
+  # as ansible_facts.* — bare `ansible_user_id` / `ansible_env` are undefined.
+  pre_tasks:
+    - name: Refuse to run as root
+      ansible.builtin.assert:
+        that: ansible_facts.user_id != 'root'
+        fail_msg: >-
+          This playbook manages systemd --user units under $HOME and must run as
+          the desktop user, not root. Re-run without become/sudo.
+        quiet: true
+
+    - name: Require a user D-Bus session for systemctl --user
+      ansible.builtin.assert:
+        that: ansible_facts.env.XDG_RUNTIME_DIR is defined
+        fail_msg: >-
+          XDG_RUNTIME_DIR is unset, so `systemctl --user` cannot reach the session
+          bus. Run this from a normal desktop login shell.
+        quiet: true
+
+  roles:
+    - workstation

@@ -1,0 +1,126 @@
+---
+# Workstation role defaults — Fedora laptop, NOT the VPS.
+#
+# This role manages the *user-level* (systemd --user) side of the laptop: the
+# timers that sync VPS data down, the voice/PTT stack, and the rootless podman
+# quadlets that back the local GPU services.
+#
+# STATE IS DESCRIPTIVE, NOT ASPIRATIONAL. Every enabled/state value below was
+# read off the running machine on 2026-08-07 and is recorded so a converge run
+# is a no-op. Several units are deliberately `disabled` — that is the current,
+# intended reality, not a bug to be fixed. Do not flip one to `true` unless you
+# actually want it running; see the per-unit notes.
+
+workstation:
+  # Absolute paths are resolved from the connecting user's home so this role is
+  # not hard-wired to /home/general.
+  # NOTE: ansible.cfg sets `inject_facts_as_vars = False`, so facts are only
+  # available under ansible_facts.* — a bare `ansible_user_dir` is undefined.
+  home: "{{ ansible_facts.user_dir }}"
+  systemd_user_dir: "{{ ansible_facts.user_dir }}/.config/systemd/user"
+  quadlet_dir: "{{ ansible_facts.user_dir }}/.config/containers/systemd"
+  bin_dir: "{{ ansible_facts.user_dir }}/.local/bin"
+  scripts_dir: "{{ ansible_facts.user_dir }}/scripts"
+
+  # Executable scripts. `dest_dir` matters: neo4j-sync.sh and pg-sync.sh default
+  # SECRETS_ENV to $HOME/scripts/secrets.env and the units invoke them by that
+  # absolute path, so they must land in ~/scripts, not ~/.local/bin.
+  scripts:
+    - { src: bin/vps-backup-pull.sh,          dest_dir: bin }
+    - { src: bin/buildfolio-heatmap-update.sh, dest_dir: bin }
+    - { src: bin/piper-say.sh,                dest_dir: bin }
+    - { src: scripts/neo4j-sync.sh,           dest_dir: scripts }
+    - { src: scripts/pg-sync.sh,              dest_dir: scripts }
+
+  # Podman quadlets. Files are deployed and the generator is reloaded, but the
+  # resulting services are deliberately NOT state-managed — see tasks/main.yml.
+  quadlets:
+    - whisper-gpu.container
+    - llama-embed-gpu.container
+    - archivist-app.container
+
+  # systemd --user units.
+  #   enabled: true|false   -> `systemctl --user enable/disable`
+  #   state:   started|stopped
+  #   manage:  false        -> deploy the file only; never enable/start it.
+  #                            Required for `static` units (no [Install] section)
+  #                            and for template units like marketwatch@.service.
+  units:
+    # --- VPS -> laptop data sync -------------------------------------------
+    - name: vps-backup-pull.timer
+      enabled: true
+      state: started
+    - name: vps-backup-pull.service
+      manage: false            # oneshot, fired by the timer
+
+    - name: neo4j-sync.timer
+      enabled: true
+      state: started
+    - name: neo4j-sync.service
+      manage: false            # static
+
+    - name: pg-sync.timer
+      enabled: true
+      state: started
+    - name: pg-sync.service
+      manage: false            # static
+
+    - name: embed-recall.timer
+      enabled: true
+      state: started
+    - name: embed-recall.service
+      manage: false            # oneshot, fired by the timer
+
+    # --- MarketWatch --------------------------------------------------------
+    - name: marketwatch-preopen.timer
+      enabled: true
+      state: started
+    - name: marketwatch-close.timer
+      enabled: true
+      state: started
+    - name: "marketwatch@.service"
+      manage: false            # template unit; instantiated as marketwatch@preopen etc.
+
+    # --- Voice / push-to-talk ----------------------------------------------
+    # ydotoold must be up before the PTT hotkey can reach /dev/uinput, and it
+    # needs the graphical session running. Both are live; leave them that way.
+    - name: ydotool.service
+      enabled: true
+      state: started
+    - name: voice-hotkey.service
+      enabled: true
+      state: started
+    - name: vps-tts-tunnel.service
+      enabled: true
+      state: started
+    # Enabled but not currently running — started on demand, not at boot.
+    - name: kokoro-tts.service
+      enabled: true
+      state: null
+
+    # --- Deliberately dormant ----------------------------------------------
+    # Superseded by vps-tts-tunnel.service.
+    - name: vps-tts-daemon.service
+      enabled: false
+      state: stopped
+    # Voice-driven computer-use. OFF on purpose: the 6GB GPU cannot host the PTT
+    # stack and this at the same time. Do not enable casually.
+    - name: ptt-computer-use.service
+      enabled: false
+      state: stopped
+    # Replaced by the tailnet route; the local tunnel is no longer needed.
+    - name: neo4j-vps-tunnel.service
+      enabled: false
+      state: stopped
+    # Timeline refresh now runs on demand via the /update-timeline skill.
+    - name: sync-claude-timeline.timer
+      enabled: false
+      state: stopped
+    - name: sync-claude-timeline.service
+      manage: false
+    # Heatmap regeneration is run by hand when the portfolio needs it.
+    - name: buildfolio-heatmap.timer
+      enabled: false
+      state: stopped
+    - name: buildfolio-heatmap.service
+      manage: false

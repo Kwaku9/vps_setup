@@ -1,0 +1,10 @@
+[Unit]
+Description=MarketWatch closing review (weekdays 16:12 America/New_York)
+
+[Timer]
+OnCalendar=Mon-Fri 16:12 America/New_York
+Persistent=false
+Unit=marketwatch@close.service
+
+[Install]
+WantedBy=timers.target

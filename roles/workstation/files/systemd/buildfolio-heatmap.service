@@ -1,0 +1,20 @@
+[Unit]
+Description=Refresh buildfol.io commit-activity heatmap and deploy to prod
+# Needs network for git fetch/push (GitHub) and the Amplify webhook trigger.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/general/.local/bin/buildfolio-heatmap-update.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+# npm build + git fetch/push; generous ceiling in case of a cold node_modules.
+TimeoutStartSec=900
+StandardOutput=append:/home/general/.claude/buildfolio-heatmap.log
+StandardError=append:/home/general/.claude/buildfolio-heatmap.log
+SyslogIdentifier=buildfolio-heatmap
+
+[Install]
+WantedBy=default.target

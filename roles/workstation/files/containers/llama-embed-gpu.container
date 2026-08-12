@@ -1,0 +1,19 @@
+[Unit]
+Description=EmbeddingGemma GPU embedding server (llama.cpp CUDA) - OWUI RAG + recall, tailnet-exposed
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=ghcr.io/ggml-org/llama.cpp:server-cuda
+ContainerName=llama-embed-gpu
+AddDevice=nvidia.com/gpu=all
+Volume=%h/spike-models:/models:Z
+PublishPort=18090:18090
+Exec=--model /models/embeddinggemma-300M-Q8_0.gguf --embeddings --pooling mean --ctx-size 2048 --ubatch-size 2048 --n-gpu-layers 99 --host 0.0.0.0 --port 18090
+
+[Service]
+Restart=always
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

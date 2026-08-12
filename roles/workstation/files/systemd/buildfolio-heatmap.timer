@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily buildfol.io heatmap refresh at 06:00 (after the 04:00-05:47 sync cluster)
+
+[Timer]
+# 06:00 local (AST). Runs after backup-pull/neo4j-sync/pg-sync so the machine
+# isn't contending with those for network/CPU.
+OnCalendar=*-*-* 06:00:00
+# Run at next boot/wake if the laptop was asleep when it should have fired.
+Persistent=true
+RandomizedDelaySec=300
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target

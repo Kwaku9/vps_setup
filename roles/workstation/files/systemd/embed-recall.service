@@ -1,0 +1,29 @@
+[Unit]
+Description=Nightly session-recall embedding (GPU) -> VPS recall.chunks
+Documentation=file:///home/general/Projects/VScdeProjects/vps_setup/tools/fedora-gpu-embed/README.md
+# Needs the tailnet up to SSH-tunnel to the VPS postgres (loopback-only there).
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs the git-tracked bundle (embed-recall-now.sh + embed_recall_delta.py
+# co-located in vps_setup/tools/fedora-gpu-embed/). Starts the local llama.cpp
+# CUDA EmbeddingGemma server if needed, tunnels to the VPS, embeds the delta on
+# the GPU and forwards vectors up (idempotent: NOT EXISTS + ON CONFLICT DO NOTHING).
+ExecStart=/home/general/Projects/VScdeProjects/vps_setup/tools/fedora-gpu-embed/embed-recall-now.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+# Backlog runs can be long; a day's delta is fast. 30 min ceiling.
+TimeoutStartSec=1800
+# embed-recall-now.sh leaves a detached podman container (llama-embed-gpu)
+# in our cgroup; without KillMode=process systemd SIGTERMs it on exit and
+# marks the unit failed even though the script returned 0.
+KillMode=process
+StandardOutput=append:/home/general/.claude/embed-recall.log
+StandardError=append:/home/general/.claude/embed-recall.log
+SyslogIdentifier=embed-recall
+
+[Install]
+WantedBy=default.target

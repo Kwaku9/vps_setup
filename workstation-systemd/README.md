@@ -1,34 +1,30 @@
-# Workstation systemd units
+# Workstation systemd units — MOVED
 
-Files in this directory are user-level systemd units for the local
-developer workstation (Fedora), NOT for the VPS. They drive the
-daily timeline-refresh pipeline that backs https://timeline.aicortex.cloud.
+The units that lived here (`sync-claude-timeline.{service,timer}`) are now
+managed by the `workstation` Ansible role, together with the other ~20 user
+units, the podman quadlets, and the laptop helper scripts:
 
-## Install on a fresh workstation
+    roles/workstation/files/systemd/
+    roles/workstation/defaults/main.yml     # enabled/started state per unit
 
-```sh
-# 1. Copy units into place
-mkdir -p ~/.config/systemd/user
-cp workstation-systemd/sync-claude-timeline.{service,timer} \
-   ~/.config/systemd/user/
+Deploy them with the playbook rather than by hand:
 
-# 2. Allow user services to run when logged out (sudo required, one-time)
-sudo loginctl enable-linger "$USER"
+    ansible-playbook -i inventory/hosts workstation.yml --check --diff   # drift report
+    ansible-playbook -i inventory/hosts workstation.yml                  # apply
 
-# 3. Activate
-systemctl --user daemon-reload
-systemctl --user enable --now sync-claude-timeline.timer
+## Why this directory changed
 
-# 4. Verify next fire
-systemctl --user list-timers sync-claude-timeline.timer
-```
+The old instruction here was "copy the units into `~/.config/systemd/user` and
+`systemctl --user enable --now`". That works, but nothing detects when it is not
+followed — and it was only ever applied to these two files. The other 20 user
+units on the laptop were never version-controlled at all, so a laptop rebuild
+meant reconstructing them from memory. The role closes that gap and makes
+`--check --diff` a drift detector, the same way `tools/check-vps-drift.sh` is
+for the VPS.
 
-## Manual trigger (skip waiting for 04:00)
+Note that `sync-claude-timeline.timer` is intentionally **disabled** — the
+timeline refresh is run on demand through the `/update-timeline` skill. The role
+records that as the desired state; it is not an oversight to be corrected.
 
-```sh
-systemctl --user start sync-claude-timeline.service
-journalctl --user -u sync-claude-timeline.service -f
-```
-
-The wrapper script itself lives at `../run-daily-timeline.sh` and
-mirrors the steps documented in `~/.claude/commands/update-timeline.md`.
+This directory is kept only as a pointer and can be deleted once the role has
+been applied at least once.

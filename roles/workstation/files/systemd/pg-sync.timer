@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily Postgres VPS → local clone (5:45 AM)
+
+[Timer]
+# 05:45 AST — after the VPS session ingest (03:00 ET = 04:00 AST), the laptop
+# embed-recall run (04:35, pushes fresh vectors up), and neo4j-sync (05:30),
+# so the clone captures today's sessions AND today's embeddings, staggered
+# from the Neo4j mirror's disk/network load.
+OnCalendar=*-*-* 05:45:00
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

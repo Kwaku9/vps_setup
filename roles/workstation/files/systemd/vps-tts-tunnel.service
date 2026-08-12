@@ -1,0 +1,16 @@
+[Unit]
+Description=Reverse SSH tunnel for VPS TTS (VPS localhost:5000 -> local daemon :5000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# RemoteForward 5000 localhost:5000 comes from ~/.ssh/config (Host alpine-vps-tts),
+# a dedicated host alias so ordinary admin ssh sessions don't race for the port.
+# ExitOnForwardFailure makes ssh exit if the port is still held by an orphaned
+# forward; systemd then retries until the VPS frees it (self-healing).
+ExecStart=/usr/bin/ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ConnectTimeout=10 alpine-vps-tts
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,24 @@
+[Unit]
+Description=Pull VPS daily backups to the laptop, verify, and prune (VPS + local retention)
+# Needs the network up to SSH/rsync to the VPS. Reached over Tailscale — the
+# public IP stopped taking inbound on 2026-08-06.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/general/.local/bin/vps-backup-pull.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+# 6-9G transfers over Tailscale run at roughly 0.8 MB/s, so a single archive
+# takes ~2h and a multi-day backlog far longer. The old 1h ceiling SIGTERM'd the
+# 08-07 run mid-file. rsync resumes from the partial, so an occasional timeout
+# now costs progress rather than losing it.
+TimeoutStartSec=21600
+StandardOutput=append:/home/general/.claude/vps-backup-pull.log
+StandardError=append:/home/general/.claude/vps-backup-pull.log
+SyslogIdentifier=vps-backup-pull
+
+[Install]
+WantedBy=default.target
