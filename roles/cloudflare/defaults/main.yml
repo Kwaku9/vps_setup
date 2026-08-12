@@ -77,6 +77,13 @@ cloudflare_access:
   public_services:
     - "chat"
     - "auth"
+    # dsm: the DSM-5-TR study tool. Its audience is students, who are not in the
+    # Access directory — behind Access the tool is unreachable for everyone it
+    # exists for. Safe to expose: the origin is a static bundle with no backend,
+    # no accounts and no model. It ships a term -> page index, NOT the manual's
+    # text. The only write path is GET /q, which returns 204 and logs the search
+    # term to a format that omits $remote_addr.
+    - "dsm"
     # otel: public OTLP/HTTP ingest for the mobile app. Auth happens at Traefik
     # via bearer token in router rule (vault.yml: otel_ingest_token), so CF Access
     # must NOT challenge it — bypass app overrides the wildcard admin policy.
