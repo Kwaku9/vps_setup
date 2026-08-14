@@ -74,12 +74,25 @@ ai_stack:
     # Primary embedder is the Fedora laptop GPU (llama.cpp CUDA, SAME GGUF) over the
     # tailnet; this VPS CPU pod is the LiteLLM FALLBACK for when the laptop is asleep/
     # off-tailnet. Fedora service: tools/fedora-gpu-embed/ (Quadlet llama-embed-gpu).
-    gpu_tailnet_url: "http://100.123.173.86:18090/v1"   # Fedora GPU (primary) over tailnet
+    # NOTE 2026-08-14: was 100.123.173.86, which is STALE - the laptop's tailnet
+    # address is now 100.79.60.27 (`tailscale ip -4`). The live LiteLLM config on
+    # the box had been corrected by hand, so a redeploy from this default would
+    # have silently pointed the PRIMARY embedder at a dead IP and pushed every
+    # request onto this CPU fallback. If the laptop's tailnet IP changes, this and
+    # the Fedora quadlet's PublishPort must move together.
+    gpu_tailnet_url: "http://100.79.60.27:18090/v1"     # Fedora GPU (primary) over tailnet
     data_dir: "/opt/podman-data/llama-embed"
     model_file: "embeddinggemma-300M-Q8_0.gguf"
     model_url: "https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf"
     ctx_size: 2048                  # EmbeddingGemma max context
-    memory: "2g"
+    # ubatch was previously pinned to ctx_size (2048). The model file is 318 MB but
+    # the process held ~1.2 GB, because the compute buffer scales with ubatch - it
+    # was provisioned for bulk throughput while actually serving occasional
+    # interactive queries (last observed request: 182 tokens). 512 keeps ample
+    # headroom for real requests at a fraction of the allocation. Bulk embedding
+    # runs on the laptop GPU, never here.
+    ubatch_size: 512
+    memory: "2g"                    # a CEILING, not an allocation - costs nothing idle
 
   # SearxNG (AI search)
   searxng:
