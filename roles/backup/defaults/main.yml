@@ -6,9 +6,14 @@ backup:
   enabled: true
   # Base backup directory
   backup_dir: /opt/backups
-  # Retention: number of daily backups to keep. Reduced 3->2: disk sits at ~91%
-  # and each (trimmed) backup is ~4.5G, so 2 copies (~9G) is the safe ceiling.
-  retention_days: 2
+  # Retention for the LOCAL copy in {{ backup_dir }}/daily, in days.
+  # 2026-08-16: 2 -> 0. With s3_delete_local the local archive is removed as
+  # soon as S3 has a verified copy, so this only governs leftovers from a run
+  # whose upload failed. `find -mtime +0` prunes anything >=24h old, i.e. a
+  # failed archive is cleared by the NEXT run's pre-flight before that run
+  # needs the space. Do not raise this while s3_delete_local is true: archives
+  # are now ~6.4G and a run peaks at ~2x that, against ~18G free.
+  retention_days: 0
   # Pre-flight aborts the run (writing nothing) if free space on the backup
   # filesystem is below this many GB after pruning old backups. Peak usage is
   # ~2x one backup (staging dir + final archive held at once). Post-trim a
@@ -17,10 +22,25 @@ backup:
   # real backstop; if this gate aborts, the disk is genuinely too full — free
   # space / enable S3, don't just lower this further.
   min_free_gb: 8
-  # S3 sync (optional)
-  s3_enabled: false
+  # ── S3 sync ───────────────────────────────────────────────────────────────
+  # 2026-08-16: ENABLED. S3 is now the ONLY offsite copy — the laptop pull
+  # (vps-backup-pull.timer) is retired. That timer used to *drain*
+  # /opt/backups/daily every morning, which is the only reason a 94G disk with
+  # ~6.4G archives ever fit. Nothing drains it now, so s3_delete_local below is
+  # load-bearing, not an optimisation: without it the disk fills within a day.
+  s3_enabled: true
+  # MUST be set to a real bucket via vault_s3_backups_bucket. The 'my-backups'
+  # fallback in all.yml:744 is a placeholder that does not exist — uploads to it
+  # fail, and before 2026-08-16 that failure was swallowed by `|| warn`.
   s3_bucket: "{{ s3_backups_bucket }}"
   s3_region: "us-east-1"
+  # Archives to keep in S3. COUNT-based, not date-based: the old date-cutoff
+  # prune keeps nothing at all if runs are skipped for a stretch, and it reused
+  # retention_days, which now means something entirely different.
+  s3_retention_count: 4
+  # Remove the local archive once S3 has a size-verified copy. Required while
+  # s3_enabled is true and no external puller drains the backup directory.
+  s3_delete_local: true
 
   # Data directories to backup (bind mounts under /opt/podman-data)
   # Sizes noted 2026-07-05. victoriametrics (metrics TSDB, 2.3G) intentionally
