@@ -184,3 +184,8 @@ tools/spikes/
 # (overrides the global *.md and *.sh ignores above for SKILL.md, reference.md, *.sh helpers)
 !roles/claude-prep/files/skills/**/*.md
 !roles/claude-prep/files/skills/**/*.sh
+
+# Timestamped editor/script backups, e.g. foo.yml.j2.bak-20260806-130542.
+# `*.bak` above only matches names ENDING in .bak, so these slipped through
+# and showed up as untracked noise on every status.
+*.bak-*
