@@ -115,6 +115,13 @@
       tags: ['decks']
       when: decks.enabled | default(true)
 
+    # dsm.aicortex.cloud — DSM-5-TR study tool (MVP-0). PUBLIC: the hostname is
+    # in cloudflare.public_services, because its audience is students who are
+    # not in the Access directory.
+    - role: dsm5
+      tags: ['dsm5']
+      when: dsm5.enabled | default(true)
+
     - role: lab
       tags: ['lab']
       when: lab.enabled | default(true)
