@@ -2,21 +2,28 @@
 # AI Stack Handlers
 
 - name: restart ai-stack-pod
+  # tags: always — a handler without tags is FILTERED OUT by --tags, so a
+  # tagged deploy would render new config and never restart the service.
+  # 'always' affects filtering only; handlers still run only when notified.
+  tags: ['always']
   containers.podman.podman_pod:
     name: "{{ ai_stack.pod_name }}"
     state: restarted
 
 - name: restart litellm
+  tags: ['always']
   containers.podman.podman_container:
     name: "{{ ai_stack.litellm.name }}"
     state: restarted
 
 - name: restart openwebui
+  tags: ['always']
   containers.podman.podman_container:
     name: "{{ ai_stack.openwebui.name }}"
     state: restarted
 
 - name: restart fabric-api
+  tags: ['always']
   containers.podman.podman_container:
     name: "{{ ai_stack.fabric_api.name }}"
     state: restarted

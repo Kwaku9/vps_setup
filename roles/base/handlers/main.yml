@@ -1,5 +1,9 @@
 ---
 - name: restart crond
+  # tags: always — a handler without tags is FILTERED OUT by --tags, so a
+  # tagged deploy would render new config and never restart the service.
+  # 'always' affects filtering only; handlers still run only when notified.
+  tags: ['always']
   service:
     name: crond
     state: restarted
@@ -23,6 +27,7 @@
 # site.yml also runs this unconditionally in post_tasks as a belt-and-suspenders
 # safety net so no role accidentally ends a play with broken networking.
 - name: recover netavark NAT
+  tags: ['always']
   command: podman network reload --all
   changed_when: false
   listen: "podman container recreated"
