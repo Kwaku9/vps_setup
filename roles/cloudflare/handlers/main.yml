@@ -2,25 +2,33 @@
 # Cloudflare Role Handlers
 
 - name: restart cloudflared
+  # tags: always — a handler without tags is FILTERED OUT by --tags, so a
+  # tagged deploy would render new config and never restart the service.
+  # 'always' affects filtering only; handlers still run only when notified.
+  tags: ['always']
   command: podman restart {{ cloudflare_tunnel.container_name | default('cloudflared') }}
   listen: restart cloudflared
 
 - name: restart traefik
+  tags: ['always']
   command: podman restart traefik
   listen: restart traefik
 
 - name: verify cloudflare tunnel
+  tags: ['always']
   command: podman logs --tail 20 {{ cloudflare_tunnel.container_name | default('cloudflared') }}
   register: tunnel_logs
   changed_when: false
   listen: verify cloudflare tunnel
 
 - name: display tunnel logs
+  tags: ['always']
   debug:
     msg: "{{ tunnel_logs.stdout_lines | default([]) }}"
   listen: verify cloudflare tunnel
 
 - name: wait for certificate
+  tags: ['always']
   pause:
     seconds: 30
     prompt: "Waiting for ACME certificate generation..."
