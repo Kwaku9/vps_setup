@@ -76,6 +76,10 @@ TIER1: list[tuple[str, re.Pattern]] = [
     ("github_pat",         re.compile(r"(?<![A-Za-z])github_pat_[A-Za-z0-9_]{60,}\b")),
     ("anthropic_key",      re.compile(r"(?<![A-Za-z])sk-ant-[A-Za-z0-9\-_]{20,}\b")),
     ("openai_key",         re.compile(r"(?<![A-Za-z])sk-(?:proj-)?[A-Za-z0-9\-_]{32,}\b")),
+    # LiteLLM VIRTUAL keys are shorter than OpenAI's 32+ and slipped past the rule
+    # above: 7 live ones were found sitting in recall.chunks on 2026-08-20. The
+    # sk- prefix plus 16+ token chars is specific enough not to catch prose.
+    ("litellm_virtual_key", re.compile(r"(?<![A-Za-z])sk-[A-Za-z0-9]{16,31}\b")),
     ("slack_token",        re.compile(r"(?<![A-Za-z])xox[baprs]-[A-Za-z0-9\-]{10,}\b")),
     ("telegram_bot_token", re.compile(r"(?<![A-Za-z])\d{8,10}:[A-Za-z0-9_\-]{35}\b")),
     ("tailscale_key",      re.compile(r"(?<![A-Za-z])tskey-[a-z]+-[A-Za-z0-9\-]{10,}\b")),
