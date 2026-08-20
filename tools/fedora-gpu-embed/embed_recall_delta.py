@@ -15,9 +15,18 @@ Env:
 import os
 import sys
 import time
+from pathlib import Path
 
 import psycopg2
 import requests
+
+# Redact BEFORE embedding. The corpus is read by the recall MCP and is a
+# candidate for public search, so it must be clean AT REST — an export-time
+# filter only protects the export you remembered to filter.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "redaction"))
+from redact import load_from_env  # noqa: E402
+
+_REDACTOR = load_from_env()
 
 LITELLM_BASE = os.environ.get("LITELLM_BASE", "")
 LITELLM_KEY = os.environ.get("LITELLM_KEY", "")
@@ -129,6 +138,10 @@ def main():
             pending = []
 
         for mid, uuid, project, ts, content in rcur:
+            # Redact the WHOLE message before chunking. Redacting each chunk
+            # instead would miss any secret straddling a 2000-char boundary,
+            # since neither half matches the pattern on its own.
+            content = _REDACTOR.text(content)
             for ci, ch in enumerate(chunk_text(content)):
                 pending.append((mid, ci, uuid, project, ts, ch[:500], ch))
                 if len(pending) >= BATCH:
