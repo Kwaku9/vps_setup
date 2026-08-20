@@ -13,6 +13,11 @@ GEMINI.md
 *.md
 # Keep main (root) README for deployment notes — anchored so sub-project READMEs stay ignored
 !/README.md
+# Role READMEs ARE deployment documentation: they say what each role deploys
+# and how to run it. Tracked by rule, because relying on `git add -f` meant
+# roles/mcp-servers/README.md drifted untracked and kept documenting an n8n
+# MCP server that had already been removed from the live config.
+!/roles/*/README.md
 
 # ============================================
 # Utility Scripts (Non-Deployment)
