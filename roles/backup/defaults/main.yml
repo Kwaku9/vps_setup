@@ -62,8 +62,18 @@ backup:
     - grafana-data            # 74M   dashboards — keep
     - authentik-postgres-data # 261M  identity/users — CRITICAL
     - traefik-plugins         # 670K
-    # - loki-data             # 2.4G  DROPPED — transient log TSDB
-    # - tempo-data            # 1.3G  DROPPED — transient trace TSDB
+    - authentik-media         # 10M
+    - authentik-certs         # 1K
+    - authentik-templates     # 1K
+    # loki-data RESTORED 2026-08-21. Previously dropped as a "transient log
+    # TSDB", which was right when logs were only for live debugging. They are
+    # now retained deliberately: security-posture history and training data for
+    # the administrative agent. Also far smaller than the old note claims —
+    # 156M, not 2.4G, because Loki's retention_period is 336h (14 days).
+    - loki-data               # 156M  LOG CORPUS — restored
+    # tempo-data still out (1.3G traces) pending a Grafana dashboard check that
+    # traces are actually being consumed. Revisit after that test.
+    # - tempo-data            # 1.3G  HELD — verify usage via Grafana first
     # - trivy-cache           # 1.1G  DROPPED — regenerable vuln-db cache
 
   # Config directories to backup
@@ -82,6 +92,22 @@ backup:
     - "*.bak"
     - "*.bak.*"
     - "neo4j/data/transactions"   # WAL only; safe to drop because the pod is stopped
+    # tar cannot read a live SQLite file consistently — it exits 1 ("file
+    # changed as we read it") and can capture a torn, corrupt copy.
+    # sqlite_snapshots below takes a proper online-backup copy instead.
+    - "crowdsec.db"
+
+  # Log directories: archived WITHOUT the *.log exclusion above, because they
+  # ARE the logs. Retained for security-posture history and agent training.
+  log_dirs:
+    - /var/log                    # 212M  squid access, tailscale, crowdsec feeds
+
+  # Hot SQLite DBs needing a consistent online-backup copy. crowdsec is
+  # deliberately NOT in stop_pods (it is the security layer and stays up during
+  # the backup), so crowdsec.db is always mid-write when tar reaches it. This
+  # was failing every night since at least 2026-08-11.
+  sqlite_snapshots:
+    - { path: /opt/podman-data/crowdsec/data/crowdsec.db, name: crowdsec.db }
 
   # Pods to stop during backup for consistent snapshots
   # security-infra-pod stays running (Traefik serves traffic)
