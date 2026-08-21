@@ -4,3 +4,12 @@ collections:
     version: ">=7.0.0"
   - name: containers.podman
     version: ">=1.10.0"
+  # Route53 provider for the domain_baseline role (SPF/DMARC/CAA as code)
+  - name: amazon.aws
+    version: ">=9.0.0"
+  # synchronize module, used by grafana-reports / honeypot-threatmap build sync
+  - name: ansible.posix
+    version: ">=1.5.0"
+  # openssh_keypair, used by the github-runner role
+  - name: community.crypto
+    version: ">=2.0.0"

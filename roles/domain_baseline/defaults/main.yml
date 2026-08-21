@@ -1,0 +1,97 @@
+---
+# domain_baseline — the external security baseline applied to EVERY domain we
+# operate or manage for a customer.
+#
+# Rationale and threat model: docs/EXTERNAL-ATTACK-SURFACE.md
+# Verify with:                scripts/verify-domain-baseline.sh <domain>
+#
+# This role is deliberately domain-agnostic and provider-aware. Add a new domain
+# by appending to `domain_baseline.domains` — never by hand-editing a zone.
+#
+# SAFETY: every task honours --check. Run with --check FIRST.
+#   NOTE: use `--check` alone, never `--check --diff` — --diff renders vault
+#   values into the log (see CLAUDE.md secret-handling rules).
+
+domain_baseline:
+
+  # Where DMARC aggregate (rua) and forensic (ruf) reports are delivered.
+  # Must be a mailbox you actually read — these reports are how you discover
+  # both spoofing attempts and your own forgotten legitimate senders.
+  dmarc_rua: "dmarc@aicortex.cloud"
+  dmarc_ruf: "dmarc@aicortex.cloud"
+
+  # CAA violation reports (attempted mis-issuance). Early warning of T1588.004.
+  caa_iodef: "mailto:security@aicortex.cloud"
+
+  # Records are created/updated but NEVER deleted by this role. Removing a
+  # record is a deliberate human act — an automated delete of an SPF record
+  # would silently open the domain back up to spoofing.
+  prune: false
+
+  domains:
+
+    # ── aicortex.cloud — Cloudflare zone, primary infrastructure ───────────
+    - name: aicortex.cloud
+      provider: cloudflare
+      # Senders verified 2026-08-21 against the live zone and the AWS account:
+      #   icloud.com  — iCloud+ Custom Email Domain. DKIM selector sig1 present.
+      #   resend.com  — DKIM selector `resend` present (apex + mail. subdomain).
+      #   amazonses   — REMOVED. aicortex.cloud is not an SES identity in account
+      #                 523069754952 (only larougebrows.com is, and unverified),
+      #                 SentLast24Hours=0, and there is no SES DKIM record in the
+      #                 zone. The include therefore authorised a large shared
+      #                 sender pool for no benefit, AND was the one sender that
+      #                 could not satisfy adkim=s/aspf=s — SES's default MAIL FROM
+      #                 is amazonses.com, which never aligns with this domain.
+      #                 If SES is adopted later: verify the domain, enable Easy
+      #                 DKIM, configure a custom MAIL FROM subdomain, THEN re-add.
+      spf: "v=spf1 include:resend.com include:icloud.com ~all"
+      # PHASE 1 of the DMARC ramp. Progression is none -> quarantine(pct ramp)
+      # -> reject. Do not skip: p=reject with an incomplete SPF silently
+      # destroys legitimate mail. Bump this only after reading rua reports.
+      dmarc_policy: quarantine
+      dmarc_pct: 25
+      dmarc_subdomain_policy: reject   # no subdomain sends mail — lock it now
+      dkim_null: false                 # real DKIM selectors are in use
+      caa:
+        # Cloudflare Universal SSL is issued by Google Trust Services.
+        - { flags: 0, tag: issue,     value: "pki.goog; cansignhttpexchanges=yes" }
+        # Traefik ACME wildcard.
+        - { flags: 0, tag: issue,     value: "letsencrypt.org" }
+        - { flags: 0, tag: issuewild, value: "letsencrypt.org" }
+        - { flags: 0, tag: issuewild, value: "pki.goog; cansignhttpexchanges=yes" }
+
+    # ── buildfol.io — Route 53 zone, CloudFront/S3 static ──────────────────
+    - name: buildfol.io
+      provider: route53
+      # Sends NO mail (no MX). A null SPF is the strongest possible statement
+      # and cannot break anything, so we go straight to the strictest policy.
+      spf: "v=spf1 -all"
+      dmarc_policy: reject
+      dmarc_pct: 100
+      dmarc_subdomain_policy: reject
+      dkim_null: true                  # publish a revoking wildcard DKIM record
+      caa:
+        - { flags: 0, tag: issue,     value: "amazon.com" }
+        - { flags: 0, tag: issuewild, value: "amazon.com" }
+
+    # ── larougebrows.com — CUSTOMER domain, Route 53 + CloudFront ──────────
+    - name: larougebrows.com
+      provider: route53
+      # Existing SPF is already correct (-all, DreamHost + MailChannels).
+      # Preserved verbatim — do not "improve" a customer's working mail config.
+      spf: "v=spf1 mx include:netblocks.dreamhost.com include:relay.mailchannels.net -all"
+      # Customer domain sends real business mail (bookings). Start at none and
+      # ramp only after reviewing reports WITH the customer. Breaking a
+      # customer's booking confirmations is worse than the risk we are closing.
+      dmarc_policy: none
+      dmarc_pct: 100
+      dmarc_subdomain_policy: none
+      dkim_null: false
+      caa:
+        # Three CAs have historically issued for this domain (Let's Encrypt R12,
+        # YR1, Amazon M01). All three are authorised here so that adding CAA
+        # cannot break an existing renewal path. Tighten later, deliberately.
+        - { flags: 0, tag: issue,     value: "amazon.com" }
+        - { flags: 0, tag: issue,     value: "letsencrypt.org" }
+        - { flags: 0, tag: issuewild, value: "amazon.com" }

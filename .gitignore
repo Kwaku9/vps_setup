@@ -7,7 +7,7 @@
 # ============================================
 # Documentation
 # ============================================
-docs/
+docs/*
 CLAUDE.md
 GEMINI.md
 *.md
@@ -17,7 +17,7 @@ GEMINI.md
 # ============================================
 # Utility Scripts (Non-Deployment)
 # ============================================
-scripts/
+scripts/*
 *.sh
 *.ps1
 # Exception: needed for container
@@ -184,6 +184,23 @@ tools/spikes/
 # (overrides the global *.md and *.sh ignores above for SKILL.md, reference.md, *.sh helpers)
 !roles/claude-prep/files/skills/**/*.md
 !roles/claude-prep/files/skills/**/*.sh
+
+# `scripts/` above became `scripts/*` so the two negations below can apply
+# (git cannot re-include a file whose parent directory is excluded). That also
+# changed the pattern from "any directory named scripts, at any depth" to one
+# anchored at the repo root, which un-ignored nested scripts dirs as a side
+# effect. Re-hide those to keep the change scoped to the root scripts/ dir.
+roles/*/files/scripts/
+
+# ─── External attack-surface baseline (added 2026-08-21) ───
+# These are deployment-critical, not incidental documentation: the verify script
+# is the regression test for the CT-log leak, and the doc is the threat model the
+# domain_baseline role and the attack-surface-guard skill both reference.
+# If they are not tracked, the baseline silently stops being enforceable on a
+# fresh clone — which is exactly the failure this work exists to prevent.
+!docs/EXTERNAL-ATTACK-SURFACE.md
+!scripts/verify-domain-baseline.sh
+!scripts/fix-cloudfront-baseline.sh
 
 # ─── added 2026-07-30 during Phase 0 backup — do not remove ───
 # credentials / secrets
