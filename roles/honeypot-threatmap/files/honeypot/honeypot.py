@@ -27,6 +27,29 @@ GEOIP_DB_PATH    = os.environ.get("GEOIP_DB", "/geoip/GeoLite2-City.mmdb")
 GEOIP_CACHE_SIZE = int(os.environ.get("GEOIP_CACHE_SIZE", "10000"))
 LOG_LEVEL        = os.environ.get("LOG_LEVEL", "INFO")
 
+# ---------------------------------------------------------------------------
+# Burned-hostname canaries
+# ---------------------------------------------------------------------------
+# Hostnames that were once real services and leaked to public Certificate
+# Transparency logs before the wildcard-only cutover. The services have moved;
+# these names now resolve here.
+#
+# A request to one of these is NOT ambiguous. There is no cached DNS, no stale
+# bookmark, and no crawler that would produce it — the name only ever existed in
+# CT logs and in our own configuration. Every hit is an actor working from
+# certificate-transparency reconnaissance (ATT&CK T1596.003).
+#
+# That makes these the highest-fidelity detection signal we have: unlike the
+# apex honeypot, which catches indiscriminate internet-wide bot noise, a canary
+# hit means somebody specifically enumerated *us*.
+#
+# Populated from roles/honeypot-threatmap/defaults/main.yml.
+BURNED_HOSTNAMES = {
+    h.strip().lower()
+    for h in os.environ.get("BURNED_HOSTNAMES", "").split(",")
+    if h.strip()
+}
+
 logging.basicConfig(level=LOG_LEVEL, format="%(message)s")
 log = logging.getLogger("honeypot")
 
@@ -36,11 +59,26 @@ log = logging.getLogger("honeypot")
 hits_total   = Counter("honeypot_hits_total",   "Total honeypot hits",   ["attack_type", "country_code"])
 bots_unique  = Gauge(  "honeypot_unique_ips",   "Unique IPs seen today")
 
+# Separate series for canary hits. Kept distinct from hits_total so that
+# alerting can fire on ANY canary hit without being drowned out by the constant
+# background rate of apex scanning.
+canary_hits = Counter(
+    "honeypot_canary_hits_total",
+    "Hits on burned hostnames that leaked to CT logs before the wildcard cutover",
+    ["hostname", "country_code", "attack_type"],
+)
+canary_unique_ips = Gauge(
+    "honeypot_canary_unique_ips",
+    "Unique source IPs that have hit a burned-hostname canary today",
+)
+
 # ---------------------------------------------------------------------------
 # GeoIP — local MaxMind GeoLite2 (no rate limits, instant lookups)
 # ---------------------------------------------------------------------------
 _geo_cache: OrderedDict[str, dict] = OrderedDict()
-_seen_ips:  set[str] = set()
+_seen_ips:   set[str] = set()
+_canary_ips: set[str] = set()
+_seen_day = datetime.now(timezone.utc).date()   # UTC day the sets above belong to
 _mmdb = None
 
 def _load_mmdb():
@@ -178,6 +216,25 @@ p{color:#888;margin-top:.5rem}</style></head>
 # ---------------------------------------------------------------------------
 # Logging helper
 # ---------------------------------------------------------------------------
+def _roll_daily_counters() -> None:
+    """Reset the 'today' gauges at UTC midnight.
+
+    _seen_ips previously grew without bound for the life of the process while
+    being reported as 'Unique IPs seen today'. Two problems: the number was not
+    actually a daily figure (it was cumulative since last restart, so it only
+    ever went up and silently reset on redeploy), and the set was an unbounded
+    memory leak on a 256m container. Both fixed by rolling at UTC midnight.
+    """
+    global _seen_day, _seen_ips, _canary_ips
+    today = datetime.now(timezone.utc).date()
+    if today != _seen_day:
+        _seen_day = today
+        _seen_ips = set()
+        _canary_ips = set()
+        bots_unique.set(0)
+        canary_unique_ips.set(0)
+
+
 async def log_hit(request: Request, attack_type: str, response_code: int, extra: dict | None = None):
     ip = request.headers.get("cf-connecting-ip") or \
          request.headers.get("x-forwarded-for", "").split(",")[0].strip() or \
@@ -185,11 +242,26 @@ async def log_hit(request: Request, attack_type: str, response_code: int, extra:
 
     geo = await geoip(ip)
 
+    # Which hostname did they ask for? This is what separates a burned-name
+    # canary hit (targeted, high confidence) from apex bot noise (indiscriminate).
+    host = (request.headers.get("host") or "").split(":")[0].lower()
+    is_canary = host in BURNED_HOSTNAMES
+
+    _roll_daily_counters()
+
     if ip not in _seen_ips:
         _seen_ips.add(ip)
         bots_unique.set(len(_seen_ips))
 
     hits_total.labels(attack_type=attack_type, country_code=geo["countryCode"]).inc()
+
+    if is_canary:
+        canary_hits.labels(
+            hostname=host, country_code=geo["countryCode"], attack_type=attack_type
+        ).inc()
+        if ip not in _canary_ips:
+            _canary_ips.add(ip)
+            canary_unique_ips.set(len(_canary_ips))
 
     event: dict[str, Any] = {
         "timestamp":    datetime.now(timezone.utc).isoformat(),
@@ -201,11 +273,21 @@ async def log_hit(request: Request, attack_type: str, response_code: int, extra:
         "lat":          geo["lat"],
         "lon":          geo["lon"],
         "method":       request.method,
+        "host":         host,
         "path":         request.url.path,
         "query":        str(request.url.query) if request.url.query else None,
         "user_agent":   request.headers.get("user-agent", ""),
         "attack_type":  attack_type,
         "response_code": response_code,
+        # ── canary fields ────────────────────────────────────────────────────
+        # canary=true means the request targeted a hostname that only ever
+        # existed in public CT logs. Treat as confirmed reconnaissance.
+        "canary":       is_canary,
+        "confidence":   "confirmed_recon" if is_canary else "opportunistic",
+        # Referer and forwarding chain help fingerprint the tooling in use.
+        "referer":      request.headers.get("referer"),
+        "xff_chain":    request.headers.get("x-forwarded-for"),
+        "cf_asn":       request.headers.get("cf-ipasn"),
     }
     if extra:
         event.update(extra)
