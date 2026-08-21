@@ -1,0 +1,39 @@
+---
+# Apply the external security baseline (SPF / DMARC / DKIM / CAA) to every
+# managed domain. Runs locally against provider APIs — no VPS access needed.
+#
+#   ansible-playbook domain-baseline.yml --check --ask-vault-pass
+#   ansible-playbook domain-baseline.yml --ask-vault-pass
+#   ansible-playbook domain-baseline.yml -e 'target_domain=buildfol.io' --ask-vault-pass
+#
+# NEVER add --diff: it renders vault values into the log (see CLAUDE.md).
+#
+# Threat model and rationale: docs/EXTERNAL-ATTACK-SURFACE.md
+# Verification:               scripts/verify-domain-baseline.sh <domain>
+
+- name: External security baseline for all managed domains
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - vault.yml
+
+  roles:
+    - role: domain_baseline
+
+  post_tasks:
+    - name: Next steps
+      debug:
+        msg: |
+          DNS changes propagate on TTL. Verify in a few minutes:
+
+            ./scripts/verify-domain-baseline.sh aicortex.cloud --deception-apex
+            ./scripts/verify-domain-baseline.sh buildfol.io
+            ./scripts/verify-domain-baseline.sh larougebrows.com
+
+          Still MANUAL (provider console, not API-automatable here):
+            - DNSSEC: enable signing, then publish the DS record at the registrar.
+              Do NOT change nameservers later without removing DS first.
+            - CloudFront: fix the 404 status mapping on buildfol.io
+              (see docs/EXTERNAL-ATTACK-SURFACE.md §3.6).
