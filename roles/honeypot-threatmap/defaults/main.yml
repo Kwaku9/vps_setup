@@ -7,8 +7,39 @@
 #   honeypot   : apex aicortex.cloud sink, open to bots (no middleware)
 #   threat-map : threat.aicortex.cloud live threat-intel viewer (CF Access + crowdsec)
 
+# Where durable attacker telemetry is written. MUST stay inside a path listed in
+# backup.data_dirs (roles/backup/defaults/main.yml) or the evidence is not backed up.
+honeypot_evidence_dir: /opt/podman-data/honeypot-evidence
+
 honeypot_threatmap:
   network: enterprise_network
+
+  # ── Durable evidence export ──────────────────────────────────────────────
+  evidence:
+    # HOST-side address. The export runs from cron on the host, NOT inside a
+    # container, so podman-internal DNS names like `logs-pod` do not resolve.
+    # Loki is published on the host at :3200 — note :3100 on the host is
+    # Open WebUI, and it answers /ready with 200, so a naive reachability check
+    # "passes" against completely the wrong service.
+    loki_url: "http://127.0.0.1:3200"
+
+    # Loki runs with auth_enabled: true, so every query needs a tenant header.
+    # Alloy pushes as "enterprise" (loki.write in /opt/compose/alloy-config.alloy).
+    # Without it Loki answers "no org id" and the export fails.
+    loki_tenant: "enterprise"
+
+    # Verified against the live label set 2026-08-21. Two traps here:
+    #   - the label is `container_name`, not `container` (Alloy relabels
+    #     __meta_docker_container_name -> container_name)
+    #   - the container also emits uvicorn INFO lines, so filter to real
+    #     honeypot events or the evidence file fills with access-log noise
+    loki_query: '{container_name="honeypot"} |~ "\"honeypot\":\\s*true"'
+    # 25h on a daily job: one hour of deliberate overlap so a late run cannot
+    # leave a gap. Duplicates are de-duped on write.
+    lookback_hours: 25
+    # node-exporter textfile collector — same dir the backup-freshness job uses.
+    # Feeds the HoneypotEvidenceExportStale alert.
+    textfile_dir: /opt/compose/textfile-collector
   # MaxMind GeoLite2 City DB — reuse CrowdSec's copy (kept fresh by the crowdsec role).
   geoip_db: /opt/podman-data/crowdsec/data/GeoLite2-City.mmdb
 
@@ -17,6 +48,49 @@ honeypot_threatmap:
     image: localhost/honeypot:latest
     memory: 256m
     port: 8099
+
+  # ── Burned-hostname canaries ─────────────────────────────────────────────
+  # Subdomains that leaked to public Certificate Transparency logs before the
+  # 2026-08-21 wildcard-only cutover (see docs/EXTERNAL-ATTACK-SURFACE.md §3.2).
+  # Enumerated externally with one unauthenticated API call — assume every
+  # attacker already has this list.
+  #
+  # MIGRATION IS PHASED. A name belongs in `burned` ONLY after its service has
+  # moved to a new hostname AND its Cloudflare Access application has been
+  # deleted. Repointing a name at the honeypot while Access still guards it means
+  # probes hit an auth challenge and are never recorded — you get the downtime
+  # without the intelligence.
+  #
+  #   active_migration : still serving real traffic, NOT yet honeypotted
+  #   burned           : migrated + Access removed -> now a canary
+  #
+  # Any request to a `burned` name is confirmed reconnaissance (T1596.003):
+  # the name exists nowhere except CT logs.
+  canaries:
+    enabled: true
+
+    burned: []          # start empty; promote from active_migration as each cuts over
+
+    active_migration:
+      - auth            # IdP — must stay reachable; rename requires OIDC issuer update
+      - breakglass      # emergency access; rename FIRST, it is the most valuable name leaked
+      - charts
+      - chat
+      - checkmk
+      - dockge
+      - geo
+      - grafana
+      - litellm
+      - n8n
+      - ops
+      - otlp
+      - portainer       # already NXDOMAIN — safe to honeypot immediately
+      - portal
+      - prometheus
+      - telegram-bot
+      - timeline
+      - traefik
+      - tts
 
   threat_map:
     container_name: threat-map

@@ -59,6 +59,16 @@ backup:
     - /opt/podman-data/journey-tracker     # 2.9M
     - /opt/podman-data/mcp                 # 99M
     # - /opt/podman-data/victoriametrics   # 2.3G  DROPPED — transient metrics TSDB
+    # Added 2026-08-21. Honeypot hits live in Loki, and loki-data is
+    # (correctly) dropped below as a transient log TSDB. But attacker telemetry
+    # is not operational noise — it is EVIDENCE, and the only record of who
+    # probed us and when. Losing the host previously lost the entire
+    # investigative history, including every burned-hostname canary hit.
+    #
+    # Rather than back up 2.4G of mostly-application Loki data, a daily job
+    # extracts just the {honeypot="true"} stream to compact JSONL here.
+    # See roles/honeypot-threatmap/tasks/evidence-export.yml
+    - /opt/podman-data/honeypot-evidence   # small, append-only attacker telemetry
 
   # Named Podman volumes to export
   # loki-data (2.4G logs), tempo-data (1.3G traces), trivy-cache (1.1G vuln-db
