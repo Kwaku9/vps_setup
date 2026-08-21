@@ -24,6 +24,10 @@ backup:
   # Workspace. Token lives in vault as gdrive_oauth_token.
   gdrive_enabled: false
   gdrive_remote: "gdrive"
+  # Client-side encryption wrapper. Encrypts in-flight during upload, so no
+  # second plaintext copy is written locally.
+  gdrive_encrypt: true
+  gdrive_crypt_remote: "gdrive-crypt"
   gdrive_path: "vps-backups/daily"
   gdrive_config: "/root/.config/rclone/rclone.conf"
   gdrive_retention_days: 30
