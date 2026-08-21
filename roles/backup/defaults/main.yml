@@ -17,6 +17,21 @@ backup:
   # real backstop; if this gate aborts, the disk is genuinely too full — free
   # space / enable S3, don't just lower this further.
   min_free_gb: 8
+  # Google One (consumer Drive) offsite copy via rclone.
+  # Google One is CONSUMER Drive, so this needs a personal OAuth token — a
+  # service account will not work: files an SA creates count against the SA's
+  # own (zero) quota, not the 5TB, and the Shared-Drive workaround needs
+  # Workspace. Token lives in vault as gdrive_oauth_token.
+  gdrive_enabled: false
+  gdrive_remote: "gdrive"
+  gdrive_path: "vps-backups/daily"
+  gdrive_config: "/root/.config/rclone/rclone.conf"
+  gdrive_retention_days: 30
+  # Local archives kept AFTER a verified offsite upload. Applied ONLY when the
+  # upload verified — a failed upload must never reduce the number of copies
+  # that exist, so on failure this is ignored and retention_days still governs.
+  local_copies_after_offsite: 1
+
   # S3 sync (optional)
   s3_enabled: false
   s3_bucket: "{{ s3_backups_bucket }}"
