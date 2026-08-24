@@ -89,6 +89,38 @@
 <main>
 
   <article class="card">
+    <div class="ic">&#127758;</div>
+    <h2><a href="./worldview-deck.html">WorldView &mdash; Reverse-Engineering a Platform in a Day <span class="arrow">&rarr;</span></a></h2>
+    <p>A YouTube demo became a running OSINT globe in <b>one day</b>, via a prompt that turns a
+       transcript into a buildable spec. Fourteen live layers &mdash; aircraft, satellites, quakes,
+       weather radar, <b>13,711 traffic cameras</b>, shipping, conflict events, lunar trajectories.
+       Now a container anyone can run with <b>zero API keys</b>. Includes the five nginx defects
+       found only by running it, and the tunnel trap that makes CrowdSec ban nobody.</p>
+    <div class="meta"><span class="tag">CesiumJS &middot; TypeScript</span><span class="tag">open source</span><span class="tag">16 slides</span></div>
+    <div class="extra"><a href="./worldview-narration.md">&#8627; narration (NotebookLM)</a> &nbsp;<a href="https://github.com/Kwaku9/worldview">&#8627; GitHub</a></div>
+  </article>
+  <article class="card">
+    <div class="ic">&#128269;</div>
+    <h2><a href="./confident-wrong-answer-deck.html">The Confident Wrong Answer <span class="arrow">&rarr;</span></a></h2>
+    <p>One question, two search engines, <b>6,272 chunks</b> of real session history. Keyword's top hit scored
+       <b>0.833</b> and was completely wrong &mdash; a mobile build log. The correct answer scored <b>0.548</b> and
+       contained <b>none</b> of the query's words. Why absolute similarity is not a quality signal, why a
+       reasonable stopword rule deleted the only word that mattered, and the number to trust instead:
+       <b>signal = top &minus; median</b>.</p>
+    <div class="meta"><span class="tag">buildfol.io #6</span><span class="tag">Titan 256-d &middot; naive keyword</span><span class="tag">15 slides</span></div>
+    <div class="extra"><a href="./confident-wrong-answer-narration.md">&#8627; narration (NotebookLM)</a> &nbsp;<a href="./confident-wrong-answer-deck.pdf">&#8627; PDF</a></div>
+  </article>
+  <article class="card">
+    <div class="ic">&#9878;&#65039;</div>
+    <h2><a href="./courtlistener-eval-deck.html">Sizing a Legal RAG Corpus <span class="arrow">&rarr;</span></a></h2>
+    <p>What 1.9M court opinions actually cost in <b>pgvector</b> &mdash; and how nearly every first answer was wrong.
+       A silent ID-namespace bug, three bad sampling strategies, TOAST blowing the storage model, a
+       <b>hybrid + rerank</b> pipeline, and an LLM judge that agreed with everything until the
+       <b>negative controls</b> caught it.</p>
+    <div class="meta"><span class="tag">courtlistener</span><span class="tag">pgvector &middot; HNSW &middot; BM25</span><span class="tag">16 slides</span></div>
+    <div class="extra"><a href="./courtlistener-eval-narration.md">&#8627; narration (NotebookLM)</a></div>
+  </article>
+  <article class="card">
     <div class="ic">🛡️</div>
     <h2><a href="./security-buildout-runbook-deck.html">Buildfolio — Security &amp; Observability Build-Out <span class="arrow">→</span></a></h2>
     <p>The runbook: from hardened-but-blind to full <b>detect · respond · observe</b>. GuardDuty + Security Hub
