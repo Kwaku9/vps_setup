@@ -34,7 +34,11 @@
 -- Transactional, ROLLBACK by default (dry-run). Flip trailing ROLLBACK->COMMIT
 -- to apply. Idempotent (CREATE TABLE IF NOT EXISTS).
 --
--- STATUS: not yet applied to prod.
+-- STATUS: applied to prod `enterprise` DB on 2026-08-25. Table created and loaded
+-- from the live ledger: 9 gate events (user 7, classifier 2), including both
+-- classifier denials raised while this work was being done. Re-running the
+-- ingester inserted 0, so the natural key holds against real data.
+-- Kept ROLLBACK-by-default for safe idempotent re-runs.
 -- ============================================================================
 
 BEGIN;
