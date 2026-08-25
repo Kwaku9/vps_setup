@@ -61,7 +61,7 @@ CALL apoc.periodic.iterate(
 CALL apoc.periodic.iterate(
   "LOAD CSV WITH HEADERS FROM 'file:///sg_toolcalls.csv' AS r RETURN r",
   "MERGE (t:ToolCall {tool_use_id: r.tool_use_id})
-     SET t.tool_name=r.tool_name, t.status=r.status, t.timestamp=r.timestamp, t.sequence_num=toInteger(r.sequence_num)
+     SET t.tool_name=r.tool_name, t.status=r.status, t.denial_reason=r.denial_reason, t.timestamp=r.timestamp, t.sequence_num=toInteger(r.sequence_num)
    WITH t, r MATCH (m:Message {uuid: r.message_uuid}) MERGE (m)-[:USED_TOOL]->(t)
    WITH t, r WHERE r.tool_name <> '' MERGE (tt:ToolType {name: r.tool_name}) MERGE (t)-[:IS_TYPE]->(tt)",
   {batchSize:5000, parallel:false}) YIELD total, failedOperations RETURN 'toolcalls' AS step, total, failedOperations;
