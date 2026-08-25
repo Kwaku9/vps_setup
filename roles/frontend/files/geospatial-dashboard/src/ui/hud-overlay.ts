@@ -90,6 +90,7 @@ export class HUDOverlay {
     this.container.appendChild(this.bottomBanner);
     this.container.appendChild(bottomLeft);
     this.container.appendChild(bottomRight);
+    this.container.classList.add("wv-hud-panel");   // cinematic hide-all target
     document.body.appendChild(this.container);
 
     this.startUpdates();

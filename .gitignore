@@ -13,6 +13,11 @@ GEMINI.md
 *.md
 # Keep main (root) README for deployment notes — anchored so sub-project READMEs stay ignored
 !/README.md
+# Role READMEs ARE deployment documentation: they say what each role deploys
+# and how to run it. Tracked by rule, because relying on `git add -f` meant
+# roles/mcp-servers/README.md drifted untracked and kept documenting an n8n
+# MCP server that had already been removed from the live config.
+!/roles/*/README.md
 
 # ============================================
 # Utility Scripts (Non-Deployment)
@@ -259,3 +264,7 @@ cdk.out/
 .next/
 lambda_package/
 site-packages/
+# Timestamped editor/script backups, e.g. foo.yml.j2.bak-20260806-130542.
+# `*.bak` above only matches names ENDING in .bak, so these slipped through
+# and showed up as untracked noise on every status.
+*.bak-*

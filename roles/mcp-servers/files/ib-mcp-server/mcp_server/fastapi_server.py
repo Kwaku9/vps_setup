@@ -54,9 +54,28 @@ mcp = FastMCP.from_fastapi(
     )
 
 if __name__ == "__main__":
+    # FastMCP 2.13 accepts ONLY {"stdio", "http", "sse", "streamable-http"} as a
+    # transport name. Statelessness is a separate boolean parameter, NOT a transport.
+    #
+    # This bit the project twice. MCP_TRANSPORT_PROTOCOL=stateless-http was set to
+    # fix persistent HTTP sessions expiring mid-conversation and silently dropping
+    # the MCP client — but it crash-loops the server with
+    #   ValueError: Unknown transport: stateless-http
+    # so it was reverted to plain streamable-http (63159d2), which boots but brings
+    # the session-drop bug straight back. Both values are wrong on their own.
+    #
+    # Translate the setting into what FastMCP actually wants: streamable-http
+    # transport PLUS stateless_http=True.
+    transport = MCP_TRANSPORT_PROTOCOL
+    run_kwargs = {}
+    if transport == "stateless-http":
+        transport = "streamable-http"
+        run_kwargs["stateless_http"] = True
+
     mcp.run(
-        transport=MCP_TRANSPORT_PROTOCOL,
+        transport=transport,
         host=MCP_SERVER_HOST,
         port=MCP_SERVER_PORT,
         log_level="DEBUG",
+        **run_kwargs,
     )

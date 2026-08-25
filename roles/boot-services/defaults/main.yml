@@ -40,9 +40,15 @@ boot_services:
     # 2026-06-04, then reaped after the 2026-06-17 reboot (no boot unit -> Exited
     # -> pruned). Independent store; ai-stack-pod waits on it so embeddings are
     # ready before OWUI/LiteLLM come up.
-    # llama-embed-pod DISABLED 2026-07-01: embedding runs only on the Fedora GPU (a resident
-    # VPS CPU embedder OOM-thrashed the box). No boot unit; ai-stack-pod no longer waits on it.
-    - { name: llama-embed-pod,           enabled: false, depends_on: [] }
+    # RE-ENABLED 2026-08-20. The 2026-07-01 disable (a resident CPU embedder
+    # OOM-thrashed the box) predates the resource caps that fixed that: the pod now
+    # runs --cpus 1 --memory 2g --threads 1 so it cannot starve the 2-core host.
+    # Meanwhile litellm-config.yml.j2 still dials it as the DESIGNED fallback for
+    # embeddinggemma ("the always-on CPU pod on this box, which exists for exactly
+    # this purpose") when the Fedora GPU is asleep. Leaving it unregistered meant a
+    # reboot would silently delete that fallback while LiteLLM kept pointing at it.
+    # Not a dependency of ai-stack-pod — LiteLLM fails over at request time.
+    - { name: llama-embed-pod,           enabled: true,  depends_on: [] }
     - { name: ai-stack-pod,              enabled: true,  depends_on: [authentication-pod, shared-db-pod] }
     - { name: management-pod,            enabled: true,  depends_on: [authentication-pod] }
     - { name: backend-pod,               enabled: true,  depends_on: [shared-db-pod] }
@@ -54,6 +60,11 @@ boot_services:
     # and stayed Exited after the 2026-06-17 reboot (every registered pod came
     # back; this one didn't). Independent store — no pod deps.
     - { name: neo4j-pod,                 enabled: true,  depends_on: [] }
+    # reports-pod (grafana-reports): headless Grafana render-and-deliver engine on
+    # loopback :8765. Deployed and healthy since 2026-08-09 but never added here, so
+    # it had no boot unit and was a prune-reap candidate — the same gap that took out
+    # neo4j-pod and the coders. Renders against Grafana, so order it after metrics-pod.
+    - { name: reports-pod,               enabled: true,  depends_on: [metrics-pod] }
     # hermes-pod intentionally not auto-started — disabled in app config and
     # marked as "stopped on purpose" in project memory.
     - { name: hermes-pod,                enabled: false, depends_on: [] }
@@ -94,3 +105,11 @@ boot_services:
     # reachable only via traefik; threat-map also streams crowdsec decisions.
     - { name: honeypot,         enabled: true, depends_on: [traefik] }
     - { name: threat-map,       enabled: true, depends_on: [traefik, crowdsec] }
+    # dsm5.aicortex.cloud — static study tool; same shape as decks/lab (standalone
+    # nginx behind traefik). Wired into the play 2026-08-12 but missed here.
+    - { name: dsm5-nginx,       enabled: true, depends_on: [traefik] }
+    # ansible-deployment is the ONLY supported deploy path (loopback inventory, so
+    # Tetragon's C2 enforce rule doesn't SIGKILL the run). If a reboot loses it you
+    # lose the ability to deploy the fix for whatever else the reboot broke. Host
+    # network + /run/podman/podman.sock, so order it after the socket service.
+    - { name: ansible-deployment, enabled: true, depends_on: [podman-socket] }

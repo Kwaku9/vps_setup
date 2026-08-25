@@ -91,7 +91,7 @@ export class RightSidebar {
 
     this.buildPanel();
 
-    const { wrapper, state } = makeRetractable(this.container, 'right');
+    const { wrapper, state } = makeRetractable(this.container, 'right', 'wv_panel_presets');
     this.panelState = state;
     document.body.appendChild(wrapper);
   }

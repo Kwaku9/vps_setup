@@ -13,6 +13,12 @@ export interface ThreatEvent {
   iprange: string;
   duration: string;
   timestamp: number;
+  /** Decision origin label ("crowdsec"/"cscli" = local, "capi" = community). */
+  origin: string;
+  /** True for community-blocklist sampler entries — global threat atmosphere,
+   *  NOT attacks on this host. Legacy samples (no origin label) are detected
+   *  by the geo-feed's "AS123"-style asnumber format. */
+  community: boolean;
 }
 
 export const SCENARIO_COLORS: Record<string, string> = {
@@ -78,6 +84,9 @@ export async function fetchThreatEvents(
         iprange: m.iprange || "",
         duration: m.duration || "",
         timestamp: entry.timestamps?.[0] ?? Date.now(),
+        origin: (m.origin || "").toLowerCase(),
+        community: (m.origin || "").toLowerCase() === "capi"
+          || (!m.origin && /^AS/i.test(m.asnumber || "")),
       });
     } catch {
       // skip malformed lines
