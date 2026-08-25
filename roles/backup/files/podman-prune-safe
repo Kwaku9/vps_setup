@@ -1,0 +1,123 @@
+#!/bin/sh
+# podman-prune-safe — reclaim disk without ever deleting a live service.
+#
+# WHY THIS EXISTS
+# On Sunday 2026-08-23 03:00 the prune cron ran `podman system prune -f` and
+# deleted 5 pods and 2 containers — including `shared-db-pod` (the enterprise
+# PostgreSQL) and `management-pod` (ops-dashboard) — to reclaim 43.85 MB. The
+# enterprise database was then down for ~42 hours and nothing reported it,
+# because the pod's infra container kept publishing 127.0.0.1:5432 with nothing
+# behind it, so `podman ps`, `podman pod ps` and `rc-status` all still looked
+# healthy.
+#
+# The mechanism is a SCHEDULED collision, not bad luck: the 02:00 backup stops
+# pods for 5-8 minutes, and this cron ran an hour later on the one day a week it
+# fires. Anything the backup had stopped was, to `system prune`, debris.
+#
+# An age filter does NOT fix this. `--filter until=` selects on container
+# CREATION time, so a container created weeks ago and stopped 60 minutes earlier
+# by the backup is still fully eligible. That is why this script never calls
+# `system prune` at all rather than trying to filter it.
+#
+# RULES
+#   1. Never run `podman system prune`. Images and build cache only, by default.
+#   2. A container is PROTECTED if it has a restart policy, has an OpenRC unit,
+#      or belongs to a pod that has an OpenRC unit. Protected containers are
+#      never removed, regardless of age or state.
+#   3. Optional stopped-container cleanup (PRUNE_STOPPED=1) applies rule 2 first.
+set -u
+
+LOG=${PRUNE_LOG:-/var/log/podman-prune.log}
+PRUNE_STOPPED=${PRUNE_STOPPED:-0}
+MIN_AGE_HOURS=${MIN_AGE_HOURS:-168}
+NOTIFY=/usr/local/bin/telegram-notify
+
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG"; }
+
+log "=== podman-prune-safe start (PRUNE_STOPPED=$PRUNE_STOPPED) ==="
+
+# --- is this container protected? ---------------------------------------------
+is_protected() {
+    _c=$1
+    # (a0) pod infra containers are scaffolding, never debris. Checked first
+    # because an infra container has no restart policy and no OpenRC unit of its
+    # own, so it falls through every other rule — and security-infra-pod (the
+    # ingress pod) has no unit at all, which left its infra container exposed.
+    if [ "$(podman inspect "$_c" --format '{{.IsInfra}}' 2>/dev/null)" = "true" ]; then
+        echo "pod-infra"; return 0
+    fi
+    # (a) explicit restart policy
+    _rp=$(podman inspect "$_c" --format '{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
+    case "$_rp" in ''|no|none) ;; *) echo "restart-policy=$_rp"; return 0 ;; esac
+    # (b) its own OpenRC unit
+    _n=$(podman inspect "$_c" --format '{{.Name}}' 2>/dev/null)
+    if [ -n "$_n" ] && rc-service --exists "$_n" 2>/dev/null; then
+        echo "openrc-unit=$_n"; return 0
+    fi
+    # (c) an OpenRC unit on the pod it belongs to
+    _pid=$(podman inspect "$_c" --format '{{.Pod}}' 2>/dev/null)
+    if [ -n "$_pid" ]; then
+        _pn=$(podman pod inspect "$_pid" --format '{{.Name}}' 2>/dev/null)
+        if [ -n "$_pn" ] && rc-service --exists "$_pn" 2>/dev/null; then
+            echo "openrc-pod=$_pn"; return 0
+        fi
+    fi
+    return 1
+}
+
+# --- record the protected set BEFORE pruning, so we can prove we kept it -------
+PROTECTED_BEFORE=$(mktemp) || exit 1
+for c in $(podman ps -a --format '{{.Names}}' 2>/dev/null); do
+    if reason=$(is_protected "$c"); then
+        printf '%s\t%s\n' "$c" "$reason" >> "$PROTECTED_BEFORE"
+    fi
+done
+log "protected containers: $(wc -l < "$PROTECTED_BEFORE")"
+
+# --- 1. images: always safe, they rebuild -------------------------------------
+log "--- image prune (until=${MIN_AGE_HOURS}h) ---"
+podman image prune -af --filter "until=${MIN_AGE_HOURS}h" >> "$LOG" 2>&1 || log "WARN: image prune failed"
+
+# --- 2. build cache: always safe ----------------------------------------------
+log "--- builder prune ---"
+podman builder prune -f >> "$LOG" 2>&1 || log "WARN: builder prune failed"
+
+# --- 3. stopped containers: guarded, opt-in, NEVER `system prune` -------------
+if [ "$PRUNE_STOPPED" = "1" ]; then
+    log "--- stopped-container cleanup (guarded) ---"
+    for c in $(podman ps -a --filter status=exited --filter status=created \
+                          --format '{{.Names}}' 2>/dev/null); do
+        if reason=$(is_protected "$c"); then
+            log "  SKIP $c ($reason)"
+            continue
+        fi
+        log "  removing $c (unprotected, stopped)"
+        podman rm "$c" >> "$LOG" 2>&1 || log "  WARN: failed to remove $c"
+    done
+else
+    # Not enabled: report what a cleanup WOULD reclaim, so the choice is informed
+    # rather than silent. A prune that hides what it skipped is how this started.
+    _cand=0
+    for c in $(podman ps -a --filter status=exited --filter status=created \
+                          --format '{{.Names}}' 2>/dev/null); do
+        is_protected "$c" >/dev/null || _cand=$((_cand + 1))
+    done
+    log "stopped-container cleanup disabled; $_cand unprotected candidate(s) left in place"
+fi
+
+# --- 4. prove we did not eat anything protected -------------------------------
+LOST=""
+while IFS="$(printf '\t')" read -r name reason; do
+    [ -n "$name" ] || continue
+    podman container exists "$name" 2>/dev/null || LOST="$LOST $name($reason)"
+done < "$PROTECTED_BEFORE"
+rm -f "$PROTECTED_BEFORE"
+
+if [ -n "$LOST" ]; then
+    log "FATAL: prune removed PROTECTED containers:$LOST"
+    [ -x "$NOTIFY" ] && "$NOTIFY" "🚨 podman-prune-safe removed protected containers:$LOST" "HTML"
+    exit 1
+fi
+
+log "=== podman-prune-safe done; all protected containers intact ==="
+exit 0

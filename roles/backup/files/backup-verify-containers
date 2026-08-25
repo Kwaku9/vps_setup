@@ -1,0 +1,83 @@
+#!/bin/sh
+# backup-verify-containers — prove every container the backup stopped came back.
+#
+# WHY THIS EXISTS
+# The backup stops pods (backup.stop_pods) and restarts them with
+# `podman pod start <pod>`. That command succeeds even when the pod's member
+# containers no longer exist — it starts the infra container and reports success.
+# On 2026-08-23 that is exactly what happened: `shared-db-pod` and
+# `management-pod` came back as empty shells, `podman pod ps` said Running,
+# `rc-status` said started, and the pod's infra container went on publishing
+# 127.0.0.1:5432 with no database behind it. The outage lasted ~42 hours and was
+# found by accident.
+#
+# So pod-level success is not evidence. This compares the CONTAINER set before
+# and after, which is the only check that would have caught it.
+set -u
+
+SNAPSHOT=${SNAPSHOT:-/var/lib/vps-backup/pre-stop-containers.txt}
+SETTLE=${SETTLE:-45}
+NOTIFY=/usr/local/bin/telegram-notify
+LOG=${VERIFY_LOG:-/var/log/vps-backup.log}
+
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] verify: $*" | tee -a "$LOG"; }
+
+[ -f "$SNAPSHOT" ] || { log "no snapshot at $SNAPSHOT — nothing to verify"; exit 0; }
+
+# Containers need a moment after `podman pod start` before they are all up.
+log "settling ${SETTLE}s before verification"
+sleep "$SETTLE"
+
+RUNNING=$(mktemp) || exit 1
+podman ps --format '{{.Names}}' 2>/dev/null | sort > "$RUNNING"
+
+MISSING=""
+while read -r name; do
+    [ -n "$name" ] || continue
+    grep -qxF "$name" "$RUNNING" || MISSING="$MISSING $name"
+done < "$SNAPSHOT"
+rm -f "$RUNNING"
+
+if [ -z "$MISSING" ]; then
+    log "OK — all $(wc -l < "$SNAPSHOT") containers that were running before the backup are running again"
+    exit 0
+fi
+
+log "MISSING after backup:$MISSING"
+
+# Classify each casualty. The distinction is the whole point: a container that
+# still EXISTS was merely left stopped and can be started; one that no longer
+# exists was DELETED and only a redeploy can bring it back.
+STOPPED=""   # exists, not running -> startable
+DELETED=""   # gone entirely -> needs `ansible-playbook site.yml --tags <role>`
+for name in $MISSING; do
+    if podman container exists "$name" 2>/dev/null; then
+        STOPPED="$STOPPED $name"
+    else
+        DELETED="$DELETED $name"
+    fi
+done
+log "  stopped-but-present:$STOPPED"
+log "  deleted-entirely:$DELETED"
+
+# ---------------------------------------------------------------------------
+# TODO(remediation policy) — see the note from Claude. Implement below.
+#
+# Decide what this script DOES about $STOPPED and $DELETED, not just what it
+# reports. Constraints worth weighing:
+#   - Some containers on this box are intentionally down (tetragon, expo-dev),
+#     so blindly restarting everything will fight deliberate state.
+#   - Alert-only is honest but let a 42-hour outage happen once already.
+#   - $DELETED cannot be started at all — it needs a tagged Ansible run, which
+#     this script should probably NOT trigger unattended.
+#   - $NOTIFY sends Telegram:  "$NOTIFY" "message" "HTML"
+#
+remediate() {
+    _stopped=$1
+    _deleted=$2
+    :   # <-- implement
+}
+# ---------------------------------------------------------------------------
+
+remediate "$STOPPED" "$DELETED"
+exit 1
