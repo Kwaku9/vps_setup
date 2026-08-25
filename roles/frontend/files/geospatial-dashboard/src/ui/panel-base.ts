@@ -12,12 +12,14 @@ export interface PanelToggleState {
  */
 export function makeRetractable(
   container: HTMLDivElement,
-  direction: CollapseDirection
+  direction: CollapseDirection,
+  persistKey?: string
 ): { wrapper: HTMLDivElement; state: PanelToggleState } {
   const chars = getChars(direction);
 
   // Wrapper holds toggle + content side by side
   const wrapper = document.createElement('div');
+  wrapper.classList.add('wv-hud-panel');   // targeted by cinematic hide-all
   Object.assign(wrapper.style, {
     position: 'absolute',
     display: 'flex',
@@ -84,23 +86,45 @@ export function makeRetractable(
     btn.style.marginTop = '4px';
   }
 
+  const apply = (collapsed: boolean) => {
+    if (collapsed) {
+      btn.textContent = chars[1];
+      container.style.transform = getCollapseTransform(direction);
+      container.style.opacity = '0';
+      container.style.pointerEvents = 'none';
+    } else {
+      btn.textContent = chars[0];
+      container.style.transform = 'none';
+      container.style.opacity = '1';
+      container.style.pointerEvents = 'auto';
+    }
+  };
+
   const state: PanelToggleState = {
     collapsed: false,
     toggle() {
       this.collapsed = !this.collapsed;
-      if (this.collapsed) {
-        btn.textContent = chars[1];
-        container.style.transform = getCollapseTransform(direction);
-        container.style.opacity = '0';
-        container.style.pointerEvents = 'none';
-      } else {
-        btn.textContent = chars[0];
-        container.style.transform = 'none';
-        container.style.opacity = '1';
-        container.style.pointerEvents = 'auto';
+      apply(this.collapsed);
+      if (persistKey) {
+        try { localStorage.setItem(persistKey, this.collapsed ? '1' : '0'); }
+        catch { /* private mode */ }
       }
     },
   };
+
+  // Restore prior collapse state (persisted per panel across reloads).
+  if (persistKey) {
+    try {
+      if (localStorage.getItem(persistKey) === '1') {
+        state.collapsed = true;
+        // Skip the 200ms slide on initial restore.
+        const prev = container.style.transition;
+        container.style.transition = 'none';
+        apply(true);
+        requestAnimationFrame(() => { container.style.transition = prev; });
+      }
+    } catch { /* private mode */ }
+  }
 
   btn.addEventListener('click', () => state.toggle());
 

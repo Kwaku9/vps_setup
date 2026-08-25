@@ -17,6 +17,7 @@ docs/**/*.md filter=git-crypt diff=git-crypt
 # ── Grafana Dashboards (full panel JSON) ──
 dashboards/**/*.json filter=git-crypt diff=git-crypt
 roles/monitoring/files/dashboards/*.json filter=git-crypt diff=git-crypt
+roles/monitoring/files/dashboards/*.py filter=git-crypt diff=git-crypt
 
 # ── ALL Task Files (deployment orchestration logic) ──
 roles/*/tasks/*.yml filter=git-crypt diff=git-crypt
