@@ -76,6 +76,14 @@ TIER1: list[tuple[str, re.Pattern]] = [
     ("github_pat",         re.compile(r"(?<![A-Za-z])github_pat_[A-Za-z0-9_]{60,}\b")),
     ("anthropic_key",      re.compile(r"(?<![A-Za-z])sk-ant-[A-Za-z0-9\-_]{20,}\b")),
     ("openai_key",         re.compile(r"(?<![A-Za-z])sk-(?:proj-)?[A-Za-z0-9\-_]{32,}\b")),
+    # LiteLLM VIRTUAL keys are shorter than OpenAI's 32+ and slipped past the rule
+    # above: 7 live ones were found sitting in recall.chunks on 2026-08-20. The
+    # sk- prefix plus 16+ token chars is specific enough not to catch prose.
+    # Separators matter: real keys contain - and _, and requiring an unbroken
+    # alphanumeric run missed 25-char keys that had both. The digit lookahead
+    # keeps ordinary hyphenated prose (sk-this-is-a-long-name) out of scope.
+    ("litellm_virtual_key", re.compile(
+        r"(?<![A-Za-z])sk-(?=[A-Za-z0-9_-]*[0-9A-Z])[A-Za-z0-9_-]{16,31}\b")),
     ("slack_token",        re.compile(r"(?<![A-Za-z])xox[baprs]-[A-Za-z0-9\-]{10,}\b")),
     ("telegram_bot_token", re.compile(r"(?<![A-Za-z])\d{8,10}:[A-Za-z0-9_\-]{35}\b")),
     ("tailscale_key",      re.compile(r"(?<![A-Za-z])tskey-[a-z]+-[A-Za-z0-9\-]{10,}\b")),
@@ -213,6 +221,9 @@ MUST_REDACT = {
     "github_token": "ghp" "_abcdefghijklmnopqrstuvwxyz0123456789",
     "anthropic_key": "sk-" "ant-api03-abcdefghijklmnopqrstuvwxyz012345",
     "openai_key": "sk-" "proj-abcdefghijklmnopqrstuvwxyz0123456789",
+    # Shorter than the 32+ the openai_key rule requires, and carries both
+    # separators -- the exact shape that slipped through into recall.chunks.
+    "litellm_virtual_key": "sk-" "Xk4_bQ2-mZ9tR7wL3",
     "slack_token": "xox" "b-1234567890-abcdefghijklmno",
     "telegram_bot_token": "1234567890" ":AAHqwertzuiopasdfghjklyxcvbnmQWERTZ",
     "tailscale_key": "tskey" "-auth-abcdef1234567890",
