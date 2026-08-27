@@ -89,7 +89,7 @@
     # bouncer backend) exists, and after shared-services so the traefik dynamic dir
     # is present. Previously hand-deployed (SERVICE-MAP.md §11.4); now reproducible.
     - role: honeypot-threatmap
-      tags: ['honeypot-threatmap', 'security']
+      tags: ['honeypot-threatmap', 'security', 'legal']
 
     # tailscale must run AFTER security: the security role's configure-firewall.sh
     # flushes the INPUT chain on every run, which would wipe any tailscale ACCEPT
@@ -139,7 +139,7 @@
       when: deploy_backend | default(true)
 
     - role: backup
-      tags: ['backup', 'backup-setup', 'backup-run', 'restore', 'prune', 'verify', 'backup-script']
+      tags: ['backup', 'backup-setup', 'backup-run', 'restore', 'prune', 'verify', 'backup-script', 'r2']
       when: backup.enabled | default(true)
 
     - role: flyer-generator

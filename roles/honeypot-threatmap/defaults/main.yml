@@ -119,3 +119,12 @@ honeypot_threatmap:
     # CrowdSec LAPI bouncer registered for threat-map to stream live decisions.
     # Key comes from vault: threat_map_crowdsec_key
     bouncer_name: threat-map-app
+
+  # Static nginx serving ONLY /privacy and /terms on the apex, in front of the
+  # honeypot. Required by Google OAuth verification, which fetches a real privacy
+  # policy and ToS on the app's authorized domain. Kept deliberately tiny: the
+  # box is constrained on container/process count, not RAM.
+  legal:
+    container_name: "legal-nginx"
+    image: "docker.io/library/nginx:1.29-alpine"
+    data_dir: "/opt/compose/legal"
