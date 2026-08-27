@@ -111,6 +111,11 @@ boot_services:
     # Without its own OpenRC service it sits Exited after a reboot and the weekly
     # `podman system prune -f` reaps it (same failure mode as telegram/owui-coder).
     - { name: session-recall-mcp, enabled: true, depends_on: [ai-stack-pod, shared-db-pod] }
+    # scrapy-mcp was the ONLY MCP container with no boot unit, which is exactly
+    # why it was the one that stayed gone: no unit meant nothing restarted it and
+    # podman-prune-safe had no reason to protect it. Its image was pruned too, so
+    # recovery needed a rebuild rather than a restart.
+    - { name: scrapy-mcp,       enabled: true, depends_on: [] }
     # honeypot (apex sink) + threat-map (threat. viewer) — hand-deployed until
     # 2026-07-03, so they had no OpenRC unit and vanished on reboot / prune. Both
     # reachable only via traefik; threat-map also streams crowdsec decisions.

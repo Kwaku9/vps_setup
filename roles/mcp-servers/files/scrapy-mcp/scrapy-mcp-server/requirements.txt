@@ -1,4 +1,10 @@
-mcp>=1.0.0
+# PIN: the MCP Python SDK removed the low-level `@server.list_tools()`
+# decorator in 2.x. This server is written against the 1.x API, so an
+# unpinned `mcp>=1.0.0` silently pulled 2.1.1 on rebuild and the container
+# crash-looped with AttributeError before serving a single request.
+# The old image predated 2.x, which is why this only surfaced when the
+# image was rebuilt from scratch on 2026-08-27.
+mcp>=1.0.0,<2
 docker>=7.0.0
 uvicorn>=0.27.0
 starlette>=0.36.0
