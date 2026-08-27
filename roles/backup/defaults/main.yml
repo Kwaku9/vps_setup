@@ -16,7 +16,11 @@ backup:
   # 8G guards it with headroom. The mid-run tar/gzip failure detection is the
   # real backstop; if this gate aborts, the disk is genuinely too full — free
   # space / enable S3, don't just lower this further.
-  min_free_gb: 8
+  # Peak usage is ~2x the archive: the staging dir and the final tar of it exist
+  # at the same time. At 8 the guard passed with 10.5 G free while a run needed
+  # ~13.4 G — it would stop 9 pods, grind, then die on a full disk. The floor
+  # must track archive size, so revisit it when the archive grows past ~8 G.
+  min_free_gb: 16
   # Google One (consumer Drive) offsite copy via rclone.
   # Google One is CONSUMER Drive, so this needs a personal OAuth token — a
   # service account will not work: files an SA creates count against the SA's
@@ -142,7 +146,12 @@ backup:
     - authentication-pod
     - frontend-pod
     - shared-db-pod
-    - security-pod
+    # security-pod REMOVED 2026-08-26: the pod does not exist (Trivy/Fail2ban/
+    # Tetragon are intentionally down and the pod was removed). `podman pod stop`
+    # on a missing pod is silently swallowed by `|| true`, but the restart emits
+    # "WARN: Failed to start security-pod" and increments the error counter, so
+    # every clean run reported "COMPLETE with 1 warning" — and a backup that
+    # always warns is one whose warnings stop being read.
 
   # All pods to restart after restore
   all_pods:
@@ -155,4 +164,18 @@ backup:
     - management-pod
     - frontend-pod
     - shared-db-pod
-    - security-pod
+
+  # ── Cloudflare R2 offsite copy (replaces the abandoned Google Drive path) ──
+  # Drive was dropped because OAuth refresh tokens expire after 7 days on an
+  # unverified app — a scheduled failure for a nightly unattended cron. R2 uses
+  # a static S3 key with no interactive lifecycle. See rclone.conf.j2 header.
+  r2_enabled: true
+  r2_remote: "r2"
+  r2_bucket: "aicortexbak"
+  # Path INSIDE the bucket. Stays plaintext in R2 (it is part of the remote
+  # definition); everything written below it is encrypted, names included.
+  r2_path: "Backups/vps-bak"
+  r2_encrypt: true
+  r2_crypt_remote: "r2-crypt"
+  r2_config: "/root/.config/rclone/rclone.conf"
+  r2_retention_days: 30
