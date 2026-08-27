@@ -54,7 +54,18 @@ boot_services:
     - { name: backend-pod,               enabled: true,  depends_on: [shared-db-pod] }
     - { name: frontend-pod,              enabled: true,  depends_on: [backend-pod] }
     - { name: dev-pod,                    enabled: true,  depends_on: [] }
-    - { name: security-pod,              enabled: true,  depends_on: [] }
+    # security-infra-pod is Traefik + CrowdSec: the ONLY ingress path into this
+    # host. It had no OpenRC unit at all, so nothing restarted it after a reboot
+    # and nothing protected it from the weekly prune — the worst omission in this
+    # list, since losing it takes every public route down at once. depends_on is
+    # empty on purpose: Traefik must come up before the services it fronts, and it
+    # tolerates missing backends.
+    - { name: security-infra-pod,        enabled: true,  depends_on: [] }
+    # security-pod DOES NOT EXIST (Trivy/Fail2ban/Tetragon intentionally down, pod
+    # removed). Generating a unit for a missing pod means a guaranteed boot-time
+    # failure for something that can never start. Same phantom removed from the
+    # backup role's stop_pods/all_pods on 2026-08-26.
+    - { name: security-pod,              enabled: false, depends_on: [] }
     # neo4j-pod (neo4j-db + neo4j-mcp-server): sessions + service-map graph;
     # feeds timeline-context-api. Was missing here, so it had no boot init unit
     # and stayed Exited after the 2026-06-17 reboot (every registered pod came
