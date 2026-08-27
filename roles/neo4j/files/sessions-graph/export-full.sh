@@ -25,7 +25,7 @@ q sg_messages.csv \
   "SELECT m.uuid, m.id AS pg_id, s.session_uuid, coalesce(m.parent_uuid::text,'') AS parent_uuid, coalesce(m.type,'') AS type, coalesce(m.role,'') AS role, coalesce(m.is_sidechain,false) AS is_sidechain, coalesce(m.timestamp::text,'') AS timestamp, coalesce(m.sequence_num,0) AS sequence_num, translate(left(coalesce(m.content_text,''),300), E'\n\r\t' || chr(34) || chr(92), '     ') AS content_preview FROM sessions.messages m JOIN sessions.sessions s ON m.session_id=s.id WHERE m.uuid IS NOT NULL"
 
 q sg_toolcalls.csv \
-  "SELECT tc.tool_use_id, tc.id AS pg_id, m.uuid AS message_uuid, coalesce(tc.tool_name,'') AS tool_name, coalesce(tc.status,'') AS status, coalesce(tc.timestamp::text,'') AS timestamp, coalesce(tc.sequence_num,0) AS sequence_num FROM sessions.tool_calls tc JOIN sessions.messages m ON tc.message_id=m.id WHERE tc.tool_use_id IS NOT NULL"
+  "SELECT tc.tool_use_id, tc.id AS pg_id, m.uuid AS message_uuid, coalesce(tc.tool_name,'') AS tool_name, coalesce(tc.status,'') AS status, coalesce(tc.denial_reason,'') AS denial_reason, coalesce(tc.timestamp::text,'') AS timestamp, coalesce(tc.sequence_num,0) AS sequence_num FROM sessions.tool_calls tc JOIN sessions.messages m ON tc.message_id=m.id WHERE tc.tool_use_id IS NOT NULL"
 
 q sg_subagents.csv \
   "SELECT sa.agent_id, s.session_uuid, coalesce(sa.agent_type,'') AS agent_type, translate(left(coalesce(sa.description,''),300), E'\n\r\t' || chr(34), '    ') AS description, coalesce(sa.total_messages,0) AS total_messages FROM sessions.subagents sa JOIN sessions.sessions s ON sa.parent_session_id=s.id WHERE sa.agent_id IS NOT NULL"
