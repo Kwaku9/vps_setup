@@ -1,0 +1,23 @@
+# Containers declared outside a pod, tolerated for now.
+# Shrink this file; never grow it. See scripts/lint-pods.sh.
+roles/cloudflare/tasks/tunnel.yml::{{ cloudflare_tunnel.container_name }}
+roles/decks/tasks/main.yml::{{ decks.container_name }}
+roles/dsm5/tasks/main.yml::{{ dsm5.container_name }}
+roles/github-runner/tasks/main.yml::{{ github_runner.container_name }}
+roles/gpu_inference/tasks/main.yml::{{ gpu_fleet_podman.container_name_prefix }}-{{ gi_member.name }}
+roles/honeypot-threatmap/tasks/main.yml::{{ honeypot_threatmap.honeypot.container_name }}
+roles/honeypot-threatmap/tasks/main.yml::{{ honeypot_threatmap.legal.container_name }}
+roles/honeypot-threatmap/tasks/main.yml::{{ honeypot_threatmap.threat_map.container_name }}
+roles/lab/tasks/main.yml::{{ lab.container_name }}
+roles/mcp-servers/tasks/google-docs-mcp.yml::{{ _mcp.container_name }}
+roles/mcp-servers/tasks/ib-mcp.yml::ibeam
+roles/mcp-servers/tasks/ib-mcp.yml::{{ _mcp.container_name }}
+roles/mcp-servers/tasks/owui-coder.yml::{{ _owui.container_name }}
+roles/mcp-servers/tasks/scrapy-mcp.yml::{{ _mcp.container_name }}
+roles/mcp-servers/tasks/session-recall-mcp.yml::{{ _sr.container_name }}
+roles/mcp-servers/tasks/telegram-coder.yml::{{ _coder.container_name }}
+roles/mcp-servers/tasks/telegram-gateway.yml::{{ _mcp.container_name }}
+roles/neo4j/tasks/timeline-context-api.yml::{{ neo4j.context_api.container_name }}
+roles/security/tasks/main.yml::tetragon
+roles/trading/tasks/lightweight-charts.yml::{{ trading.charts.container_name }}
+roles/worldview/tasks/main.yml::{{ worldview.container_name }}
