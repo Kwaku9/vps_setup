@@ -25,3 +25,12 @@ domain: "{{ domain_name }}"
 # Will be overridden by vault
 postgres_password: "VAULT_OVERRIDE"
 crowdsec_bouncer_api_key: "VAULT_OVERRIDE"
+
+# Sources permitted through the `internal-only` Traefik middleware. Derived from
+# five days of access logs, not from assumption — see the comment on the
+# middleware in templates/traefik-dynamic.yml.j2.
+# Replaced by the net-edge CIDR in step 2 of the network segmentation plan.
+traefik_internal_sources:
+  - "10.89.0.235/32"   # cloudflared — the tunnel, i.e. all external traffic
+  - "10.89.0.1/32"     # bridge gateway — dep-health-check.sh probing from the host
+  - "127.0.0.0/8"      # loopback
