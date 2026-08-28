@@ -5,3 +5,17 @@ podman_version: "latest"
 enable_rootless: false
 podman_network_name: "enterprise_network"
 podman_network_subnet: "{{ vault_podman_network_subnet | default('10.0.0.0/24') }}"
+
+# Security zones for the microsegmentation plan. See the memory note
+# `network-segmentation-plan` and the design artifact for the full flow matrix.
+# `purpose` is not consumed by Ansible — it exists so `podman network ls` output
+# and the deploy log say what each zone is for without a lookup.
+segmentation_zones:
+  - { name: "net-edge",     cidr: "10.89.10.0/24", purpose: "ingress: cloudflared, traefik, crowdsec" }
+  - { name: "net-web",      cidr: "10.89.20.0/24", purpose: "anonymous public: nginx-public, honeypot, threat-map" }
+  - { name: "net-app",      cidr: "10.89.30.0/24", purpose: "authenticated apps behind CF Access" }
+  - { name: "net-data",     cidr: "10.89.40.0/24", purpose: "postgres, ai-stack-postgres, neo4j-db" }
+  - { name: "net-identity", cidr: "10.89.50.0/24", purpose: "authentik + its store" }
+  - { name: "net-observe",  cidr: "10.89.60.0/24", purpose: "metrics, logs, traces, grafana" }
+  - { name: "net-agent",    cidr: "10.89.70.0/24", purpose: "MCP servers and bots" }
+  - { name: "net-mgmt",     cidr: "10.89.80.0/24", purpose: "ansible-deployment; reaches all, reachable by none" }
