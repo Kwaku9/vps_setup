@@ -268,3 +268,11 @@ site-packages/
 # `*.bak` above only matches names ENDING in .bak, so these slipped through
 # and showed up as untracked noise on every status.
 *.bak-*
+
+# Repo-hygiene checks must be version-controlled: the `*.sh` rule above means
+# a script is only tracked if someone remembers `git add -f`, which is exactly
+# how these would stop existing for a fresh clone.
+!scripts/lint-pods.sh
+!scripts/lint-secrets.sh
+!scripts/install-hooks.sh
+!scripts/pods-baseline.txt
