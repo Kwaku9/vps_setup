@@ -400,7 +400,7 @@ nsenter -t $CPID -n curl -sI http://SERVICE_IP:PORT
 |----------|-----|
 | Tunnel ID | `f9183e88-728a-4820-ac65-456f21cdb075` |
 | Zone ID | `a8990e0ce8a1d081ec1226ef3f8d49d2` |
-| Account ID | `d6d91bb928618f43d2655eb7b404acbb` |
+| Account ID | `{{ cloudflare_account_id }}` — value in vault, never in the repo |
 
 ### Ansible Tags
 
