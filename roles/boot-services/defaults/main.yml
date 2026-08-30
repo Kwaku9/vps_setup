@@ -76,7 +76,7 @@ boot_services:
     # it had no boot unit and was a prune-reap candidate — the same gap that took out
     # neo4j-pod and the coders. Renders against Grafana, so order it after metrics-pod.
     - { name: reports-pod,               enabled: true,  depends_on: [metrics-pod] }
-    # aicortex.cloud apex — Capability Marketplace (frontend + catalog API in
+    # aicortex.cloud apex: Capability Marketplace (frontend + catalog API in
     # one pod; the API needs the enterprise DB, the frontend needs traefik).
     # Added with roles/marketplace.
     - { name: marketplace-pod,           enabled: true,  depends_on: [traefik, shared-db-pod] }

@@ -126,7 +126,7 @@
       tags: ['lab']
       when: lab.enabled | default(true)
 
-    # aicortex.cloud apex — Capability Marketplace (customer frontend + catalog
+    # aicortex.cloud apex: Capability Marketplace (customer frontend + catalog
     # API). Needs shared-services (postgres + traefik dynamic dir). Apex routers
     # are gated by marketplace_apex_enabled (all.yml) for the staged cutover;
     # while false the honeypot keeps the apex exactly as before.
