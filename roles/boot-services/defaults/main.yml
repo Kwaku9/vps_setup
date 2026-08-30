@@ -76,6 +76,10 @@ boot_services:
     # it had no boot unit and was a prune-reap candidate — the same gap that took out
     # neo4j-pod and the coders. Renders against Grafana, so order it after metrics-pod.
     - { name: reports-pod,               enabled: true,  depends_on: [metrics-pod] }
+    # aicortex.cloud apex — Capability Marketplace (frontend + catalog API in
+    # one pod; the API needs the enterprise DB, the frontend needs traefik).
+    # Added with roles/marketplace.
+    - { name: marketplace-pod,           enabled: true,  depends_on: [traefik, shared-db-pod] }
     # hermes-pod intentionally not auto-started — disabled in app config and
     # marked as "stopped on purpose" in project memory.
     - { name: hermes-pod,                enabled: false, depends_on: [] }
@@ -124,6 +128,7 @@ boot_services:
     # dsm5.aicortex.cloud — static study tool; same shape as decks/lab (standalone
     # nginx behind traefik). Wired into the play 2026-08-12 but missed here.
     - { name: dsm5-nginx,       enabled: true, depends_on: [traefik] }
+
     # ansible-deployment is the ONLY supported deploy path (loopback inventory, so
     # Tetragon's C2 enforce rule doesn't SIGKILL the run). If a reboot loses it you
     # lose the ability to deploy the fix for whatever else the reboot broke. Host

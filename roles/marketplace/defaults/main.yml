@@ -1,0 +1,40 @@
+---
+# AICORTEX Capability Marketplace — customer frontend + catalog API.
+#
+# App source lives in its own repo (github.com/Kwaku9/aicortex-marketplace),
+# cloned to marketplace.repo_dir on the host. This role builds both images
+# from that checkout (rev-guarded), provisions the `catalog` schema in the
+# enterprise DB, declares both containers, and renders the Traefik routes.
+#
+# STAGED CUTOVER: the apex routers (aicortex.cloud -> marketplace,
+# /api -> catalog-api) render only when `marketplace_apex_enabled: true`
+# (all.yml). First converge with it false, health-check the containers
+# internally, then flip it and re-run --tags marketplace-traefik.
+# Rollback = set false + re-run the same tag (honeypot resumes the apex).
+
+marketplace:
+  enabled: true
+  pod_name: marketplace-pod
+  repo_dir: /workspace/vscode-projects/aicortex-marketplace
+  apex_enabled: "{{ marketplace_apex_enabled | default(false) }}"
+
+  web:
+    container_name: marketplace-web
+    image: localhost/marketplace-web:latest
+    memory: "64m"
+
+  api:
+    container_name: catalog-api
+    image: localhost/catalog-api:latest
+    memory: "256m"
+    port: 8080
+    data_dir: /opt/podman-data/catalog-api        # generated blueprint artifacts (backed up)
+    secrets_dir: /opt/compose/catalog-api-secrets # stripe key/webhook, mounted ro
+
+# Vault variables consumed by this role (root vault.yml):
+#   pg_catalog_api_password            REQUIRED  (>=16 chars) DB role password
+#   marketplace_artifact_token_secret  REQUIRED  (>=32 chars) HMAC for artifact download tokens
+#   cortex_stripe_api_key              optional  Stripe secret key (sandbox now, live later)
+#   cortex_stripe_webhook_secret       optional  Stripe webhook signing secret
+#   cortex_stripe_publishable_key      optional  Stripe publishable key (pk_..., not secret)
+# Checkout is feature-gated automatically while the Stripe vars are absent.

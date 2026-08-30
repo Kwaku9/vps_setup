@@ -126,6 +126,14 @@
       tags: ['lab']
       when: lab.enabled | default(true)
 
+    # aicortex.cloud apex — Capability Marketplace (customer frontend + catalog
+    # API). Needs shared-services (postgres + traefik dynamic dir). Apex routers
+    # are gated by marketplace_apex_enabled (all.yml) for the staged cutover;
+    # while false the honeypot keeps the apex exactly as before.
+    - role: marketplace
+      tags: ['marketplace']
+      when: marketplace.enabled | default(true)
+
     # WorldView consolidated into frontend role (frontend-pod)
 
     # squid-proxy merged into security role (host-level service)
