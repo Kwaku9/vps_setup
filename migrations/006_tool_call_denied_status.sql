@@ -42,7 +42,16 @@
 -- Transactional, ROLLBACK by default (dry-run). Flip trailing ROLLBACK->COMMIT
 -- to apply. Idempotent (ADD COLUMN IF NOT EXISTS + recompute from result_text).
 --
--- STATUS: not yet applied to prod.
+-- STATUS: applied to prod `enterprise` DB on 2026-08-25. 150 rows reclassified
+-- (user 74, classifier 71, safety 5); error 3800 -> 3650; success and pending
+-- unchanged at 63,075 and 24,343. All three controls passed, and the result was
+-- re-read on a fresh connection rather than trusted from inside the transaction.
+-- Kept ROLLBACK-by-default for safe idempotent re-runs.
+--
+-- REVERSAL: the 150 affected ids were captured before applying. Nothing was
+-- 'denied' beforehand (verified 0), so the inverse is exact:
+--   UPDATE sessions.tool_calls SET status='error', denial_reason=NULL
+--   WHERE status='denied';
 -- ============================================================================
 
 BEGIN;
