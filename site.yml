@@ -126,6 +126,13 @@
       tags: ['lab']
       when: lab.enabled | default(true)
 
+    # Mirrors CrowdSec decisions to the Cloudflare edge as IP Access Rules, so
+    # a banned visitor is challenged before the tunnel instead of at Traefik.
+    # After security (crowdsec must exist) and after cloudflare (zone facts).
+    - role: crowdsec-cloudflare
+      tags: ['crowdsec-cloudflare', 'security']
+      when: crowdsec_cloudflare.enabled | default(true)
+
     # aicortex.cloud apex: Capability Marketplace (customer frontend + catalog
     # API). Needs shared-services (postgres + traefik dynamic dir). Apex routers
     # are gated by marketplace_apex_enabled (all.yml) for the staged cutover;
