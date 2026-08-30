@@ -54,5 +54,21 @@ ENV ANSIBLE_HOST_KEY_CHECKING=False \
     ANSIBLE_STDOUT_CALLBACK=default \
     PYTHONUNBUFFERED=1
 
+# The running ansible-deployment container has ENTRYPOINT [/entrypoint.sh] and
+# always has, but this Dockerfile never copied or declared it. The script lived
+# untracked on both machines and the only complete copy was inside
+# localhost/ansible-vps:latest, so a rebuild from a clean clone produced a
+# container that silently skipped SSH key setup and left .vault_pass with
+# whatever permissions it arrived with.
+#
+# Verified before adding: sha256 of scripts/entrypoint.sh matches /entrypoint.sh
+# inside the running image exactly, so this reproduces what is deployed rather
+# than guessing at it.
+#
+# entrypoint.sh ends in `exec "$@"`, so CMD below is still what runs.
+COPY scripts/entrypoint.sh /entrypoint.sh
+RUN chmod 755 /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 # Long-running container. Ansible runs via `podman exec`.
 CMD ["/bin/bash", "-c", "echo 'ansible-deployment ready'; exec sleep infinity"]
