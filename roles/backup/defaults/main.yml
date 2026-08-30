@@ -68,7 +68,7 @@ backup:
                                            # register) had NO daily backup, only a stale 06-03 dump.
     - /opt/podman-data/journey-tracker     # 2.9M
     - /opt/podman-data/mcp                 # 99M
-    - /opt/podman-data/catalog-api         # marketplace blueprint artifacts (paid deliverables —
+    - /opt/podman-data/catalog-api         # marketplace blueprint artifacts (paid deliverables:
                                            # regenerable from the DB, but customers hold the URLs)
     # - /opt/podman-data/victoriametrics   # 2.3G  DROPPED — transient metrics TSDB
     # Added 2026-08-21. Honeypot hits live in Loki, and loki-data is

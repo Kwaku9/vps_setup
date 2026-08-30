@@ -1,5 +1,5 @@
 ---
-# AICORTEX Capability Marketplace — customer frontend + catalog API.
+# AICORTEX Capability Marketplace: customer frontend + catalog API.
 #
 # App source lives in its own repo (github.com/Kwaku9/aicortex-marketplace),
 # cloned to marketplace.repo_dir on the host. This role builds both images
