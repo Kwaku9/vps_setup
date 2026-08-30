@@ -16,6 +16,19 @@
 crowdsec_cloudflare:
   enabled: true
 
+  # Which vault key holds the Cloudflare token this sync authenticates with.
+  # Named indirectly so the role never hardcodes a credential to one purpose:
+  # cloudflare_worker_api_token belongs to yt-transcript-worker and is not ours
+  # to repurpose.
+  #
+  # Point this at the "Cloudflare-Pod" token, which is restricted to the VPS
+  # source address. That restriction is exactly right here, because the sync
+  # only ever runs from that host, so a leaked copy is useless anywhere else.
+  # Verified 2026-08-30 that this token is not yet in the vault under any key,
+  # so it must be added before the role can run. The token needs
+  # Zone > Zone > Read and Zone > Firewall Services > Edit.
+  token_var: "crowdsec_cloudflare_token"
+
   # managed_challenge  Cloudflare picks the challenge type (recommended)
   # challenge          interactive CAPTCHA
   # js_challenge       silent JS challenge
