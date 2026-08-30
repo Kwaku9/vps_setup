@@ -1,0 +1,48 @@
+---
+# CrowdSec decisions pushed to the Cloudflare edge as IP Access Rules.
+#
+# Local enforcement (the Traefik bouncer) only stops an attacker AFTER the
+# request has crossed the tunnel and reached Traefik. This pushes the same
+# decisions to Cloudflare so the visitor is challenged at the edge instead.
+#
+# Deliberately NOT using crowdsecurity/cs-cloudflare-bouncer: its last release
+# was v0.3.0 (Sept 2024) and its last commit April 2025, so it is effectively
+# unmaintained, and it would hold write access to the edge firewall. The sync
+# it performs is small enough to own outright, which is what this role does.
+#
+# IP Access Rules were chosen over Lists + custom rules because they work on
+# every plan including Free (50k rules per account, versus 5 custom rules).
+
+crowdsec_cloudflare:
+  enabled: true
+
+  # managed_challenge  Cloudflare picks the challenge type (recommended)
+  # challenge          interactive CAPTCHA
+  # js_challenge       silent JS challenge
+  # block              hard block, no way through for a false positive
+  mode: "managed_challenge"
+
+  # Every rule this sync creates carries this note prefix, and it will ONLY
+  # ever modify or delete rules whose note starts with it. Rules you create by
+  # hand are never touched.
+  note_prefix: "crowdsec-sync"
+
+  # Refuse to create more than this many rules in one run. A runaway decision
+  # list should degrade loudly, not silently rewrite your edge firewall.
+  max_rules: 500
+
+  # Never pushed to Cloudflare even if CrowdSec bans them. Add your own egress
+  # address here if you ever want a hard guarantee against self-lockout; note
+  # that a challenge is already survivable by a human, unlike a block.
+  never_push:
+    - "127.0.0.1"
+
+  sync_interval_minutes: 2
+  token_file: /opt/compose/crowdsec-cloudflare-token
+  metrics_file: /opt/compose/textfile-collector/crowdsec_cloudflare.prom
+  log_file: /var/log/crowdsec-cloudflare-sync.log
+
+# Consumes cloudflare_worker_api_token from the vault. For this path the token
+# needs Zone > Firewall Services > Edit (plus Zone > Zone > Read). A preflight
+# task verifies that before anything is deployed, so a token missing the scope
+# fails the run instead of producing a sync that silently does nothing.
