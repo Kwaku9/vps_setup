@@ -7,6 +7,7 @@
 # ── Global Configuration (tuned values, enterprise topology) ──
 all.yml filter=git-crypt diff=git-crypt
 docs/model_tiers.yml filter=git-crypt diff=git-crypt
+docs/owui-adoption-candidates.yml filter=git-crypt diff=git-crypt
 
 # ── Architecture Diagrams ──
 docs/*.drawio filter=git-crypt diff=git-crypt
