@@ -111,3 +111,37 @@ ai_stack:
     databases:
       - litellm
     user: "aistack"
+
+# ── Open WebUI model reconciler ──────────────────────────────────────────────
+# Replaces the old delete-then-create model registration loop.
+#
+# mode:
+#   audit  - read only. Reports creates/updates/conflicts and prints a paste-ready
+#            adoption list. Writes nothing. Safe to run any time.
+#   apply  - performs creates and updates. Never deletes; pruning is a separate
+#            change gated on its own flag.
+owui_reconcile_mode: audit
+
+# Ownership marker written to meta.managed_by. The reconciler refuses to touch any
+# row that does not carry it, unless the id is on owui_adoption_list below.
+owui_managed_by_marker: "ansible-model-tiers"
+
+# One-time list of unmarked legacy ids this deploy is allowed to claim and stamp.
+# Populate from an audit run, review each entry, then empty it again once every
+# managed row carries the marker. Leaving ids here permanently defeats the guard.
+owui_adoption_list: []
+
+# Knowledge-base reindex. OFF by default and deliberately opt-in.
+#
+# The reindex deletes every KB's vector collection and re-embeds every file, with
+# embedding served by the workstation GPU over the tailnet. It previously had no
+# guard and ran on every openwebui-setup deploy. Enable only when the embedding
+# model actually changed, and only with the embedder confirmed reachable:
+#
+#   ansible-playbook ... --tags reindex -e owui_reindex_enabled=true
+owui_reindex_enabled: false
+
+# Blind re-registration of the five image-only models into LiteLLM's DB. OFF: the
+# rows already exist 38 times over (190 total). Phase 3 moves them into generated
+# config and removes the task entirely.
+owui_register_image_models: false
