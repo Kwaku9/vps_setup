@@ -38,7 +38,16 @@ backup:
   # Local archives kept AFTER a verified offsite upload. Applied ONLY when the
   # upload verified — a failed upload must never reduce the number of copies
   # that exist, so on failure this is ignored and retention_days still governs.
-  local_copies_after_offsite: 1
+  #
+  # 0 = R2 holds the ONLY copy (owner decision 2026-08-31). The archive outgrew
+  # the box: at 7.7G it was 8% of a 94G disk already sitting at 93%, and the
+  # local copy only ever bought a faster restore — a restore we would be pulling
+  # from R2 regardless. Safe to zero because the deletion below is gated on a
+  # byte-for-byte size check against the crypt remote, and because
+  # backup-freshness-metrics reads the LOG rather than file presence, so an
+  # empty /opt/backups/daily is not an alertable state.
+  # Cost, accepted: restore becomes a 7.7G encrypted download + decrypt.
+  local_copies_after_offsite: 0
 
   # S3 sync (optional)
   s3_enabled: false
