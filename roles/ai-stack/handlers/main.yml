@@ -1,5 +1,16 @@
 ---
 # AI Stack Handlers
+#
+# podman_container does NOT accept `state: restarted`; its choices are
+# absent/present/stopped/started/created/quadlet. Handlers written that way failed
+# every time they fired, so a config-only change rendered new content and the
+# service kept running the old config indefinitely. Verified 2026-08-31: the
+# LiteLLM config task reported changed, the handler ran, and the container's
+# StartedAt did not move. Use `state: started` + `force_restart: true`, the form
+# already proven in roles/security/handlers/main.yml.
+#
+# podman_POD is different: `restarted` IS a valid state there, so the pod handler
+# below is correct as written.
 
 - name: restart ai-stack-pod
   # tags: always — a handler without tags is FILTERED OUT by --tags, so a
@@ -14,16 +25,19 @@
   tags: ['always']
   containers.podman.podman_container:
     name: "{{ ai_stack.litellm.name }}"
-    state: restarted
+    state: started
+    force_restart: true
 
 - name: restart openwebui
   tags: ['always']
   containers.podman.podman_container:
     name: "{{ ai_stack.openwebui.name }}"
-    state: restarted
+    state: started
+    force_restart: true
 
 - name: restart fabric-api
   tags: ['always']
   containers.podman.podman_container:
     name: "{{ ai_stack.fabric_api.name }}"
-    state: restarted
+    state: started
+    force_restart: true

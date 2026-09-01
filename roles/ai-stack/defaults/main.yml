@@ -140,8 +140,3 @@ owui_adoption_list: []
 #
 #   ansible-playbook ... --tags reindex -e owui_reindex_enabled=true
 owui_reindex_enabled: false
-
-# Blind re-registration of the five image-only models into LiteLLM's DB. OFF: the
-# rows already exist 38 times over (190 total). Phase 3 moves them into generated
-# config and removes the task entirely.
-owui_register_image_models: false
