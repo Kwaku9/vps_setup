@@ -33,7 +33,7 @@ ai_stack:
     # buildfol.io chat widget down with `Upstream error 500`. A digest is immutable, so a
     # recreate can never silently change versions. To upgrade: change this digest
     # deliberately, then watch RestartCount stay flat (a crash-loop reports status=running).
-    image: "ghcr.io/berriai/litellm-database@sha256:b6f3888c75e09ba23e89387d3e1e03c29ba748fa1fc078e0decb91d1dd08d8b1"
+    image: "ghcr.io/berriai/litellm-database@sha256:5ead13edd4efd89f32dab349c1f19447d395affca53f3aeae00f5e6e01b8c08d"
     port: 4000
     config_file: "config.yml"
     env:
