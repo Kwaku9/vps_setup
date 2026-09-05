@@ -185,8 +185,91 @@ if [ "$NEO4J_OK" = "1" ]; then
                 log "WARN step 3c: could not build ETL venv"
             fi
         fi
-        (cd "$REPO/local/etl" && PG_PORT=15432 PG_USER="$DB_USER" PG_PASSWORD="$DB_PASSWORD" PYTHONIOENCODING=utf-8 "$ETL_PY" sync_sessions_to_neo4j.py) >>"$LOG" 2>&1 \
-            || log "WARN step 3c: ETL failed (continuing without graph data)"
+        # --- Cypher-level readiness -----------------------------------
+        # probe_bolt() only proves the rootlessport forwarder accepts a TCP
+        # connection. It does NOT prove the database answers, and the ETL's
+        # first heavy stage is a 400k+ row write. Ask for an actual query
+        # result, through the ETL's own venv and .env so no credential ever
+        # reaches a command line or the process table.
+        neo4j_answers() {
+            (cd "$REPO/local/etl" && "$ETL_PY" - <<'PYPROBE' 2>/dev/null
+import os, sys
+from dotenv import load_dotenv
+from neo4j import GraphDatabase
+# Explicit path, NOT bare load_dotenv(): with no argument it calls
+# find_dotenv(), which walks the caller's stack frame and raises
+# AssertionError when the script arrives on stdin ("python -"). That made
+# the probe fail 100% of the time and spuriously restart Neo4j every run.
+load_dotenv(".env")
+try:
+    drv = GraphDatabase.driver(
+        os.getenv("NEO4J_URI", "bolt://localhost:17687"),
+        auth=(os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASSWORD", "")),
+        connection_timeout=10,
+    )
+    with drv.session() as s:
+        s.run("RETURN 1").consume()
+    drv.close()
+except Exception:
+    sys.exit(1)
+PYPROBE
+            )
+        }
+
+        avail_mb() { awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo; }
+
+        # Why this exists (2026-09-05): the ETL died 15 min in with a bolt
+        # read TimeoutError, and 6 min later the kernel OOM-killed the Neo4j
+        # JVM. Neo4j was NOT the hog — heap is capped at 1G and its RSS was
+        # 1.5G — but rootless podman stamps these containers with
+        # oom_score_adj=200 (oom_score 800), which makes Neo4j the preferred
+        # victim whenever the host runs short. Setting oom_score_adj lower is
+        # not available to us: an unprivileged process cannot lower it, and
+        # podman-compose silently ignores the key (verified). So the levers
+        # are: don't start a 15-minute run into a starved host, and recover
+        # instead of silently skipping the graph for the day.
+        ETL_MIN_MB=2048
+        ETL_RC=1
+        for attempt in 1 2; do
+            avail=$(avail_mb)
+            if [ "$avail" -lt "$ETL_MIN_MB" ]; then
+                log "Step 3c: only ${avail}MB available (want ${ETL_MIN_MB}MB), waiting up to 120s"
+                for _w in 1 2 3 4 5 6 7 8 9 10 11 12; do
+                    sleep 10
+                    avail=$(avail_mb)
+                    [ "$avail" -ge "$ETL_MIN_MB" ] && break
+                done
+                log "Step 3c: proceeding with ${avail}MB available"
+            fi
+
+            if ! neo4j_answers; then
+                log "WARN step 3c: Neo4j not answering Cypher on :17687 (attempt $attempt)"
+                if [ "$attempt" -eq 1 ]; then
+                    docker restart neo4j-local >>"$LOG" 2>&1 || true
+                    sleep 20
+                fi
+            fi
+
+            (cd "$REPO/local/etl" && PG_PORT=15432 PG_USER="$DB_USER" PG_PASSWORD="$DB_PASSWORD" PYTHONIOENCODING=utf-8 "$ETL_PY" sync_sessions_to_neo4j.py) >>"$LOG" 2>&1
+            ETL_RC=$?
+            [ $ETL_RC -eq 0 ] && break
+
+            # Name the real cause in the log instead of leaving a bare
+            # TimeoutError traceback that reads like a network fault.
+            if [ "$(docker inspect neo4j-local --format '{{.State.OOMKilled}}' 2>/dev/null)" = "true" ]; then
+                log "WARN step 3c: Neo4j was OOM-KILLED during attempt $attempt (host memory exhausted, not a network fault)"
+            else
+                log "WARN step 3c: ETL attempt $attempt exited $ETL_RC"
+            fi
+            [ "$attempt" -eq 1 ] && log "Step 3c: retrying once after 60s"
+            [ "$attempt" -eq 1 ] && sleep 60
+        done
+
+        if [ $ETL_RC -eq 0 ]; then
+            log "Step 3c: ETL completed OK"
+        else
+            log "WARN step 3c: ETL failed after 2 attempts (continuing without graph data)"
+        fi
         kill "$TUNNEL_PID" 2>/dev/null || true
     else
         log "WARN step 3c: could not resolve postgres IP, skipping ETL"
