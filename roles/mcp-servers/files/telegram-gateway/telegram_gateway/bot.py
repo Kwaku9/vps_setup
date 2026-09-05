@@ -81,32 +81,95 @@ def _parse_command(text: str) -> tuple[str, str]:
     return "ask", text
 
 
+# --- outbound rate-limit state ------------------------------------------------
+# Telegram answers a flood with 429 + retry_after, and during the 2026-09-05
+# HoneypotSilent storm that retry_after reached ~18 hours. Re-dialling through
+# such a window delivers nothing and costs a TLS handshake every attempt, so the
+# sender keeps a process-wide cooldown and fails fast until it expires.
+_client: httpx.AsyncClient | None = None
+_send_cooldown_until: float = 0.0
+
+
+def _get_client() -> httpx.AsyncClient:
+    """One pooled client. A client per message meant a TLS handshake per message."""
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(timeout=30)
+    return _client
+
+
+def reset_send_state() -> None:
+    """Drop the cooldown and the pooled client (tests, and reconfiguration)."""
+    global _client, _send_cooldown_until
+    _client = None
+    _send_cooldown_until = 0.0
+
+
+def _cooldown_remaining() -> float:
+    return max(0.0, _send_cooldown_until - time.monotonic())
+
+
+def _open_cooldown(seconds: float) -> None:
+    global _send_cooldown_until
+    _send_cooldown_until = max(_send_cooldown_until, time.monotonic() + seconds)
+
+
+async def close_send_client() -> None:
+    """Close the pooled client on shutdown."""
+    global _client
+    if _client is not None and not _client.is_closed:
+        await _client.aclose()
+    _client = None
+
+
 async def send_telegram_message(
     chat_id: int, text: str, parse_mode: str | None = "HTML"
 ) -> dict:
-    """Send a message via Telegram Bot API."""
+    """Send a message via Telegram Bot API.
+
+    Honours 429 retry_after with a process-wide cooldown: while Telegram is
+    rate-limiting the bot, every send short-circuits without touching the
+    network. Callers get an ok=False dict describing the hold.
+    """
+    remaining = _cooldown_remaining()
+    if remaining > 0:
+        return {
+            "ok": False,
+            "error_code": 429,
+            "description": "suppressed locally: Telegram rate limit still in effect",
+            "parameters": {"retry_after": int(remaining)},
+        }
+
     chunks = chunk_message(text)
-    result = {}
-    async with httpx.AsyncClient(timeout=30) as client:
-        for chunk in chunks:
-            payload: dict = {"chat_id": chat_id, "text": chunk}
+    result: dict = {}
+    client = _get_client()
+    for chunk in chunks:
+        payload: dict = {"chat_id": chat_id, "text": chunk}
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        resp = await client.post(f"{TELEGRAM_API_BASE}/sendMessage", json=payload)
+        data = resp.json()
+        if not data.get("ok"):
+            if data.get("error_code") == 429:
+                retry_after = int((data.get("parameters") or {}).get("retry_after", 1))
+                _open_cooldown(retry_after)
+                logger.warning(
+                    "Telegram rate limited the bot; holding all sends for %ss",
+                    retry_after,
+                )
+                # A 429 is not a markup problem. Retrying as plaintext just
+                # doubled the request rate that caused the limit in the first place.
+                return data
+            logger.error("Telegram API error: %s", data)
+            # Retry without parse_mode if formatting failed
             if parse_mode:
-                payload["parse_mode"] = parse_mode
-            resp = await client.post(
-                f"{TELEGRAM_API_BASE}/sendMessage", json=payload
-            )
-            data = resp.json()
-            if not data.get("ok"):
-                logger.error("Telegram API error: %s", data)
-                # Retry without parse_mode if formatting failed
-                if parse_mode:
-                    payload.pop("parse_mode")
-                    payload["text"] = strip_html_tags(chunk)
-                    resp = await client.post(
-                        f"{TELEGRAM_API_BASE}/sendMessage", json=payload
-                    )
-                    data = resp.json()
-            result = data
+                payload.pop("parse_mode")
+                payload["text"] = strip_html_tags(chunk)
+                resp = await client.post(
+                    f"{TELEGRAM_API_BASE}/sendMessage", json=payload
+                )
+                data = resp.json()
+        result = data
     return result
 
 
