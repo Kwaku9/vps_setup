@@ -42,8 +42,13 @@ fi
 # Step 1 — Sync local Claude sessions to VPS staging
 # -------------------------------------------------------------------
 log "Step 1: sync sessions to VPS"
-if ! "$REPO/sync-sessions-to-vps.sh" >>"$LOG" 2>&1; then
-    log "FAIL step 1: sync exited $?"
+# NOTE: capture rc on its own line. Inside `if ! cmd; then`, `$?` is the
+# *`if` test's* status (always 0), so the old form reported "exited 0" on
+# every failure and hid the real code.
+"$REPO/sync-sessions-to-vps.sh" >>"$LOG" 2>&1
+rc=$?
+if [ $rc -ne 0 ]; then
+    log "FAIL step 1: sync exited $rc"
     exit 1
 fi
 
@@ -60,8 +65,13 @@ fi
 # (VPS also has its own 03:00 cron — this is idempotent re-run)
 # -------------------------------------------------------------------
 log "Step 2: ingest on VPS"
-if ! ssh "$VPS" /opt/compose/session-ingestion/daily-ingest.sh >>"$LOG" 2>&1; then
-    log "FAIL step 2: ingest exited $?"
+ssh "$VPS" /opt/compose/session-ingestion/daily-ingest.sh >>"$LOG" 2>&1
+rc=$?
+if [ $rc -ne 0 ]; then
+    # daily-ingest.sh redirects almost everything to the VPS's own log, so
+    # this log will look empty. The real error is in
+    # /var/log/session-ingest.log on $VPS.
+    log "FAIL step 2: ingest exited $rc (see $VPS:/var/log/session-ingest.log)"
     exit 2
 fi
 
@@ -194,8 +204,10 @@ if [ -z "$PG_IP" ]; then
     log "FAIL step 3d: could not resolve postgres IP"
     exit 3
 fi
-if ! (cd "$JT_DIR" && DB_REMOTE_HOST="$PG_IP" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" node extract-sessions.js) >>"$LOG" 2>&1; then
-    log "FAIL step 3d: extract-sessions.js exited $?"
+(cd "$JT_DIR" && DB_REMOTE_HOST="$PG_IP" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" node extract-sessions.js) >>"$LOG" 2>&1
+rc=$?
+if [ $rc -ne 0 ]; then
+    log "FAIL step 3d: extract-sessions.js exited $rc"
     exit 3
 fi
 
