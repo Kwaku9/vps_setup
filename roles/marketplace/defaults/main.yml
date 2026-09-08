@@ -31,10 +31,22 @@ marketplace:
     data_dir: /opt/podman-data/catalog-api        # generated blueprint artifacts (backed up)
     secrets_dir: /opt/compose/catalog-api-secrets # stripe key/webhook, mounted ro
 
+  # Public landing plus signed-email-gated workshop delivery assets.
+  workshop:
+    auth_enabled: "{{ workshop_auth_enabled | default(false) }}"
+    email_gate_enabled: "{{ workshop_email_gate_enabled | default(false) }}"
+    deck_url: "{{ marketplace_workshop_deck_url | default('') }}"
+    outpost_service: "authentik-workshop-outpost"
+    posthog_host: "{{ posthog_host | default('https://us.i.posthog.com') }}"
+
 # Vault variables consumed by this role (root vault.yml):
 #   pg_catalog_api_password            REQUIRED  (>=16 chars) DB role password
 #   marketplace_artifact_token_secret  REQUIRED  (>=32 chars) HMAC for artifact download tokens
 #   cortex_stripe_api_key              optional  Stripe secret key (sandbox now, live later)
 #   cortex_stripe_webhook_secret       optional  Stripe webhook signing secret
 #   cortex_stripe_publishable_key      optional  Stripe publishable key (pk_..., not secret)
+#   authentik_workshop_outpost_token    required only when workshop_auth_enabled=true
+#   marketplace_posthog_project_api_key optional public PostHog project key for the workshop (runtime only)
+#   marketplace_workshop_gate_secret     required when workshop_email_gate_enabled=true (>=32 chars)
+#   marketplace_workshop_deck_url        optional gated narrated-deck URL
 # Checkout is feature-gated automatically while the Stripe vars are absent.
