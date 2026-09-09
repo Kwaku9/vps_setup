@@ -1,0 +1,10 @@
+---
+# Tailscale role handlers
+
+- name: restart unbound
+  # Handlers are suppressed entirely by --skip-tags always (measured 2026-09-09
+  # on ansible-core 2.20 and 2.18), which is the house-standard flag. After such
+  # a run, restart unbound by hand: `rc-service unbound restart`.
+  service:
+    name: unbound
+    state: restarted
