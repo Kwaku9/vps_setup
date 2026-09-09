@@ -25,7 +25,11 @@ import re, sys, glob, os
 MODE = sys.argv[1] if len(sys.argv) > 1 else ''
 BASE = 'scripts/pods-baseline.txt'
 # Edge/control plane: become their own Deployment in K8s, or never migrate.
-ALLOW = {'traefik', 'cloudflared', 'ansible-deployment'}
+ALLOW = {'traefik', 'cloudflared', 'ansible-deployment',
+         # Authentik proxy outpost for the gated workshop: it listens on :9000
+         # like the authentik server itself, so it cannot share
+         # authentication-pod's network namespace; standalone on enterprise_network.
+         '{{ authentication.authentik.workshop_outpost.container_name }}'}
 
 found = set()
 for path in sorted(glob.glob('roles/*/tasks/*.yml')):

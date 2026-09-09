@@ -20,6 +20,9 @@ authentication:
         free: "free_users"
         paid: "paid_users"
       oidc_services: []
+    # NOTE: workshop_outpost is defined in all.yml, not here. all.yml sets the
+    # whole `authentication:` dict and Ansible does not deep-merge hashes, so a
+    # key added here under authentik would silently never exist at runtime.
 
 # Will be overridden by vault
 authentik_password: "VAULT_OVERRIDE"
