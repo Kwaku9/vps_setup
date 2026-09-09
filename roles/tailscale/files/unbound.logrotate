@@ -1,0 +1,12 @@
+# Managed by Ansible (roles/tailscale/files/unbound.logrotate).
+# log-queries is on, so this file grows with every query; copytruncate keeps
+# the running daemon writing to the same inode without a restart.
+/var/log/unbound.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
