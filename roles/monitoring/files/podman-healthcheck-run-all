@@ -1,0 +1,10 @@
+#!/bin/sh
+# Run Podman healthchecks for every running container that defines one.
+# Podman schedules healthchecks via systemd timers; Alpine uses OpenRC, so
+# nothing runs them automatically and health status sticks at "starting".
+# This is driven by cron instead. Generated/managed by Ansible.
+for c in $(podman ps --format "{{.Names}}"); do
+    if [ "$(podman inspect "$c" --format "{{if .Config.Healthcheck}}1{{end}}" 2>/dev/null)" = "1" ]; then
+        podman healthcheck run "$c" >/dev/null 2>&1
+    fi
+done
