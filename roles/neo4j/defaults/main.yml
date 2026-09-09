@@ -18,9 +18,15 @@ neo4j:
     container_name: "neo4j-db"
     image: "docker.io/library/neo4j:5-community"
     memory: "2g"
-    heap_initial: "512m"
-    heap_max: "1G"
-    pagecache: "512m"
+    # Tuned down 2026-09-09. The box runs swap-exhausted (see the estate memory
+    # notes): 1026 MB of neo4j-db was resident while the JVM only ever used
+    # ~150-380 MB of heap against a 445 MB store. heap_initial is what the JVM
+    # commits at startup and pagecache is allocated off-heap as pages are
+    # touched, so halving both is what actually returns RAM; heap_max is only a
+    # ceiling and stays generous so the 03:30 sessions-graph sync keeps room.
+    heap_initial: "256m"
+    heap_max: "768m"
+    pagecache: "256m"
     # All binds loopback-only; access via Cloudflare-tunnel/Traefik or SSH tunnel, never public.
     http_bind: "127.0.0.1:7474"   # Neo4j Browser
     bolt_bind: "127.0.0.1:7687"   # Bolt protocol
