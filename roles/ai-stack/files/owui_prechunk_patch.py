@@ -88,21 +88,86 @@ BLOCK_INIT = '''            # ANSIBLE-PATCH:owui-prechunk-presplit BEGIN
             # ANSIBLE-PATCH:owui-prechunk-presplit END
 '''
 
-ANCHOR_SETFLAG = ("                if result is not None and len(result.ids[0]) > 0:\n"
-                  "                    docs = [\n")
-BLOCK_SETFLAG = ('''                if result is not None and len(result.ids[0]) > 0:
-                    _owui_presplit = True   # ANSIBLE-PATCH:owui-prechunk-presplit
-                    docs = [
-''')
+# --- setflag / useflag: shape changed in 0.11.3 ------------------------------
+# 0.11.3 refactored process_file(): the inline vector-result test became the
+# helper has_vector_results(), `result` was renamed `file_result`, and the
+# save_docs_to_vector_db call moved one level deeper into a
+# `for name in collection_names:` loop (indent 24 -> 28). 0.11.3 also added a
+# third "repair path" branch that rebuilds docs from stored file content; those
+# docs are NOT pre-chunked, and since _owui_presplit defaults False and is only
+# set True on the reuse path, that branch correctly still gets split=True.
+#
+# Both shapes are carried so this patch applies to 0.11.0 and 0.11.3 alike and
+# an upgrade does not need a flag day. Each variant is still required to match
+# EXACTLY once; ambiguity aborts exactly as before.
 
-ANCHOR_USEFLAG = ("                        add=(True if form_data.collection_name else False),\n"
-                  "                        user=user,\n"
-                  "                    )\n")
-BLOCK_USEFLAG = ('''                        add=(True if form_data.collection_name else False),
-                        split=not _owui_presplit,   # ANSIBLE-PATCH:owui-prechunk-presplit
-                        user=user,
-                    )
-''')
+SETFLAG_VARIANTS = [
+    # 0.11.3+
+    ("                if has_vector_results(file_result):\n"
+     "                    # Normal path: reuse the already-processed per-file chunks.\n"
+     "                    docs = [\n",
+     "                if has_vector_results(file_result):\n"
+     "                    # Normal path: reuse the already-processed per-file chunks.\n"
+     "                    _owui_presplit = True   # ANSIBLE-PATCH:owui-prechunk-presplit\n"
+     "                    docs = [\n"),
+    # 0.11.0
+    ("                if result is not None and len(result.ids[0]) > 0:\n"
+     "                    docs = [\n",
+     "                if result is not None and len(result.ids[0]) > 0:\n"
+     "                    _owui_presplit = True   # ANSIBLE-PATCH:owui-prechunk-presplit\n"
+     "                    docs = [\n"),
+]
+
+USEFLAG_VARIANTS = [
+    # 0.11.3+ (nested one level deeper)
+    ("                            add=(True if form_data.collection_name else False),\n"
+     "                            user=user,\n"
+     "                        )\n",
+     "                            add=(True if form_data.collection_name else False),\n"
+     "                            split=not _owui_presplit,   # ANSIBLE-PATCH:owui-prechunk-presplit\n"
+     "                            user=user,\n"
+     "                        )\n"),
+    # 0.11.0
+    ("                        add=(True if form_data.collection_name else False),\n"
+     "                        user=user,\n"
+     "                    )\n",
+     "                        add=(True if form_data.collection_name else False),\n"
+     "                        split=not _owui_presplit,   # ANSIBLE-PATCH:owui-prechunk-presplit\n"
+     "                        user=user,\n"
+     "                    )\n"),
+]
+
+# Resolved against the actual source at run time by resolve_variants().
+ANCHOR_SETFLAG = SETFLAG_VARIANTS[0][0]
+BLOCK_SETFLAG = SETFLAG_VARIANTS[0][1]
+ANCHOR_USEFLAG = USEFLAG_VARIANTS[0][0]
+BLOCK_USEFLAG = USEFLAG_VARIANTS[0][1]
+
+
+def resolve_variants(src):
+    """Bind the setflag/useflag anchors to whichever upstream shape this file has.
+
+    Checks the PATCHED block first so --verify and --revert work on an already
+    patched file, then the unpatched anchor. Exactly one variant must match once;
+    zero or several means upstream moved again and we abort rather than guess.
+    """
+    global ANCHOR_SETFLAG, BLOCK_SETFLAG, ANCHOR_USEFLAG, BLOCK_USEFLAG
+    for label, variants, setter in (
+        ("setflag", SETFLAG_VARIANTS, "setflag"),
+        ("useflag", USEFLAG_VARIANTS, "useflag"),
+    ):
+        hit = [v for v in variants if src.count(v[1]) == 1] or \
+              [v for v in variants if src.count(v[0]) == 1]
+        if len(hit) != 1:
+            sys.exit(
+                f"ABORT: {label} anchor matched {len(hit)} known shapes. "
+                f"OpenWebUI's retrieval.py has changed again; re-derive the "
+                f"anchor against the new source before forcing it."
+            )
+        if setter == "setflag":
+            ANCHOR_SETFLAG, BLOCK_SETFLAG = hit[0]
+        else:
+            ANCHOR_USEFLAG, BLOCK_USEFLAG = hit[0]
 
 BLOCK_MERGE = '''    # ANSIBLE-PATCH:owui-prechunk-merge BEGIN
     if _owui_predocs:
@@ -153,6 +218,7 @@ def verify(src):
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "--apply"
     src = read()
+    resolve_variants(src)
 
     if mode == "--verify":
         if MARK not in src or MARK2 not in src:
