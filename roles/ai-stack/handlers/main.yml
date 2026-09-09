@@ -12,31 +12,33 @@
 # podman_POD is different: `restarted` IS a valid state there, so the pod handler
 # below is correct as written.
 
+# Measured 2026-09-09 on ansible-core 2.20.3 (box) and 2.18 (laptop) with a
+# 3-handler probe (untagged / tags: always / tags: foo):
+#   --tags foo                       -> ALL three handlers run
+#   --tags foo --skip-tags always    -> NO handler runs, tagged or not
+#   --skip-tags always               -> NO handler runs
+# So `tags: ['always']` on a handler changes nothing (handlers already pass
+# --tags filtering), and it is `--skip-tags always` that silently disables
+# every handler. After such a run, restart the notified service by hand
+# (`podman restart <name>`) or run the tag without --skip-tags.
 - name: restart ai-stack-pod
-  # tags: always — a handler without tags is FILTERED OUT by --tags, so a
-  # tagged deploy would render new config and never restart the service.
-  # 'always' affects filtering only; handlers still run only when notified.
-  tags: ['always']
   containers.podman.podman_pod:
     name: "{{ ai_stack.pod_name }}"
     state: restarted
 
 - name: restart litellm
-  tags: ['always']
   containers.podman.podman_container:
     name: "{{ ai_stack.litellm.name }}"
     state: started
     force_restart: true
 
 - name: restart openwebui
-  tags: ['always']
   containers.podman.podman_container:
     name: "{{ ai_stack.openwebui.name }}"
     state: started
     force_restart: true
 
 - name: restart fabric-api
-  tags: ['always']
   containers.podman.podman_container:
     name: "{{ ai_stack.fabric_api.name }}"
     state: started
