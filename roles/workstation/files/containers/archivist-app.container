@@ -4,6 +4,13 @@
 Description=ARCHIVIST web UI + CPU pipeline
 Wants=archivist-pg.service network-online.target
 After=archivist-pg.service network-online.target
+# Hold the start until the removable media this container bind-mounts is actually
+# present. Without this, a boot where the USB drives enumerate late causes a
+# statfs failure, a 5-crash restart storm, and a permanently dead unit that
+# needs a manual `systemctl --user reset-failed` + start to recover.
+RequiresMountsFor=/run/media/general/Ventoy /run/media/general/GOPRO
+StartLimitIntervalSec=600
+StartLimitBurst=10
 
 [Container]
 ContainerName=archivist-app
@@ -19,6 +26,8 @@ Environment=ARCHIVIST_WEB_HOST=127.0.0.1
 # Media sources (read-only). Do NOT unplug the Ventoy USB while this is running.
 Volume=/run/media/general/Ventoy/iCloud:/run/media/general/Ventoy/iCloud:ro
 Volume=/run/media/general/GOPRO:/run/media/general/GOPRO:ro
+# Culebra2 stills/clips — the only surviving copy of 17 files lost on 2026-06-09.
+Volume=/run/media/general/Ventoy/Videos/Culebra2:/run/media/general/Ventoy/Videos/Culebra2:ro
 # Derived data (thumbnails, keyframes, models cache).
 Volume=%h/.local/share/archivist/derived:/home/archivist/.local/share/archivist/derived:Z
 Volume=%h/.local/share/archivist/models:/home/archivist/.local/share/archivist/models:ro,Z
@@ -32,6 +41,7 @@ Exec=web --port 8099
 
 [Service]
 Restart=always
+RestartSec=10
 TimeoutStartSec=180
 
 [Install]
