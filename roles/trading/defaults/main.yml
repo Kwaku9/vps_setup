@@ -47,3 +47,17 @@ trading:
     paper_equity: 7549.84
     gateway_url: "https://127.0.0.1:5055/v1/api"
     alert_url: "http://127.0.0.1:7555/api/v2/alerts"
+    # Discretionary option plans armed as level watches (level_watch.py).
+    # IBKR native price alerts are denied on this account (403), so each
+    # entry becomes a 5-minute cron that alerts on approach / rejection /
+    # invalidation of a zone. Set enabled: false to disarm without deleting.
+    level_watches:
+      - name: spy-nov740p-failed-retest      # armed 2026-09-15 (plan: buy Nov 20 740P on a failed retest)
+        enabled: true
+        symbol: SPY
+        conid: "756733"
+        zone: "763.0:766.5"                  # yesterday's high -> SMA20/POC band
+        invalidate: 769.7                    # prior-week high: close above = plan off
+        breakdown: 755.4                     # info only: the other entry path
+        quote_conid: "882140368"             # SPY 20 Nov 2026 740 P (quoted inside entry alerts)
+        note: "Plan: buy 1x SPY Nov-20 740P (~12.3) on a bearish 5m close back below 763; stop on close > 769.7; targets 748/738/731"
