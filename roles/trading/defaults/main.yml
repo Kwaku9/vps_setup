@@ -36,3 +36,14 @@ trading:
   # PostgreSQL backtest schema
   schema:
     enabled: true
+
+  # Alert-only strategy watcher. The shadow ledger never calls an order API.
+  marketwatch:
+    enabled: true
+    shadow_paper_enabled: true
+    # Static shadow baseline matched to settled cash in the live cash account
+    # on 2026-09-10. Strategy P&L compounds from this value; it is not synced
+    # automatically from the live account, so live activity cannot rewrite it.
+    paper_equity: 7549.84
+    gateway_url: "https://127.0.0.1:5055/v1/api"
+    alert_url: "http://127.0.0.1:7555/api/v2/alerts"
