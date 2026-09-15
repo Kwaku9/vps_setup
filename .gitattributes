@@ -40,6 +40,7 @@ roles/monitoring/files/*.sh filter=git-crypt diff=git-crypt
 
 # ── Trading Strategies & Data Pipeline ──
 roles/trading/files/*.py filter=git-crypt diff=git-crypt
+roles/trading/files/marketwatch/** filter=git-crypt diff=git-crypt
 roles/trading/files/*.html filter=git-crypt diff=git-crypt
 roles/trading/files/backtrader/runner.py filter=git-crypt diff=git-crypt
 roles/trading/files/lightweight-charts/app.js filter=git-crypt diff=git-crypt
