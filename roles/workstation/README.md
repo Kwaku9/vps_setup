@@ -35,7 +35,7 @@ while still satisfying `command -v`.
 | Kind | Count | Location |
 |---|---|---|
 | `systemd --user` units | 22 | `files/systemd/` → `~/.config/systemd/user/` |
-| podman quadlets | 3 | `files/containers/` → `~/.config/containers/systemd/` |
+| podman quadlets | 4 | `files/containers/` → `~/.config/containers/systemd/` |
 | helper scripts | 5 | `files/bin/` → `~/.local/bin/`, `files/scripts/` → `~/scripts/` |
 
 Units owned by *other* repos are deliberately out of scope — the role does not
@@ -67,6 +67,35 @@ backs daily push-to-talk and `llama-embed-gpu` backs OpenWebUI's RAG embedding;
 a converge run is the wrong moment to cycle either. Restart them deliberately:
 
     systemctl --user restart whisper-gpu.service
+
+## ollama.container, and the two things around it that this role does NOT own
+
+Added 2026-09-20. It is the answer model for the Knowledge Hub demo, and it
+replaced a bare `podman run` whose entire configuration existed only inside the
+running container: `restart: no`, no unit file, nothing on disk. A stop would
+have meant rebuilding it from memory.
+
+Two pieces of its setup sit outside this role, and both will silently break the
+demo if they are changed without the other half being updated:
+
+1. **`tailscale serve` maps `:8445` → `127.0.0.1:11434`.** That is host state,
+   not a file, and nothing here manages it. The container binds loopback only
+   on purpose, so if that mapping is dropped the phone loses the model even
+   though the container is perfectly healthy. Check with `tailscale serve status`.
+
+2. **`OLLAMA_ORIGINS` is a browser allowlist, not a convenience.** The demo is a
+   static page on a *different* origin calling this server directly, so every
+   origin serving it has to be named in the quadlet or the preflight is refused.
+   This bit on 2026-09-20: the demo moved to `rag.demo.nucybersec.com` while the
+   allowlist still named only the old `web.app` host, so the model was reachable,
+   healthy, and returned 403 to every browser. Anything that changes where the
+   demo is served has to change this list in the same pass.
+
+`OLLAMA_KEEP_ALIVE=30s` is deliberate and is about VRAM, not latency. The 6GB
+GPU already carries the embedder, whisper and the faces model; the default
+holds a model resident for five minutes after the last token, and this ran at
+`30m`, so one question parked 1.7GB for half an hour. Measured after the change:
+1798 MiB idle → 3526 MiB during a question → 1798 MiB again 45s later.
 
 ## Secrets
 

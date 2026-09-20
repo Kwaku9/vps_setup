@@ -1,0 +1,80 @@
+[Unit]
+Description=Ollama answer model for the Knowledge Hub demo (CUDA), loopback-only behind Tailscale Serve
+After=network-online.target
+Wants=network-online.target
+# Same boot race as llama-embed-gpu.container: the CDI spec resolves device
+# nodes at start, and at boot those nodes may not exist yet. Without a widened
+# window, Restart=always burns the default 5-burst in under a second and
+# systemd gives up permanently. See that file's comment for the 2026-08-11
+# incident this is copied from.
+StartLimitIntervalSec=600
+StartLimitBurst=30
+
+[Container]
+Image=docker.io/ollama/ollama:latest
+ContainerName=ollama
+AddDevice=nvidia.com/gpu=all
+# :Z relabels this directory with THIS container's SELinux MCS categories on
+# start. Without it the first run failed with "mkdir /root/.ollama/models:
+# permission denied": the directory still carried c197,c698 from the previous
+# bare container, and every container gets its own category pair, so the new one
+# was denied by SELinux even though the ownership (uid 1000) was already right.
+# Same reason llama-embed-gpu.container labels its models volume.
+Volume=%h/.ollama:/root/.ollama:Z
+# Loopback only. The iPhone reaches this through Tailscale Serve, which already
+# proxies https://fedora.taila30e7d.ts.net:8445 -> 127.0.0.1:11434 with a real
+# certificate. Binding wider would put an unauthenticated model server on the
+# tailnet for no gain, and 0.0.0.0 is against estate policy regardless.
+PublishPort=127.0.0.1:11434:11434
+Environment=OLLAMA_HOST=0.0.0.0:11434
+Environment=NVIDIA_VISIBLE_DEVICES=all
+Environment=NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# WHO MAY CALL THIS FROM A BROWSER
+# The demo is a static page on someone else's origin calling this server
+# directly, so every origin that runs it has to be named here or the preflight
+# is refused. rag.demo.nucybersec.com went live 2026-09-20 and was NOT in this
+# list, which is why the demo returned 403 from the new domain while the old
+# one worked. The web.app entry stays because it is the documented fallback,
+# and the ts.net wildcard covers the tailnet preview, where the app discovers
+# this endpoint on :8445 by itself.
+Environment=OLLAMA_ORIGINS=https://rag.demo.nucybersec.com,https://nucybersec-rag-demo.web.app,https://fedora.taila30e7d.ts.net:*,http://localhost:*,http://127.0.0.1:*
+
+# VRAM IS THE SCARCE RESOURCE ON THIS MACHINE, NOT RAM
+# A 6GB laptop GPU already carries the embedder, whisper and the faces model.
+# Ollama's default holds a model resident for 5 minutes after the last token,
+# and this container was running with 30m, so one demo question parked ~1.4GB
+# for half an hour whether or not anyone asked a second one.
+#
+# 30s unloads almost immediately once you stop asking, while keeping the model
+# warm across the back-and-forth of an actual conversation, where a reload
+# between every question would be the thing people notice. Set it to 0 for
+# strict unload-after-every-request, at the cost of paying the load on each
+# one; qwen3:1.7b is 1.4GB, so that is seconds from page cache and longer cold.
+Environment=OLLAMA_KEEP_ALIVE=30s
+# One model resident at a time. Without this, two models asked in quick
+# succession can both sit in VRAM and push the embedder out.
+Environment=OLLAMA_MAX_LOADED_MODELS=1
+
+# The image has no curl, so the probe uses the bundled client, which talks to
+# the server over the same HTTP API a caller would. Verified to pass against a
+# live server and to fail against a dead port, so it distinguishes a running
+# server from a hung one rather than always passing.
+HealthCmd=/bin/sh -c 'OLLAMA_HOST=127.0.0.1:11434 ollama list >/dev/null'
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=10
+HealthStartPeriod=60s
+HealthOnFailure=kill
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+# Block until the CDI-referenced NVIDIA nodes exist. No tailnet wait here,
+# unlike llama-embed-gpu: this binds loopback only, so tailscale0 being late
+# cannot fail the bind. Bounded at ~120s, then fail loudly rather than hang.
+ExecStartPre=/bin/bash -c 'for i in {1..60}; do if [ -e /dev/nvidia0 ] && [ -e /dev/nvidiactl ] && [ -e /dev/nvidia-uvm ]; then exit 0; fi; sleep 2; done; echo "ollama: timed out waiting for NVIDIA device nodes" >&2; exit 1'
+
+[Install]
+WantedBy=default.target

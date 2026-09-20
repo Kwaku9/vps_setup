@@ -5,4 +5,8 @@ After=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/home/general/Projects/VScdeProjects/market-regime/run_agent.sh %i
-TimeoutStartSec=2700
+# 90 min. An approved run is analysis (~10-20m) + build + fetch_renders, and
+# fetch_renders alone polls 90x15s = 22.5m before giving up. At the old 2700s
+# a render day could be SIGKILLed mid-fetch, leaving a half-wired briefing and
+# spent credits with nothing to show. Audio-only runs still finish in ~20m.
+TimeoutStartSec=5400
