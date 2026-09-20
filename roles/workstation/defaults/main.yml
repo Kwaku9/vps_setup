@@ -38,6 +38,10 @@ workstation:
     - whisper-gpu.container
     - llama-embed-gpu.container
     - archivist-app.container
+    # Answer model for the Knowledge Hub demo. Loopback-only; the phone reaches
+    # it through the existing `tailscale serve` mapping on :8445, which is host
+    # config and NOT managed here — see the role README.
+    - ollama.container
 
   # systemd --user units.
   #   enabled: true|false   -> `systemctl --user enable/disable`

@@ -2,18 +2,51 @@
 Description=EmbeddingGemma GPU embedding server (llama.cpp CUDA) - OWUI RAG + recall, tailnet-exposed
 After=network-online.target
 Wants=network-online.target
+# 2026-08-11: the unit died at boot with
+#   "failed to stat CDI host device /dev/nvidia-modeset: no such file or directory"
+# The CDI spec was fine - the NVIDIA device nodes simply had not appeared yet.
+# With no RestartSec, Restart=always burned the default 5-burst in under a second
+# and systemd gave up permanently, leaving the box with no embedder until someone
+# hand-started a loopback-only replacement. Widen the window so a slow GPU/tailnet
+# bring-up is survivable instead of terminal.
+StartLimitIntervalSec=600
+StartLimitBurst=30
 
 [Container]
 Image=ghcr.io/ggml-org/llama.cpp:server-cuda
 ContainerName=llama-embed-gpu
 AddDevice=nvidia.com/gpu=all
 Volume=%h/spike-models:/models:Z
-PublishPort=18090:18090
+# Explicit binds only - never 0.0.0.0 (estate policy).
+#   127.0.0.1 -> local callers on this laptop
+#   100.79.60.27 (tailscale0) -> LiteLLM on alpine-vps, which routes
+#   model "embeddinggemma" to http://100.79.60.27:18090/v1
+# If this host's tailnet IP ever changes, BOTH this line and the LiteLLM
+# config.yaml api_base on the VPS must be updated together.
+PublishPort=127.0.0.1:18090:18090
+PublishPort=100.79.60.27:18090:18090
 Exec=--model /models/embeddinggemma-300M-Q8_0.gguf --embeddings --pooling mean --ctx-size 2048 --ubatch-size 2048 --n-gpu-layers 99 --host 0.0.0.0 --port 18090
+# --host 0.0.0.0 is container-internal only; the PublishPort lines above are what
+# actually determine host exposure.
+
+# Liveness probe, same pattern as whisper-gpu.container.
+# /health is verified to return 200 and an unknown route 404s, so this
+# distinguishes a live server from a hung one.
+HealthCmd=curl -fsS -m 5 http://127.0.0.1:18090/health
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=10
+HealthStartPeriod=60s
+HealthOnFailure=kill
 
 [Service]
 Restart=always
-TimeoutStartSec=180
+RestartSec=10
+TimeoutStartSec=300
+# Block until the CDI-referenced NVIDIA nodes exist AND the tailnet address is
+# assigned - binding PublishPort to 100.79.60.27 fails outright if tailscale0
+# is not up yet. Bounded at ~120s, then fail loudly rather than hang.
+ExecStartPre=/bin/bash -c 'for i in {1..60}; do if [ -e /dev/nvidia0 ] && [ -e /dev/nvidiactl ] && [ -e /dev/nvidia-modeset ] && [ -e /dev/nvidia-uvm ] && ip -4 addr show tailscale0 2>/dev/null | grep -q "100.79.60.27"; then exit 0; fi; sleep 2; done; echo "llama-embed-gpu: timed out waiting for NVIDIA device nodes or tailnet address" >&2; exit 1'
 
 [Install]
 WantedBy=default.target

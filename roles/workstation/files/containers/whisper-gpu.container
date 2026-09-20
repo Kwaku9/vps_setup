@@ -28,7 +28,16 @@ ContainerName=whisper-gpu
 Image=localhost/whisper-gpu:latest
 AddDevice=nvidia.com/gpu=all
 SecurityLabelDisable=true
-PublishPort=8787:8787
+# Explicit bind only - never 0.0.0.0 (estate policy). Was `8787:8787`, which
+# published STT on every interface including LAN/Wi-Fi. Loopback ONLY, because:
+#   - every host caller uses localhost:8787 (agent.py, benchmark_patterns.py)
+#   - container callers reach it as `whisper-gpu:8787` over livekit-voice-net
+#     via NetworkAlias below, which needs no host port at all
+#   - nothing on the tailnet uses it (verified against the VPS repo 2026-08-14)
+# Deliberately NO tailnet bind: that would require waiting on tailscale0 at boot
+# (see llama-embed-gpu.container's ExecStartPre) and would add a startup failure
+# mode to push-to-talk for a reachability nobody uses.
+PublishPort=127.0.0.1:8787:8787
 # Pre-existing compose-created volume — holds the baked model cache. Keep this
 # exact name or faster-whisper loses the offline model and HF_HUB_OFFLINE fails.
 Volume=whisper-mcp_whisper-models:/root/.cache/huggingface
