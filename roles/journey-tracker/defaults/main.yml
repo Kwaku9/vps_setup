@@ -6,3 +6,30 @@ journey_tracker:
   data_dir: "/opt/podman-data/journey-tracker"
   domain: "timeline"
   internal_port: 8092
+
+  # timeline-api: graph (Neo4j) + semantic (pgvector recall.chunks) query service
+  # behind the journey-tracker nginx at /api/. Runs INSIDE frontend-pod and binds
+  # 127.0.0.1 only (owner rule: no 0.0.0.0 anywhere); nginx proxies to it over the
+  # pod's shared loopback. Publishes no host port. Source: files/timeline-api/.
+  # Secrets from vault: pg_recall_ro_password (read-only PG role, same as
+  # session-recall-mcp), neo4j_password, litellm_master_key (query embedding).
+  api:
+    enabled: true
+    container_name: "timeline-api"
+    image: "localhost/timeline-api:latest"
+    internal_port: 8080
+    memory: "192m"
+    pod: "frontend-pod"
+    env:
+      API_PORT: "8080"
+      PGHOST: "shared-db-pod"
+      PGPORT: "5432"
+      PGDATABASE: "enterprise"
+      PGUSER: "recall_ro"
+      PGPASSWORD: "{{ pg_recall_ro_password | default('') }}"
+      NEO4J_URI: "bolt://neo4j-pod:7687"
+      NEO4J_USERNAME: "neo4j"
+      NEO4J_PASSWORD: "{{ neo4j_password | default('') }}"
+      LITELLM_BASE_URL: "http://ai-stack-pod:4000/v1"
+      LITELLM_API_KEY: "{{ litellm_master_key | default('') }}"
+      GEMMA_MODEL: "embeddinggemma"

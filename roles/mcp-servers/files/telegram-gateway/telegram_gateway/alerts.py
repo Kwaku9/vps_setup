@@ -138,6 +138,43 @@ def should_notify(alert: dict[str, Any]) -> bool:
     return True
 
 
+# --- repeat suppression -------------------------------------------------------
+# should_notify() answers "is this alert worth interrupting someone for?".
+# It does NOT answer "we already said this — say it again?", and vmalert re-posts
+# every firing alert on every notification cycle. So one stuck alert becomes a
+# message per cycle, forever. On 2026-09-05, 126 stuck HoneypotSilent instances
+# did exactly that: ~7 Telegram requests/sec for three days, an 18h rate-limit
+# ban, and ~14% of the host CPU spent delivering nothing.
+#
+# The rule that produced those 126 instances is fixed, but the gateway should not
+# depend on every upstream alert rule being well-behaved.
+_last_sent: dict[str, float] = {}
+
+# How long to stay quiet about an alert already reported. Tune to taste.
+ALERT_REPEAT_SUPPRESSION_SECONDS = 3600
+
+
+def _alert_key(alert: dict) -> str:
+    """Stable identity for one alert instance: status + its full label set."""
+    labels = alert.get("labels", {}) or {}
+    parts = [f"{k}={v}" for k, v in sorted(labels.items())]
+    return f"{(alert.get('status') or 'firing').lower()}|" + ",".join(parts)
+
+
+def should_send_now(alert: dict, now: float | None = None) -> bool:
+    """Has enough time passed to repeat an alert already sent?
+
+    Called only for alerts should_notify() has already approved. Returning True
+    sends; returning False silently suppresses this repeat.
+
+    Available: _alert_key(alert), _last_sent (key -> unix time last sent),
+    ALERT_REPEAT_SUPPRESSION_SECONDS, and `now` (unix time, injected for tests).
+
+    TODO(kwaku): implement the repeat policy — see the note in the review.
+    """
+    raise NotImplementedError
+
+
 @router.post("/api/v2/alerts", include_in_schema=False)
 async def receive_alerts(request: Request) -> dict[str, Any]:
     """Alertmanager v2 receiver. Always 200s so vmalert never retry-storms us."""
@@ -166,6 +203,15 @@ async def receive_alerts(request: Request) -> dict[str, Any]:
         except Exception:
             logger.exception("should_notify() raised; dropping alert")
             continue
+
+        try:
+            if not should_send_now(alert):
+                continue
+        except NotImplementedError:
+            # Fail OPEN: an unimplemented policy must not silence real alerts.
+            logger.error("should_send_now() is not implemented yet; sending anyway")
+        except Exception:
+            logger.exception("should_send_now() raised; sending anyway")
 
         text = _format_alert(alert)
         for chat_id in TELEGRAM_ALLOWED_USER_IDS:
