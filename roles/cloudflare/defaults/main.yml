@@ -84,6 +84,8 @@ cloudflare_access:
     # text. The only write path is GET /q, which returns 204 and logs the search
     # term to a format that omits $remote_addr.
     - "dsm"
+    # media: static mp4/webm files embedded by the public marketplace site. No backend, no accounts, read-only dir; safe to expose.
+    - "media"
     # otel: public OTLP/HTTP ingest for the mobile app. Auth happens at Traefik
     # via bearer token in router rule (vault.yml: otel_ingest_token), so CF Access
     # must NOT challenge it — bypass app overrides the wildcard admin policy.

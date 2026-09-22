@@ -115,6 +115,13 @@
       tags: ['decks']
       when: decks.enabled | default(true)
 
+    # media.aicortex.cloud: static mp4/webm hosting for the marketplace site.
+    # PUBLIC: the hostname is in cloudflare_access.public_services, because the
+    # <video> player on the apex fetches from it without an Access session.
+    - role: media
+      tags: ['media']
+      when: media.enabled | default(true)
+
     # dsm.aicortex.cloud — DSM-5-TR study tool (MVP-0). PUBLIC: the hostname is
     # in cloudflare.public_services, because its audience is students who are
     # not in the Access directory.

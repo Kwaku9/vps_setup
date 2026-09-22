@@ -1,0 +1,35 @@
+---
+# media.aicortex.cloud: static video hosting (mp4 / webm, plus .vtt captions).
+#
+# A standalone nginx container on enterprise_network, routed by Traefik's file
+# provider. Same shape as roles/decks: this role owns the INFRASTRUCTURE (dir,
+# nginx config, container, Traefik route); the videos are DATA, published by
+# scp-ing files into data_dir. nginx serves the directory live, no rebuild.
+#
+# WHY THIS IS PUBLIC (listed in cloudflare_access.public_services)
+#   The files are embedded by <video> tags on the public marketplace site
+#   (aicortex.cloud), whose visitors are not in the Access directory. Behind
+#   Access the player would get a login page instead of bytes. Safe to expose:
+#   the origin is a read-only directory of static files with no backend, no
+#   accounts, no directory listing and no write path.
+#
+# WHY NO compress / rate-limit MIDDLEWARE
+#   Video players issue bursts of HTTP Range requests (seeking, adaptive
+#   buffering). Rate limiting turns a seek into a stall, and compressing an
+#   already-compressed mp4 wastes CPU for nothing. Only crowdsec and
+#   secure-headers are attached to the router.
+media:
+  enabled: true
+  container_name: "media-nginx"
+  image: "docker.io/library/nginx:1.29-alpine"
+  data_dir: "/opt/compose/media"
+  # A DIRECTORY, not a single file (same reason as roles/dsm5): Ansible's
+  # template module writes atomically via temp + rename, which allocates a new
+  # inode. A single-file bind mount stays pinned to the old inode and the
+  # container serves a stale config forever. Mounting the containing directory
+  # makes the update visible on restart.
+  conf_dir: "/opt/compose/media-conf"
+  domain: "media"
+  # Origin allowed to fetch the videos cross-site (Access-Control-Allow-Origin).
+  # The marketplace apex is the only consumer; keep this a single origin, not *.
+  cors_origin: "https://{{ domain_name }}"

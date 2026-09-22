@@ -145,7 +145,11 @@ export DB_USER DB_PASSWORD
 # -------------------------------------------------------------------
 # Step 3b — Classify new sessions on VPS (LLM, costs money, idempotent)
 # -------------------------------------------------------------------
-log "Step 3b: classify new sessions"
+log "Step 3b: classify new sessions (category + pillar)"
+# Ship the pillar taxonomy next to the classifier so the LLM pillar pass and
+# extract-sessions.js always agree on the same pillars.json version.
+scp "$JT_DIR/pillars.json" "$VPS:/opt/compose/session-ingestion/pillars.json" >>"$LOG" 2>&1 \
+    || log "WARN step 3b: could not ship pillars.json (pillar pass will use the VPS copy)"
 ssh "$VPS" bash <<'REMOTE' >>"$LOG" 2>&1
 set -e
 export DB_USER="$(grep '^export DB_USER=' /opt/compose/session-ingestion/daily-ingest.sh | cut -d\" -f2)"
