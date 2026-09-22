@@ -53,7 +53,9 @@ trading:
     # invalidation of a zone. Set enabled: false to disarm without deleting.
     level_watches:
       - name: spy-nov740p-failed-retest      # armed 2026-09-15 (plan: buy Nov 20 740P on a failed retest)
-        enabled: true
+        enabled: false                       # disarmed 2026-09-22: invalidated by its own
+                                             # rule (close 773.50 > invalidate 769.7) during
+                                             # the 09-19..09-22 IBeam outage
         symbol: SPY
         conid: "756733"
         zone: "763.0:766.5"                  # yesterday's high -> SMA20/POC band
