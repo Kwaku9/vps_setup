@@ -47,6 +47,11 @@ trading:
     paper_equity: 7549.84
     gateway_url: "https://127.0.0.1:5055/v1/api"
     alert_url: "http://127.0.0.1:7555/api/v2/alerts"
+    blind_after_min: 15
+    blind_realert_min: 30
+    notable_move_pct: 1.0
+    recovery_state: /var/lib/marketwatch/feed-recovery.json
+    recovery_ttl_min: 120
     # Discretionary option plans armed as level watches (level_watch.py).
     # IBKR native price alerts are denied on this account (403), so each
     # entry becomes a 5-minute cron that alerts on approach / rejection /
