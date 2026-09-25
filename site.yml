@@ -129,6 +129,16 @@
       tags: ['dsm5']
       when: dsm5.enabled | default(true)
 
+    # mailkit-read / mailkit-send .aicortex.cloud — Mail Kit MCP connectors for
+    # claude.ai. PUBLIC: both hostnames are in cloudflare_access.public_services,
+    # because a custom connector can send only one header from a fixed allowlist
+    # and an Access service token needs two that are not on it. Auth is a
+    # per-connector shared secret checked by the server itself, which refuses to
+    # start without one.
+    - role: mailkit-mcp
+      tags: ['mailkit-mcp']
+      when: mailkit_mcp.enabled | default(true)
+
     - role: lab
       tags: ['lab']
       when: lab.enabled | default(true)

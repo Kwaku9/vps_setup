@@ -1,0 +1,26 @@
+---
+# Nucybersec Mail Kit MCP servers, exposed to claude.ai as custom connectors.
+#
+# TWO SERVERS, ONE CODE DIRECTORY, ONE SCOPE EACH.
+#
+# The Mail Kit API splits its agent credentials at Cognito: a token can carry
+# mailkit/read or mailkit/send, never both. Each server derives its tool list
+# from the scope its credential holds, so the split is enforced by the identity
+# provider rather than by configuration anyone can relax.
+#
+# They share /root/mailkit-mcp so tools.mjs stays the single definition of the
+# tool list. Two copies of the code would mean one of them is the copy nobody
+# updates.
+mailkit_mcp:
+  enabled: true
+  app_dir: /root/mailkit-mcp
+  image: docker.io/library/node:22-alpine
+  memory: 192m
+  network: "{{ podman_network_name | default('enterprise_network') }}"
+  servers:
+    - role: read
+      port: 8790
+      subdomain: mailkit-read
+    - role: send
+      port: 8791
+      subdomain: mailkit-send
