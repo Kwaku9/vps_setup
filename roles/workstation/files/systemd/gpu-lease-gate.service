@@ -1,0 +1,49 @@
+[Unit]
+Description=GPU lease gate in front of Ollama (admission control, loopback-only)
+Documentation=file:///home/general/Projects/VScdeProjects/vps_setup/roles/workstation/README.md
+# Only needs the local Ollama socket, which is loopback. No tailnet dependency:
+# the phone reaches this through the existing `tailscale serve` mapping, which
+# is host config and not managed here, same caveat as ollama.container itself.
+After=network.target
+Wants=ollama.service
+
+[Service]
+Type=exec
+ExecStart=/home/general/.local/bin/gpu-lease-gate.py
+Restart=always
+RestartSec=5
+
+# The SAME lease ARCHIVIST's caption and embed passes take
+# (archivist/src/archivist/gpu.py, config.py GpuConfig.semaphore_lock_path).
+# Pointing this at a different path would create two leases that cannot see
+# each other, which is the exact failure this gate was written to remove.
+Environment=GATE_LOCK_PATH=%t/archivist-gpu.lock
+Environment=GATE_UPSTREAM=http://127.0.0.1:11434
+Environment=GATE_HOST=127.0.0.1
+Environment=GATE_PORT=11435
+
+# keep_alive=0 on every gated request. Ollama holds weights for keep_alive
+# AFTER a response, so releasing the lease at end-of-response with a 30s
+# keep_alive would advertise a free card that still has ~2GB on it. Costs a
+# reload per question (seconds from page cache); set 30s here to trade lease
+# accuracy back for a warm conversation.
+Environment=GATE_KEEP_ALIVE=0
+
+# Free VRAM required before a model may load, same role as archivist's
+# min_free_mib. Defaults live in the script; override as "model=mib,model=mib".
+# Environment=GATE_REQUIRED_MIB=qwen3:1.7b=2200,qwen3.5:4b=3900
+
+# It shells out to nvidia-smi and talks to loopback. Nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+# ProtectSystem=strict makes the whole hierarchy read-only, which includes
+# %t (/run/user/1000) where the lease lock lives. The gate opens that file
+# O_CREAT|O_RDWR, so without this it cannot take the lease at all -- and it
+# would fail at request time, not at start, which is the worse way to find out.
+ReadWritePaths=%t
+RestrictAddressFamilies=AF_INET AF_UNIX
+
+[Install]
+WantedBy=default.target

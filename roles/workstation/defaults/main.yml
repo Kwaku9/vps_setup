@@ -29,6 +29,8 @@ workstation:
     - { src: bin/vps-backup-pull.sh,          dest_dir: bin }
     - { src: bin/buildfolio-heatmap-update.sh, dest_dir: bin }
     - { src: bin/piper-say.sh,                dest_dir: bin }
+    # Admission control in front of Ollama, sharing ARCHIVIST's GPU lease.
+    - { src: bin/gpu-lease-gate.py,           dest_dir: bin }
     - { src: scripts/neo4j-sync.sh,           dest_dir: scripts }
     - { src: scripts/pg-sync.sh,              dest_dir: scripts }
 
@@ -50,6 +52,22 @@ workstation:
   #                            Required for `static` units (no [Install] section)
   #                            and for template units like marketwatch@.service.
   units:
+    # --- Knowledge Hub demo host ------------------------------------------
+    # Replaces a transient systemd-run unit that died on every reboot while the
+    # tailscale serve :8444 mapping survived, leaving a home-screen icon that
+    # opened a dead page.
+    - name: local-rag-preview.service
+      enabled: true
+      state: started
+
+    # --- GPU admission control ---------------------------------------------
+    # Gates Ollama behind the same flock lease archivist's caption/embed
+    # passes take, so a full card refuses an answer instead of silently
+    # serving it from the CPU at 0.5 tok/s (measured 2026-09-30).
+    - name: gpu-lease-gate.service
+      enabled: true
+      state: started
+
     # --- VPS -> laptop data sync -------------------------------------------
     - name: vps-backup-pull.timer
       enabled: true
