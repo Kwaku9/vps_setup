@@ -1,0 +1,41 @@
+[Unit]
+Description=Knowledge Hub & RAG static preview on 127.0.0.1:5180 (tailnet :8444)
+Documentation=file:///home/general/Projects/VScdeProjects/vps_setup/roles/workstation/README.md
+# Replaces a `systemd-run` TRANSIENT unit (local-rag-evaluation.service) that
+# died on every reboot. That was fine while it was a throwaway test harness --
+# ENGINE_EVALUATION.md still tells you to stop it when testing is finished --
+# but it is now the host for an app installed on a phone home screen, and the
+# `tailscale serve` mapping for :8444 PERSISTS in tailscaled state while the
+# transient unit did not. The result was a home-screen icon that opened a dead
+# page after any reboot, with nothing broken enough to notice.
+After=network.target
+Wants=network.target
+
+[Service]
+Type=exec
+WorkingDirectory=/home/general/Projects/VScdeProjects/local-rag
+
+# The fnm DEFAULT ALIAS, deliberately, not the version-pinned path the
+# transient unit captured (.../node-versions/v24.15.0/...): that path breaks
+# the moment node is upgraded. Also not `node` off PATH -- in an interactive
+# shell that resolves to /run/user/1000/fnm_multishells/<pid>_<ts>/bin/node,
+# which is per-shell and would not exist for a unit at all.
+ExecStart=/home/general/.local/share/fnm/aliases/default/bin/node \
+  /home/general/Projects/VScdeProjects/local-rag/node_modules/vite/bin/vite.js \
+  preview --host 127.0.0.1 --port 5180 --strictPort
+
+# `vite preview` serves dist/ off disk and does NOT build. Without this guard
+# the unit starts happily and serves 404s, which looks like a network or
+# Tailscale fault from the phone. Fail at start, where the journal says why.
+ExecStartPre=/bin/bash -c 'test -f /home/general/Projects/VScdeProjects/local-rag/dist/index.html || { echo "local-rag: dist/index.html missing -- run npm run build" >&2; exit 1; }'
+
+# NOTE the explicit --host 127.0.0.1. `npm run preview` in package.json is
+# `vite preview --host 0.0.0.0`, which would put this on every interface and
+# violate the estate's no-0.0.0.0-binds policy. The phone reaches it only
+# through `tailscale serve` :8444 -> 127.0.0.1:5180, which is host state this
+# role does not own (same caveat as ollama.container's :8445 -- see README).
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
