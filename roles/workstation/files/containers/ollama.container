@@ -22,7 +22,7 @@ AddDevice=nvidia.com/gpu=all
 # Same reason llama-embed-gpu.container labels its models volume.
 Volume=%h/.ollama:/root/.ollama:Z
 # Loopback only. The iPhone reaches this through Tailscale Serve, which already
-# proxies https://fedora.taila30e7d.ts.net:8445 -> 127.0.0.1:11434 with a real
+# proxies the tailnet HTTPS port for this service to loopback with a real
 # certificate. Binding wider would put an unauthenticated model server on the
 # tailnet for no gain, and 0.0.0.0 is against estate policy regardless.
 PublishPort=127.0.0.1:11434:11434
@@ -36,9 +36,10 @@ Environment=NVIDIA_DRIVER_CAPABILITIES=compute,utility
 # is refused. rag.demo.nucybersec.com went live 2026-09-20 and was NOT in this
 # list, which is why the demo returned 403 from the new domain while the old
 # one worked. The web.app entry stays because it is the documented fallback,
-# and the ts.net wildcard covers the tailnet preview, where the app discovers
-# this endpoint on :8445 by itself.
-Environment=OLLAMA_ORIGINS=https://rag.demo.nucybersec.com,https://nucybersec-rag-demo.web.app,https://fedora.taila30e7d.ts.net:*,http://localhost:*,http://127.0.0.1:*
+# and the tailnet wildcard covers the private preview, where the app discovers
+# this endpoint by itself. The hostname comes from `laptop_tailnet_host` in the
+# git-crypt encrypted all.yml, NOT from this file: this repo is public.
+Environment=OLLAMA_ORIGINS=https://rag.demo.nucybersec.com,https://nucybersec-rag-demo.web.app,https://{{ laptop_tailnet_host }}:*,http://localhost:*,http://127.0.0.1:*
 
 # VRAM IS THE SCARCE RESOURCE ON THIS MACHINE, NOT RAM
 # A 6GB laptop GPU already carries the embedder, whisper and the faces model.

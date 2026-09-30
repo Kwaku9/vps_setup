@@ -78,7 +78,8 @@ have meant rebuilding it from memory.
 Two pieces of its setup sit outside this role, and both will silently break the
 demo if they are changed without the other half being updated:
 
-1. **`tailscale serve` maps `:8445` → `127.0.0.1:11434`.** That is host state,
+1. **`tailscale serve` maps a tailnet HTTPS port to this service on loopback.**
+   That is host state,
    not a file, and nothing here manages it. The container binds loopback only
    on purpose, so if that mapping is dropped the phone loses the model even
    though the container is perfectly healthy. Check with `tailscale serve status`.
@@ -97,7 +98,7 @@ Added 2026-09-30, replacing a `systemd-run` **transient** unit
 (`local-rag-evaluation.service`) that died on every reboot. That was fine while
 it was a throwaway harness — `local-rag/ENGINE_EVALUATION.md` still tells you to
 stop it when testing is finished — but it had quietly become the host for an app
-installed on a phone home screen, and the `tailscale serve` `:8444` mapping
+installed on a phone home screen, and its `tailscale serve` mapping
 PERSISTS in tailscaled state while the transient unit did not. Net effect: a
 home-screen icon that opened a dead page after any reboot, with nothing broken
 enough to notice. `Linger=yes` is already set for this user, so an enabled user
@@ -169,11 +170,13 @@ a gated answer streams, and it acquires again once the answer ends.
   a context size rather than trusting the table.
 
 **The phone path is gated too, as of 2026-09-30, but by host state this role
-does not own.** `tailscale serve` now maps `:8445` → `127.0.0.1:11435` (the
-gate) instead of `11434` (Ollama). Set with
-`tailscale serve --bg --https=8445 http://127.0.0.1:11435` — the `general` user
-is the Tailscale `OperatorUser`, so it needs no sudo. Verified end to end over
-the tailnet: the gate answers the CORS preflight for the `:8444` app origin
+does not own.** `tailscale serve` now points the Ollama tailnet port at
+`127.0.0.1:11435` (the gate) instead of `11434` (Ollama). Re-point it with
+`tailscale serve --bg --https=<port> http://127.0.0.1:11435`; the `general`
+user is the Tailscale `OperatorUser`, so it needs no sudo. Run
+`tailscale serve status` for the hostname and ports actually in use — they are
+host state and are deliberately kept out of this public repo. Verified end to
+end over the tailnet: the gate answers the CORS preflight for the app's origin
 (Ollama no longer sees it, so `GATE_ORIGINS` is what matters now, not
 `OLLAMA_ORIGINS`), `/api/tags` and `/gpu-lease` pass through, a real streamed
 answer works, and holding the lease makes the tailnet `/api/chat` return

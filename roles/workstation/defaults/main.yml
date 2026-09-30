@@ -41,7 +41,7 @@ workstation:
     - llama-embed-gpu.container
     - archivist-app.container
     # Answer model for the Knowledge Hub demo. Loopback-only; the phone reaches
-    # it through the existing `tailscale serve` mapping on :8445, which is host
+    # it through the existing `tailscale serve` mapping, which is host
     # config and NOT managed here — see the role README.
     - ollama.container
 
@@ -54,7 +54,7 @@ workstation:
   units:
     # --- Knowledge Hub demo host ------------------------------------------
     # Replaces a transient systemd-run unit that died on every reboot while the
-    # tailscale serve :8444 mapping survived, leaving a home-screen icon that
+    # tailscale serve mapping survived, leaving a home-screen icon that
     # opened a dead page.
     - name: local-rag-preview.service
       enabled: true

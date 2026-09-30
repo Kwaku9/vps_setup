@@ -22,6 +22,13 @@ Environment=GATE_UPSTREAM=http://127.0.0.1:11434
 Environment=GATE_HOST=127.0.0.1
 Environment=GATE_PORT=11435
 
+# Browser allowlist. Supplied here, from `laptop_tailnet_host` in the git-crypt
+# encrypted all.yml, because this repo is PUBLIC and the script's own default
+# used to hardcode the tailnet hostname -- published on every push. The script
+# now defaults to loopback only, so a missing value fails closed for remote
+# origins rather than silently allowing them.
+Environment=GATE_ORIGINS=https://{{ laptop_tailnet_host }}:*,http://localhost:*,http://127.0.0.1:*
+
 # keep_alive=0 on every gated request. Ollama holds weights for keep_alive
 # AFTER a response, so releasing the lease at end-of-response with a 30s
 # keep_alive would advertise a free card that still has ~2GB on it. Costs a

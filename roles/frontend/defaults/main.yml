@@ -49,7 +49,8 @@ expo_dev:
   port: 8082
   host_port: 19000
   tailnet_ip: "100.121.252.38"
-  tailnet_host: "alpine-vps.taila30e7d.ts.net"
+  # Literal moved to the git-crypt encrypted all.yml: this repo is public.
+  tailnet_host: "{{ vps_tailnet_host }}"
   # Set to either tailnet_ip (no DNS dependency) or tailnet_host (needs MagicDNS on client)
   packager_url_host: "100.121.252.38"
   memory: "3g"
