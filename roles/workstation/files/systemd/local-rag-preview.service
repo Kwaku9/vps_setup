@@ -1,11 +1,11 @@
 [Unit]
-Description=Knowledge Hub & RAG static preview on 127.0.0.1:5180 (tailnet :8444)
+Description=Knowledge Hub & RAG static preview on 127.0.0.1:5180
 Documentation=file:///home/general/Projects/VScdeProjects/vps_setup/roles/workstation/README.md
 # Replaces a `systemd-run` TRANSIENT unit (local-rag-evaluation.service) that
 # died on every reboot. That was fine while it was a throwaway test harness --
 # ENGINE_EVALUATION.md still tells you to stop it when testing is finished --
 # but it is now the host for an app installed on a phone home screen, and the
-# `tailscale serve` mapping for :8444 PERSISTS in tailscaled state while the
+# its `tailscale serve` mapping PERSISTS in tailscaled state while the
 # transient unit did not. The result was a home-screen icon that opened a dead
 # page after any reboot, with nothing broken enough to notice.
 After=network.target
@@ -32,8 +32,10 @@ ExecStartPre=/bin/bash -c 'test -f /home/general/Projects/VScdeProjects/local-ra
 # NOTE the explicit --host 127.0.0.1. `npm run preview` in package.json is
 # `vite preview --host 0.0.0.0`, which would put this on every interface and
 # violate the estate's no-0.0.0.0-binds policy. The phone reaches it only
-# through `tailscale serve` :8444 -> 127.0.0.1:5180, which is host state this
-# role does not own (same caveat as ollama.container's :8445 -- see README).
+# through a `tailscale serve` mapping to 127.0.0.1:5180, which is host state
+# this role does not own (same caveat as ollama.container -- see README).
+# Run `tailscale serve status` for the real hostname and ports: they are
+# deliberately not recorded in this PUBLIC repo.
 Restart=always
 RestartSec=5
 

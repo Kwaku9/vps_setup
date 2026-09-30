@@ -107,10 +107,13 @@ PASSTHROUGH_PATHS = {"/api/tags", "/api/ps", "/api/version", "/api/show"}
 # Mirrors OLLAMA_ORIGINS in ollama.container. The browser now talks to this
 # gate, so the gate has to answer the preflight; Ollama's own allowlist no
 # longer sees the request's Origin.
+# Loopback only by default, and deliberately: the tailnet hostname used to be
+# hardcoded here, which published it on every push to this PUBLIC repo. The
+# real allowlist arrives from the unit (GATE_ORIGINS), sourced from the
+# git-crypt encrypted all.yml. A missing value therefore fails CLOSED for
+# remote origins instead of silently permitting one.
 _origins = os.environ.get(
-    "GATE_ORIGINS",
-    "https://rag.demo.nucybersec.com,https://nucybersec-rag-demo.web.app,"
-    "https://fedora.taila30e7d.ts.net:*,http://localhost:*,http://127.0.0.1:*",
+    "GATE_ORIGINS", "http://localhost:*,http://127.0.0.1:*"
 )
 ALLOWED_ORIGINS = [o.strip() for o in _origins.split(",") if o.strip()]
 
