@@ -15,6 +15,8 @@ from .routers import actions, metrics, profiles, services, stacks
 from .routers import ingest as ingest_router
 from .routers import sessions as sessions_router
 from .routers import approvals as approvals_router
+from .routers import repo_radar as repo_radar_router
+from .routers import timeline_search as timeline_search_router
 from .routers.metrics import vm_client as router_vm_client
 from .victoria import VictoriaMetricsClient
 from .ws.metrics_stream import metrics_poll_loop
@@ -72,6 +74,9 @@ async def lifespan(app: FastAPI):
     sweeper_task = asyncio.create_task(
         staleness_sweeper(app.state.db_pool, ingest_router.ws_manager)
     )
+    # Repo Radar: periodic git scan of the VPS workspace over the SSH provider
+    # (no-op when REPO_RADAR_VPS_ROOT is unset).
+    radar_task = asyncio.create_task(repo_radar_router.vps_scan_loop(app))
 
     yield
 
@@ -79,6 +84,7 @@ async def lifespan(app: FastAPI):
     poll_task.cancel()
     live_discovery_task.cancel()
     sweeper_task.cancel()
+    radar_task.cancel()
     if app.state.db_pool is not None:
         await app.state.db_pool.close()
     await vm_client.close()
@@ -113,6 +119,8 @@ app.include_router(metrics.router)
 app.include_router(ingest_router.router)
 app.include_router(sessions_router.router)
 app.include_router(approvals_router.router)
+app.include_router(repo_radar_router.router)
+app.include_router(timeline_search_router.router)
 
 
 @app.get("/api/health")

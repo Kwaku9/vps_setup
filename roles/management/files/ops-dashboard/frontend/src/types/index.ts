@@ -154,3 +154,119 @@ export interface SessionUpdate {
   needs_input?: boolean;
   current_stage?: string | null;
 }
+
+// ── Repo Radar ─────────────────────────────────────────────────────────
+export interface RadarBranch {
+  name: string;
+  upstream: string | null;
+  gone: boolean;
+  ahead: number;
+  behind: number;
+  when: number;
+  subject: string;
+  author: string;
+}
+
+export interface RadarRepo {
+  name: string;
+  error: string | null;
+  head: string | null;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  staged: number;
+  modified: number;
+  untracked: number;
+  conflicted: number;
+  branches?: RadarBranch[];
+  stashes?: number;
+  slug?: string | null;
+  detached?: boolean;
+  unborn?: boolean;
+  last?: { hash: string; rel: string; subject: string } | null;
+  dirty: number;
+}
+
+export interface RadarPR {
+  number: number;
+  title: string;
+  url: string;
+  draft: boolean;
+  updated: string;
+  author: string;
+}
+
+export interface RadarSnapshot {
+  host: string;
+  root: string | null;
+  scannedAt: string | null;
+  scanMs: number | null;
+  receivedAt?: string;
+  repos: RadarRepo[];
+  prs: Record<string, RadarPR[]>;
+  prError: string | null;
+  fatal?: string | null;
+}
+
+export interface RadarState {
+  hosts: Record<string, RadarSnapshot>;
+  now: string;
+}
+
+// ── Session search (timeline) ──────────────────────────────────────────
+export interface SearchHit {
+  session_uuid: string;
+  title: string;
+  project: string | null;
+  date: string | null;
+  snippet: string;
+  score: number;
+  source: string | null;
+  messages: number | null;
+  pillar_id: string | null;
+}
+
+export interface SearchResponse {
+  query: string;
+  hits: SearchHit[];
+  timing_ms: { embed: number; search: number };
+}
+
+export interface SessionGraph {
+  session_uuid: string;
+  title: string;
+  project: string | null;
+  branch: string | null;
+  source: string | null;
+  started_at: string | null;
+  messages: number | null;
+  tool_calls: number | null;
+  models: string[];
+  commits: { sha: string; message: string; date: string | null; branch: string | null; files_changed: number | null }[];
+  subagents: number;
+  files: { path: string; touches: number }[];
+  shared_file_sessions: { session_uuid: string; title: string; date: string | null; source: string | null; project: string | null; shared: number; sample: string[] }[];
+  tools: { name: string; n: number }[];
+}
+
+export interface SessionTranscript {
+  session_uuid: string;
+  title: string;
+  one_liner: string;
+  paragraph: string;
+  project: string | null;
+  source: string | null;
+  pillar_id: string | null;
+  date: string | null;
+  turns: { role: string; text: string; truncated?: boolean }[];
+  chars: number;
+}
+
+export interface TimelineHealth {
+  status: string;
+  postgres: boolean;
+  neo4j: boolean;
+  embedder: boolean;
+  recall_chunks?: number;
+  sessions_in_graph?: number;
+}
