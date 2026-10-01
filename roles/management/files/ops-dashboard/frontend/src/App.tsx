@@ -12,12 +12,16 @@ import { ProfileRack } from './components/profiles/ProfileRack';
 import { TierRack } from './components/profiles/TierRack';
 import { VisualView } from './components/visual/VisualView';
 import { SessionsView } from './components/sessions/SessionsView';
+import { RadarView } from './components/radar/RadarView';
+import { SearchView } from './components/search/SearchView';
 import { MobileNav } from './components/layout/MobileNav';
 import { pop } from './lib/motion';
 
 const TABS = [
   { key: 'dashboard', label: 'Overview' },
   { key: 'sessions',  label: 'Sessions' },
+  { key: 'search',    label: 'Search' },
+  { key: 'repos',     label: 'Repos' },
   { key: 'manager',   label: 'Manager' },
   { key: 'visual',    label: 'Visual' },
 ] as const;
@@ -78,7 +82,11 @@ function ManagerTab() {
 
 function DashboardLayout() {
   const { loading } = useDashboard();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTabState] = useState(() => {
+    const h = location.hash.replace('#', '');
+    return TABS.some((t) => t.key === h) ? h : 'dashboard';
+  });
+  const setActiveTab = (t: string) => { setActiveTabState(t); history.replaceState(null, '', t === 'dashboard' ? '#' : `#${t}`); };
 
   if (loading) {
     return (
@@ -101,6 +109,14 @@ function DashboardLayout() {
       ) : activeTab === 'sessions' ? (
         <main className="flex-1 overflow-y-auto py-4">
           <SessionsView />
+        </main>
+      ) : activeTab === 'search' ? (
+        <main className="flex-1 overflow-y-auto py-4">
+          <SearchView />
+        </main>
+      ) : activeTab === 'repos' ? (
+        <main className="flex-1 overflow-y-auto py-4">
+          <RadarView />
         </main>
       ) : activeTab === 'visual' ? (
         <VisualView />

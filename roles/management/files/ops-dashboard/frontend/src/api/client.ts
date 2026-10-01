@@ -49,3 +49,22 @@ export const decideApproval = (id: number, decision: 'approve' | 'deny') =>
     `/api/approvals/${id}/decide`,
     { decision },
   );
+
+// Repo Radar
+export const fetchRadarState = () => api.get<import('../types').RadarState>('/api/repo-radar/state');
+export const rescanRadarVps = () => api.post<{ ok: boolean; host: string }>('/api/repo-radar/rescan');
+
+// Session search (semantic + graph, same backends as timeline.aicortex.cloud)
+export const timelineHealth = () => api.get<import('../types').TimelineHealth>('/api/timeline/health');
+export const searchSessions = (q: string, k = 15) =>
+  api.get<import('../types').SearchResponse>(`/api/timeline/search?q=${encodeURIComponent(q)}&k=${k}`);
+export const similarSessions = (uuid: string, k = 6) =>
+  api.get<{ session_uuid: string; hits: import('../types').SearchHit[]; reason?: string }>(
+    `/api/timeline/similar/${encodeURIComponent(uuid)}?k=${k}`);
+export const sessionGraph = (uuid: string) =>
+  api.get<import('../types').SessionGraph>(`/api/timeline/session/${encodeURIComponent(uuid)}/graph`);
+export const sessionTranscriptExcerpt = (uuid: string, maxChars = 8000) =>
+  api.get<import('../types').SessionTranscript>(`/api/timeline/session/${encodeURIComponent(uuid)}/transcript?max_chars=${maxChars}`);
+export const fileSessions = (path: string, k = 25) =>
+  api.get<{ path: string; sessions: { session_uuid: string; title: string; date: string | null; project: string | null; touches: number }[] }>(
+    `/api/timeline/file?path=${encodeURIComponent(path)}&k=${k}`);
