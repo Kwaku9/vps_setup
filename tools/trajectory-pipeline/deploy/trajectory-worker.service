@@ -1,0 +1,15 @@
+[Unit]
+Description=Train and evaluate one queued trajectory model job
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/VScdeProjects/vps_setup/tools/trajectory-pipeline
+EnvironmentFile=-%h/.config/trajectory-pipeline/environment
+ExecStart=%h/Projects/VScdeProjects/vps_setup/tools/trajectory-pipeline/.venv/bin/trajectory --config config.local.toml worker
+TimeoutStartSec=infinity
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

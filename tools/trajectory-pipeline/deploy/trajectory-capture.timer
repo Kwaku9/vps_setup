@@ -1,0 +1,11 @@
+[Unit]
+Description=Capture settled Claude/Codex session snapshots every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=60s
+Persistent=true
+Unit=trajectory-capture.service
+
+[Install]
+WantedBy=timers.target

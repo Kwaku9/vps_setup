@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "workstation-trajectory-pipeline"
+version = "0.1.0"
+description = "Auditable session capture, curation, and gated model learning"
+requires-python = ">=3.11"
+dependencies = ["jsonschema>=4.23,<5"]
+
+[project.optional-dependencies]
+stores = ["psycopg[binary]>=3.2,<4", "neo4j>=5.26,<7"]
+train = ["torch>=2.6", "transformers==5.18.0", "peft>=0.18", "accelerate>=1.5", "bitsandbytes>=0.45", "trl==1.14.1", "datasets>=3"]
+
+[project.scripts]
+trajectory = "trajectory_pipeline.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["trajectory_pipeline*"]
+
+[tool.setuptools.package-data]
+trajectory_pipeline = ["*.sql"]
