@@ -1,5 +1,8 @@
+import hmac
 import os
 from fastapi import FastAPI
+from starlette.middleware import Middleware
+from starlette.responses import PlainTextResponse
 from fastmcp import FastMCP
 from fastmcp.server.openapi import RouteMap, MCPType
 from mcp_server.config import MCP_SERVER_HOST, MCP_SERVER_PORT, MCP_TRANSPORT_PROTOCOL, FINAL_DESCRIPTION, EXCLUDED_TAGS_SET
@@ -53,6 +56,28 @@ mcp = FastMCP.from_fastapi(
     route_maps = route_maps_list,
     )
 
+class BearerAuth:
+    """Require `Authorization: Bearer <AUTH_TOKEN>` on every HTTP request.
+
+    Added 2026-10-02. Until then nothing read AUTH_TOKEN, so anything that
+    could reach :5002 could list and call every tool on a live brokerage
+    account. Pure ASGI so it wraps the whole FastMCP app, streams included.
+    """
+
+    def __init__(self, app, token: str):
+        self.app = app
+        self.token = token
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            header = dict(scope.get("headers") or []).get(b"authorization", b"").decode("latin-1")
+            if not (header.startswith("Bearer ") and hmac.compare_digest(header[7:], self.token)):
+                resp = PlainTextResponse("Unauthorized", status_code=401, headers={"WWW-Authenticate": "Bearer"})
+                await resp(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
 if __name__ == "__main__":
     # FastMCP 2.13 accepts ONLY {"stdio", "http", "sse", "streamable-http"} as a
     # transport name. Statelessness is a separate boolean parameter, NOT a transport.
@@ -68,6 +93,13 @@ if __name__ == "__main__":
     # transport PLUS stateless_http=True.
     transport = MCP_TRANSPORT_PROTOCOL
     run_kwargs = {}
+    # Fail closed: an HTTP transport without a token would be an open door to a
+    # brokerage account. stdio is host-local (podman exec) and needs none.
+    token = os.environ.get("AUTH_TOKEN", "")
+    if transport != "stdio":
+        if not token:
+            raise SystemExit("ib-mcp-server: AUTH_TOKEN is required for HTTP transports")
+        run_kwargs["middleware"] = [Middleware(BearerAuth, token=token)]
     if transport == "stateless-http":
         transport = "streamable-http"
         run_kwargs["stateless_http"] = True
