@@ -24,7 +24,18 @@ backup:
   # staging dir is ~8G and the peak (staging + final tar) ~16G. Raised 16 -> 18.
   # The disk had 20.2G free at the time; if this gate starts aborting, reclaim
   # space (dangling images, `podman system df`) rather than lowering it.
-  min_free_gb: 18
+  # 2026-10-02: 18 -> 12. With stream_to_r2 the peak is the staging dir alone
+  # (no local final archive), and ~2.3G of dead weight is now excluded (OWUI
+  # model cache, legacy webui.db). Staging ~10.3G + ~1.7G headroom = 12.
+  # VictoriaMetrics grows ~2-3G a month and is the largest piece: revisit this
+  # when a run logs "staged" above ~11G. With stream_to_r2 false the peak is
+  # staging + the largest piece and this must go back to ~18.
+  min_free_gb: 12
+  # Stream the outer tar straight into the R2 crypt remote instead of writing a
+  # local final archive first (see step 8 of backup.sh.j2). Requires
+  # r2_enabled + r2_encrypt, s3_enabled false, local_copies_after_offsite 0.
+  # Peak disk = the staging dir alone (~10.3G on 2026-10-02).
+  stream_to_r2: true
   # Google One (consumer Drive) offsite copy via rclone.
   # Google One is CONSUMER Drive, so this needs a personal OAuth token — a
   # service account will not work: files an SA creates count against the SA's
@@ -142,6 +153,13 @@ backup:
     - "neo4j/data/transactions"   # WAL only; safe to drop because the pod is stopped
     - "victoriametrics/cache"     # 38M rebuildable query/index caches
     - "victoriametrics/tmp"       # transient
+    # OWUI model downloads (embedding 1.7G, whisper 141M, TTS audio): all
+    # re-fetched on demand, never restore-critical.
+    - "openwebui/cache"
+    # Legacy SQLite from before the 2026-06-04 move to Postgres (openwebui
+    # schema); untouched since. 482M of dead data, incl. stale password hashes.
+    - "webui.db"
+    - "webui.db.bak-*"
     - "victoriametrics/snapshots" # hard-link snapshots; would double the archive if any exist
     # tar cannot read a live SQLite file consistently — it exits 1 ("file
     # changed as we read it") and can capture a torn, corrupt copy.
