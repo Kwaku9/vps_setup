@@ -9,7 +9,7 @@
 // source that failed (d.sources.<src>.ok = false) keeps its slice untouched.
 //
 // Owned labels (deleted when unseen): Host Network Pod Container Datastore
-// Database Table ScheduledJob Route Middleware Datasource Dashboard.
+// Database Table ScheduledJob Route Middleware Datasource Dashboard McpServer.
 // Not owned, never touched: Risk, External, Role and the whole sessions graph.
 // =============================================================================
 
@@ -240,12 +240,28 @@ WITH d, j, s WHERE s.engine = 'sqlite' AND any(x IN d.backup.dirs WHERE s.name S
 MATCH (st:Datastore {name: s.name})
 MERGE (st)-[r:BACKED_UP_BY]->(j) SET r.src = 'backup', r.seen = datetime(d.run);
 
+// ---------- mcp: configured MCP servers (Claude Code user/local/plugin/claude.ai) ----------
+CREATE CONSTRAINT mcp_key IF NOT EXISTS FOR (n:McpServer) REQUIRE n.key IS UNIQUE;
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.mcp.ok
+UNWIND d.mcp_servers AS m
+MERGE (x:McpServer {key: m.key})
+SET x.name = m.name, x.scope = m.scope, x.where = m.where, x.transport = m.transport,
+    x.command = m.command, x.args = m.args, x.url = m.url, x.env_keys = m.env_keys,
+    x.header_keys = m.header_keys, x.status = m.status, x.src = 'mcp', x.seen = datetime(d.run)
+WITH d, m, x
+OPTIONAL MATCH (c:Container {name: m.container})
+OPTIONAL MATCH (p:Pod {name: m.pod})
+WITH d, x, coalesce(c, p) AS t WHERE t IS NOT NULL
+MERGE (x)-[r:RUNS_IN]->(t) SET r.src = 'mcp', r.seen = datetime(d.run);
+
 // ---------- reconcile: delete what successful sources no longer see ----------
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
 WITH d, datetime(d.run) AS run,
      {Host:'podman', Network:'podman', Pod:'podman', Container:'podman',
       Datastore:'db', Database:'db', Table:'db', ScheduledJob:'cron',
-      Route:'traefik', Middleware:'traefik', Datasource:'grafana', Dashboard:'grafana'} AS owner
+      Route:'traefik', Middleware:'traefik', Datasource:'grafana', Dashboard:'grafana', McpServer:'mcp'} AS owner
 UNWIND keys(owner) AS label
 WITH run, label, owner[label] AS src, d WHERE d.sources[owner[label]].ok
 MATCH (n) WHERE label IN labels(n) AND (n.seen IS NULL OR n.seen < run)

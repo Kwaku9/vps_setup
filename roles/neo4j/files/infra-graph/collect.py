@@ -94,6 +94,7 @@ def collect_podman(out):
                         "subnet": ",".join(s.get("subnet", "") for s in n.get("subnets") or []),
                         "driver": n.get("driver")} for n in nets]
     infra_ip = {}       # pod name -> {network: ip}
+    infra_ports = {}    # pod name -> host port bindings (pods publish ports via their infra container)
     containers = []
     # inspect carries the pod's ID, not its name (PodName is not populated).
     pod_by_id = {p["Id"]: p["Name"] for p in pods}
@@ -104,6 +105,9 @@ def collect_podman(out):
         net = {k: v.get("IPAddress") for k, v in (c.get("NetworkSettings", {}).get("Networks") or {}).items()}
         if is_infra:
             infra_ip[pod] = net
+            infra_ports[pod] = [f'{b.get("HostIp") or "0.0.0.0"}:{b.get("HostPort")}->{cp}'
+                                for cp, bs in ((c.get("HostConfig") or {}).get("PortBindings") or {}).items()
+                                for b in bs or []]
             continue
         hc = c.get("HostConfig", {})
         cfg = c.get("Config", {})
@@ -126,7 +130,7 @@ def collect_podman(out):
         if c["pod"] and not c["networks"]:
             c["networks"] = infra_ip.get(c["pod"], {})
     out["pods"] = [{"name": p["Name"], "status": p["Status"],
-                    "networks": infra_ip.get(p["Name"], {}),
+                    "networks": infra_ip.get(p["Name"], {}), "ports": infra_ports.get(p["Name"], []),
                     "members": [m["Names"] for m in p.get("Containers") or [] if m["Names"] != p["Name"] + "-infra"
                                 and not m["Names"].endswith("-infra")]} for p in pods]
     out["containers"] = containers
@@ -507,6 +511,127 @@ def collect_backup(out):
     out["backup"] = {"job": "vps-daily-backup", "dirs": dirs, "volumes": vols, "covered": covered}
 
 
+
+# ───────────────────────────── MCP servers ─────────────────────────────
+CLAUDE_JSON = "/root/.claude.json"
+CLAUDE_SETTINGS = "/root/.claude/settings.json"
+LEGACY_MCP = "/root/.claude/mcp_settings.json"
+PLUGIN_CACHE = "/root/.claude/plugins/cache"
+
+
+def _vkey(v):
+    return [int(x) if x.isdigit() else x for x in re.split(r"[.\-]", v)]
+
+
+def _tcp_ok(host, port):
+    import socket
+    try:
+        with socket.create_connection((host, int(port)), timeout=3):
+            return True
+    except Exception:
+        return False
+
+
+def mcp_health(srv, containers):
+    """Cheap, deterministic health: never launches the server itself."""
+    t = srv["transport"]
+    if t == "stdio":
+        args = srv.get("args") or []
+        cmd = srv.get("command") or ""
+        if cmd == "podman" and args[:1] == ["exec"]:
+            rest = [a for a in args[1:]]
+            # skip flags like -i, -e K=V
+            i = 0
+            while i < len(rest) and rest[i].startswith("-"):
+                i += 2 if rest[i] in ("-e", "--env", "-w", "--workdir", "-u", "--user") else 1
+            cname = rest[i] if i < len(rest) else None
+            srv["container"] = cname
+            entry = next((a for a in rest[i + 1:] if re.search(r"\.(py|js|mjs)$", a)), None)
+            c = containers.get(cname)
+            if not c:
+                return "container-missing"
+            if c["state"] != "running":
+                return "container-stopped"
+            if entry:
+                try:
+                    run(["podman", "exec", cname, "test", "-e", entry if entry.startswith("/") else
+                         os.path.join("/app", entry.lstrip("./"))], timeout=20)
+                except Exception:
+                    return "entry-missing"
+            return "ok"
+        if not cmd:
+            return "misconfigured"
+        if subprocess.run(["sh", "-c", f"command -v {cmd}"], capture_output=True).returncode != 0:
+            return "runtime-missing"
+        return "ok"
+    url = srv.get("url") or ""
+    if "${" in url:
+        return "misconfigured"
+    m = URL_RE.match(url)
+    if not m:
+        return "misconfigured"
+    host, port = m["host"], m["port"] or ("443" if url.startswith("https") else "80")
+    srv["host"], srv["port"] = host, port
+    if host in ("127.0.0.1", "localhost"):
+        return "ok" if _tcp_ok("127.0.0.1", port) else "refused"
+    return "remote"
+
+
+def collect_mcp(out):
+    containers = {c["name"]: c for c in out.get("containers", [])}
+    cj = json.load(open(CLAUDE_JSON))
+    servers = []
+
+    def add(name, scope, cfg, where=None, disabled=False):
+        t = cfg.get("type") or ("stdio" if cfg.get("command") else "http")
+        srv = {"key": f"{scope}:{name}" + (f"@{where}" if where else ""), "name": name, "scope": scope,
+               "where": where, "transport": t, "command": cfg.get("command"),
+               "args": [redact(a) for a in cfg.get("args") or []], "url": redact(cfg.get("url") or ""),
+               "env_keys": sorted((cfg.get("env") or {}).keys()),
+               "header_keys": sorted((cfg.get("headers") or {}).keys())}
+        srv["status"] = "disabled" if disabled else mcp_health(srv, containers)
+        if srv["transport"] != "stdio" and srv.get("host") and srv["host"] in ("127.0.0.1", "localhost"):
+            srv["container"] = next((c["name"] for c in out.get("containers", [])
+                                     if any(p.startswith(f'127.0.0.1:{srv["port"]}->') or p.startswith(f'0.0.0.0:{srv["port"]}->')
+                                            for p in c["ports"])), None)
+            if not srv["container"]:  # published by a pod's infra container
+                srv["pod"] = next((p["name"] for p in out.get("pods", [])
+                                   if any(x.split("->")[0].endswith(f':{srv["port"]}') for x in p.get("ports", []))), None)
+        servers.append(srv)
+
+    for n, cfg in (cj.get("mcpServers") or {}).items():
+        add(n, "user", cfg)
+    for proj, pc in (cj.get("projects") or {}).items():
+        disabled = set(pc.get("disabledMcpServers") or [])
+        for n, cfg in (pc.get("mcpServers") or {}).items():
+            add(n, "local", cfg, where=proj, disabled=n in disabled)
+    if os.path.exists(LEGACY_MCP):
+        for n, cfg in (json.load(open(LEGACY_MCP)).get("mcpServers") or {}).items():
+            add(n, "legacy-file", cfg, where=LEGACY_MCP)
+    enabled = {}
+    if os.path.exists(CLAUDE_SETTINGS):
+        enabled = {k: v for k, v in (json.load(open(CLAUDE_SETTINGS)).get("enabledPlugins") or {}).items() if v}
+    for pid in enabled:
+        plugin, _, market = pid.partition("@")
+        base = os.path.join(PLUGIN_CACHE, market, plugin)
+        if not os.path.isdir(base):
+            continue
+        vers = sorted(os.listdir(base), key=_vkey)
+        f = os.path.join(base, vers[-1], ".mcp.json") if vers else None
+        if f and os.path.exists(f):
+            d = json.load(open(f))
+            for n, cfg in (d.get("mcpServers") or d).items():
+                if isinstance(cfg, dict):
+                    add(f"plugin:{plugin}:{n}", "plugin", cfg)
+    for n in cj.get("claudeAiMcpEverConnected") or []:
+        servers.append({"key": f"claude.ai:{n}", "name": n, "scope": "claude.ai", "where": None,
+                        "transport": "http", "command": None, "args": [], "url": "", "env_keys": [],
+                        "header_keys": [], "status": "account-connector", "container": None})
+    if not servers:
+        raise RuntimeError("implausible: no MCP servers configured")
+    out["mcp_servers"] = servers
+
+
 # ───────────────────────────── inventory markdown ─────────────────────────────
 def fmt_bytes(b):
     if b is None:
@@ -547,6 +672,10 @@ def write_inventory(out, path):
     for r in sorted(out.get("routes", []), key=lambda r: r["key"]):
         L.append(f'| {r["host"] or "—"} | {r["path"] or ""} | {", ".join(b["to"] or "?" for b in r["backends"])} | '
                  f'{", ".join(r["middlewares"]) or "none"} |')
+    L += ["", "## MCP servers", "", "| Server | Scope | Transport | Runs in | Status |", "|---|---|---|---|---|"]
+    for m in sorted(out.get("mcp_servers", []), key=lambda m: (m["scope"], m["name"])):
+        L.append(f'| {m["name"]} | {m["scope"]}{(" (" + m["where"] + ")") if m.get("where") else ""} | {m["transport"]} | '
+                 f'{m.get("container") or m.get("pod") or ("remote" if m["status"] in ("remote", "account-connector") else "host")} | {m["status"]} |')
     L += ["", "## Dashboards", "", "| Dashboard | Folder | Datasources |", "|---|---|---|"]
     dsn = {d["uid"]: d["name"] for d in out.get("datasources", [])}
     for d in sorted(out.get("dashboards", []), key=lambda d: d["title"]):
@@ -561,10 +690,10 @@ def main():
     os.makedirs(outdir, exist_ok=True)
     out = {"run": now_iso(), "host": HOST, "sources": {}}
     steps = [("podman", collect_podman), ("db", collect_dbs), ("cron", collect_cron),
-             ("traefik", collect_traefik), ("grafana", collect_grafana), ("backup", collect_backup)]
+             ("traefik", collect_traefik), ("grafana", collect_grafana), ("backup", collect_backup), ("mcp", collect_mcp)]
     for name, fn in steps:
         t0 = time.time()
-        if name != "podman" and not out["sources"].get("podman", {}).get("ok") and name in ("db", "traefik", "grafana", "backup"):
+        if name != "podman" and not out["sources"].get("podman", {}).get("ok") and name in ("db", "traefik", "grafana", "backup", "mcp"):
             out["sources"][name] = {"ok": False, "error": "skipped: podman source failed", "secs": 0}
             continue
         try:
@@ -581,7 +710,7 @@ def main():
     write_inventory(out, os.path.join(outdir, "INVENTORY.md"))
     print(json.dumps({"run": out["run"], "sources": out["sources"],
                       "counts": {k: len(out.get(k, [])) for k in
-                                 ("pods", "containers", "networks", "jobs", "datastores", "routes", "dashboards", "datasources")},
+                                 ("pods", "containers", "networks", "jobs", "datastores", "routes", "dashboards", "datasources", "mcp_servers")},
                       "db_warnings": out.get("db_warnings", [])}, indent=1))
     return 0 if all(s["ok"] for s in out["sources"].values()) else 2
 
