@@ -96,6 +96,19 @@ cloudflare_access:
     # BOT_MODE=coder). Same rationale as telegram-bot — secret-token + allowlist
     # auth at the app; CF Access must bypass so Telegram can POST the webhook.
     - "telegram-coder"
+    # mailkit-read / mailkit-send: MCP connectors for claude.ai. Access CANNOT
+    # gate these and the reason is structural, not a preference. A custom
+    # connector sends exactly one custom header, chosen from a fixed allowlist
+    # of vendor API-key names (x-api-key, apikey, x-auth-token and so on); an
+    # Access service token needs CF-Access-Client-Id AND CF-Access-Client-Secret,
+    # neither of which is on that list, and there is no human to complete an
+    # interactive sign-in because the caller is a machine.
+    #
+    # Same rationale as otel and telegram-bot: auth happens at the application,
+    # via a per-connector shared secret the server refuses to start without.
+    # Read and send hold DIFFERENT secrets, so one leaked header grants one role.
+    - "mailkit-read"
+    - "mailkit-send"
     # hooks removed — orphaned (no Traefik route, no service behind it).
     # The CF Access app was also deleted 2026-05-26.
     # otlp removed — internal telemetry uses Podman DNS (logs-pod:4318), public URL now behind CF Access
