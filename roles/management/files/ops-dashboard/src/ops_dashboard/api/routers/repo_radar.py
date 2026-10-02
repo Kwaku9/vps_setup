@@ -40,6 +40,26 @@ def _check_token(authorization: str | None):
         raise HTTPException(status_code=401, detail="invalid ingest token")
 
 
+def _safe_prs(prs) -> dict:
+    """Keep only PRs whose link is a real GitHub https URL.
+
+    The UI renders pr.url straight into <a href>, so a `javascript:` (or any
+    non-https) URL in a pushed snapshot would execute in the operator's
+    browser. GitHub only ever returns https://github.com/... links, so anything
+    else is either corruption or an attack and is dropped rather than rendered.
+    """
+    out: dict = {}
+    if not isinstance(prs, dict):
+        return out
+    for repo, items in prs.items():
+        if not isinstance(items, list):
+            continue
+        out[repo] = [p for p in items
+                     if isinstance(p, dict) and isinstance(p.get("url"), str)
+                     and p["url"].startswith("https://github.com/")]
+    return out
+
+
 def _sanitize(snapshot: dict, host: str) -> dict:
     """Keep only the fields the UI needs; drop absolute paths of other hosts'
     working trees except the root, which is what the radar shows as its title."""
@@ -54,7 +74,7 @@ def _sanitize(snapshot: dict, host: str) -> dict:
         "scannedAt": snapshot.get("scannedAt"),
         "scanMs": snapshot.get("scanMs"),
         "repos": repos,
-        "prs": snapshot.get("prs") or {},
+        "prs": _safe_prs(snapshot.get("prs")),
         "prError": snapshot.get("prError"),
         "fatal": snapshot.get("fatal"),
     }
