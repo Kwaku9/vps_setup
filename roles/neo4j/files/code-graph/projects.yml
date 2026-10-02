@@ -1,0 +1,49 @@
+# Code roots indexed into the knowledge graph (CodeProject/CodeFile/Symbol/Endpoint/Doc).
+#
+# Each root is one directory tree. Inside a root, any directory matching a
+# `components` glob that holds real code (Dockerfile, pyproject.toml,
+# package.json, or a .py/.mjs/.ts entry file) becomes a child CodeProject and
+# claims its subtree, so a new bundled app needs no edit here.
+#
+# Excluded on purpose (doc audit 2026-10-02): third-party clones (n8n, bolt.diy,
+# newbolt, fabric, fabric-repo, IB_MCP, Interactive_Avatar, whiskyspider), the
+# IBKR vendor API (TWS_API), and vps_setup/claude-code (leaked third-party source).
+# `class`: own-deployed | own-dev | own-dormant | dead. A dead root names the
+# component that replaced it in `superseded_by` (<root>/<component name>).
+defaults:
+  exclude_dirs: [node_modules, .git, dist, build, .next, .venv, venv, __pycache__, .cache,
+                 coverage, .turbo, .pytest_cache, site-packages, vendor, .playwright-mcp]
+  max_file_bytes: 400000
+
+roots:
+  - name: vps_setup
+    path: /workspace/vscode-projects/vps_setup
+    class: own-deployed
+    exclude_dirs: [claude-code, .claude, labguide-ocr, labguide-screenshots, slides-ocr,
+                   text-extracts, local, screenshots]
+    components: ["roles/*/files/*", "tools/*", "tools/spikes/*"]
+  - {name: aicortex-marketplace,  path: /workspace/vscode-projects/aicortex-marketplace, class: own-deployed, components: ["*", "apps/*", "services/*"]}
+  # own-dev: diverged from the deployed role copy (roles/frontend expo-dev); neither is canonical.
+  - {name: aicortex-chat,         path: /workspace/vscode-projects/aicortex-chat, class: own-dev}
+  # dead: the live worldview-dev serves the role copy synced to /opt/compose.
+  - {name: geospatial-dashboard,  path: /workspace/vscode-projects/geospatial-dashboard, class: dead, superseded_by: vps_setup/geospatial-dashboard}
+  - {name: la-rouge-brows,        path: /workspace/vscode-projects/la-rouge-brows, class: own-dev}
+  - {name: ib-mcp-server,         path: /workspace/vscode-projects/ib-mcp-server, class: dead, superseded_by: vps_setup/ib-mcp-server}
+  - {name: atlas-charts,          path: /workspace/vscode-projects/atlas-charts, class: dead, superseded_by: vps_setup/lightweight-charts}
+  - {name: claude-code-ssh,       path: /workspace/vscode-projects/claude-code-ssh, class: own-dormant}
+  - {name: mcp-googledocs-server, path: /workspace/vscode-projects/mcp-googledocs-server, class: dead, superseded_by: vps_setup/mcp-googledocs-server}
+  - {name: fedora-workstation,    path: /workspace/vscode-projects/fedora-workstation, class: own-dormant}
+  - {name: infra-animation,       path: /workspace/vscode-projects/infra-animation, class: own-dormant}
+  # init-db.sh is bind-mounted into ai-stack-postgres; no role manages it.
+  - {name: openwebui-litellm,     path: /workspace/vscode-projects/openwebui-litellm, class: own-deployed}
+  - {name: telegram-gateway-copy, path: /workspace/vscode-projects/telegram-gateway, class: dead, superseded_by: vps_setup/telegram-gateway}
+  # predecessor of the deployed role copy (roles/mcp-servers/files/scrapy-mcp).
+  - {name: ScrapyExtractor,       path: /workspace/pycharm-projects/ScrapyExtractor, class: dead, superseded_by: vps_setup/scrapy-mcp, exclude_dirs: [whiskyspider]}
+  - {name: TradeJournal,          path: /workspace/pycharm-projects/TradeJournal, class: own-dormant}
+  - {name: TelegramGateway,       path: /workspace/pycharm-projects/TelegramGateway, class: dead, superseded_by: vps_setup/telegram-gateway}
+  - {name: AfroVeganaChatBot,     path: /workspace/pycharm-projects/AfroVeganaChatBot, class: own-dormant}
+  - {name: ai-recipe-generator,   path: /workspace/pycharm-projects/ai-recipe-generator, class: own-dormant}
+  - {name: geminichat_scrapy,     path: /workspace/pycharm-projects/geminichat_scrapy, class: own-dormant}
+  - {name: playwright-mcp-server, path: /workspace/pycharm-projects/playwright-mcp-server, class: own-dormant}
+  - {name: mailkit-mcp,           path: /root/mailkit-mcp, class: own-deployed}
+  - {name: aicortex-workshop,     path: /root/aicortex-workshop, class: own-deployed}
