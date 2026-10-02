@@ -259,10 +259,15 @@ jobs:
       - name: Pull latest code on VPS
         run: |
           ssh -o StrictHostKeyChecking=no root@localhost \
-            "cd /workspace/vscode-projects/vps_setup && \
-             git fetch origin main && \
-             git reset --hard origin/main && \
-             git-crypt unlock /root/.git-crypt-key 2>/dev/null || true"
+            'set -e
+             cd /workspace/vscode-projects/vps_setup
+             if [ -n "$(git status --porcelain)" ]; then
+               echo "Refusing to reset VPS checkout with uncommitted changes." >&2
+               exit 1
+             fi
+             git fetch origin main
+             git reset --hard origin/main
+             git-crypt unlock /root/.git-crypt-key 2>/dev/null || true'
 
       - name: Run Ansible playbook
         id: ansible
