@@ -110,6 +110,41 @@ async function branches(dir) {
     .sort((a, b) => b.when - a.when);
 }
 
+/** The branch a fresh clone lands on: origin/HEAD when set, else the usual names. */
+async function defaultRef(dir) {
+  const sym = await git(dir, ["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"]).catch(() => "");
+  if (sym.trim()) return sym.trim();
+  for (const candidate of ["origin/main", "origin/master", "main", "master"]) {
+    const ok = await git(dir, ["rev-parse", "-q", "--verify", candidate]).catch(() => "");
+    if (ok.trim()) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Each local branch's position relative to the default branch — which is a
+ * different question from its position relative to its own upstream. A branch
+ * can be perfectly in sync with origin and still hold work that never reached
+ * the default branch, which is the state this makes visible.
+ */
+async function compareToDefault(dir, ref, names) {
+  const out = {};
+  await Promise.all(names.map(async (name) => {
+    // `A...B` is a symmetric difference and needs a merge base. Histories with
+    // none (a re-initialised repo whose original line survives alongside) would
+    // otherwise report as an enormous two-way divergence, so they are named.
+    const base = await git(dir, ["merge-base", ref, name]).catch(() => "");
+    if (!base.trim()) {
+      out[name] = { unrelated: true, ahead: 0, behind: 0 };
+      return;
+    }
+    const counts = await git(dir, ["rev-list", "--left-right", "--count", `${ref}...${name}`]).catch(() => "");
+    const [behind, ahead] = counts.trim().split(/\s+/).map(Number);
+    out[name] = { unrelated: false, ahead: ahead || 0, behind: behind || 0 };
+  }));
+  return out;
+}
+
 function parseRemote(url) {
   if (!url) return null;
   const m = url.trim().match(/github\.com[:/]+([^/]+)\/(.+?)(?:\.git)?$/);
@@ -131,6 +166,32 @@ async function scanRepo(root, name) {
     repo.stashes = stashOut.split("\n").filter(Boolean).length;
     repo.slug = parseRemote(remoteOut);
     repo.detached = repo.head === null;
+
+    // Branch topology against the default branch: what is unmerged, what is
+    // safe to delete, and whether the checked-out branch has diverged in both
+    // directions (which needs a real merge, not a fast-forward).
+    repo.defaultBranch = await defaultRef(dir).catch(() => null);
+    if (repo.defaultBranch && branchList.length) {
+      const short = repo.defaultBranch.replace(/^origin\//, "");
+      const cmp = await compareToDefault(dir, repo.defaultBranch, branchList.map((b) => b.name));
+      for (const b of branchList) b.vsDefault = cmp[b.name] ?? null;
+      const others = branchList.filter((b) => b.name !== short && b.vsDefault);
+      repo.headVsDefault = repo.head ? (cmp[repo.head] ?? null) : null;
+      repo.diverged = !!(repo.headVsDefault?.ahead > 0 && repo.headVsDefault?.behind > 0);
+      repo.unmerged = others.filter((b) => b.vsDefault.ahead > 0).length;
+      // Fully contained in the default branch and not checked out: deleting it
+      // loses no commits.
+      repo.prunable = others.filter(
+        (b) => !b.vsDefault.unrelated && b.vsDefault.ahead === 0 && b.name !== repo.head,
+      ).length;
+      repo.unrelated = others.filter((b) => b.vsDefault.unrelated).length;
+    } else {
+      repo.headVsDefault = null;
+      repo.diverged = false;
+      repo.unmerged = 0;
+      repo.prunable = 0;
+      repo.unrelated = 0;
+    }
 
     const last = await git(dir, [
       "log",
