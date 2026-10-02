@@ -28,6 +28,12 @@
         mode: '0600'
       delegate_to: localhost
       run_once: true
+      # The play runs `become: true` for the Alpine hosts, and a delegated task
+      # inherits it — which made this ask for sudo on whichever controller ran
+      # it, to write a file the controller's own user already owns. Writing into
+      # the checkout needs no privilege in either context: the deployment
+      # container is already root, and a laptop run is the file's owner.
+      become: false
       tags: ['always', 'telegram-approval']
 
   roles:
