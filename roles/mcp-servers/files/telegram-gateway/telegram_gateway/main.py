@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import re
@@ -249,18 +250,30 @@ try:
 except Exception:
     logger.warning("OTEL tracing init failed — continuing without traces")
 
-# Auth middleware for MCP routes (not webhook or health)
+# Paths that skip the bearer check. /mcp is deliberately NOT here: it was until
+# 2026-10-02, which exposed every route as an unauthenticated MCP tool
+# (send_*, request_approval) on an internet-routed host. It only did no harm
+# because the mount returned 500. /webhook authenticates with Telegram's own
+# secret-token header inside the handler.
+AUTH_EXEMPT_PATHS = frozenset({"/health", "/webhook", "/docs", "/openapi.json"})
+
+
+def auth_exempt(path: str) -> bool:
+    """True if `path` may be served without the gateway bearer token."""
+    return path in AUTH_EXEMPT_PATHS
+
+
+def bearer_ok(header: str, token: str) -> bool:
+    """Constant-time check of an Authorization header against the token."""
+    return header.startswith("Bearer ") and hmac.compare_digest(header[7:], token)
+
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    path = request.url.path
-    # Skip auth for health, webhook, and docs
-    if path in ("/health", "/webhook", "/docs", "/openapi.json") or path.startswith("/mcp"):
+    if auth_exempt(request.url.path):
         return await call_next(request)
-    # Check bearer token for all other routes
-    if AUTH_TOKEN:
-        auth_header = request.headers.get("authorization", "")
-        if not auth_header.startswith("Bearer ") or auth_header[7:] != AUTH_TOKEN:
-            return Response(status_code=401, content="Unauthorized")
+    if AUTH_TOKEN and not bearer_ok(request.headers.get("authorization", ""), AUTH_TOKEN):
+        return Response(status_code=401, content="Unauthorized")
     return await call_next(request)
 
 
@@ -292,7 +305,7 @@ async def health():
 
 
 # Create MCP server from FastAPI routes and mount as sub-app on /mcp.
-# The /mcp mount is auth-exempt (it's the MCP protocol surface). OWUI mode has
+# The /mcp mount is bearer-authed like every other route (see auth_exempt). OWUI mode has
 # no MCP consumers and its routes include the tool-approval gate, so don't
 # expose them unauthenticated as MCP tools — skip the mount entirely.
 if BOT_MODE != "owui":
