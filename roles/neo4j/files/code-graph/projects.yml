@@ -31,7 +31,6 @@ roots:
   - {name: ib-mcp-server,         path: /workspace/vscode-projects/ib-mcp-server, class: dead, superseded_by: vps_setup/ib-mcp-server}
   - {name: atlas-charts,          path: /workspace/vscode-projects/atlas-charts, class: dead, superseded_by: vps_setup/lightweight-charts}
   - {name: claude-code-ssh,       path: /workspace/vscode-projects/claude-code-ssh, class: own-dormant}
-  - {name: mcp-googledocs-server, path: /workspace/vscode-projects/mcp-googledocs-server, class: dead, superseded_by: vps_setup/mcp-googledocs-server}
   - {name: fedora-workstation,    path: /workspace/vscode-projects/fedora-workstation, class: own-dormant}
   - {name: infra-animation,       path: /workspace/vscode-projects/infra-animation, class: own-dormant}
   # init-db.sh is bind-mounted into ai-stack-postgres; no role manages it.
