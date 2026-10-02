@@ -1,0 +1,124 @@
+state_dir = "state"
+settle_seconds = 60
+minimum_new_tasks = 500
+max_error_ratio = 0.25
+redact_env = ["TRAJECTORY_PG_DSN", "TRAJECTORY_NEO4J_PASSWORD", "JUDGE_API_KEY", "HF_TOKEN", "LITELLM_API_KEY"]
+
+[[sources]]
+kind = "claude"
+path = "~/.claude/projects"
+glob = "**/*.jsonl"
+
+[[sources]]
+kind = "codex"
+path = "~/.codex/sessions"
+glob = "**/*.jsonl"
+
+[[sources]]
+kind = "canonical"
+path = "state/incoming"
+glob = "*.jsonl"
+
+[dataset]
+validation_fraction = 0.1
+
+[dataset.embedding]
+# Enable using the existing embeddinggemma endpoint; blank means exact dedup only.
+url = ""
+model = "embeddinggemma"
+key_env = "LITELLM_API_KEY"
+prefix = "title: task | text: "
+threshold = 0.96
+
+[judge]
+enabled = false
+url = ""
+model = ""
+key_env = "JUDGE_API_KEY"
+minimum_confidence = 0.95
+
+[postgres]
+enabled = false
+dsn_env = "TRAJECTORY_PG_DSN"
+
+[neo4j]
+enabled = false
+uri_env = "TRAJECTORY_NEO4J_URI"
+user_env = "TRAJECTORY_NEO4J_USER"
+password_env = "TRAJECTORY_NEO4J_PASSWORD"
+database = "neo4j"
+
+[targets.gemma_local]
+enabled = false
+model = "google/gemma-4-E4B-it"
+revision = "ee0ef6023621cff504d758262d4e04895a5af4a2"
+max_length = 8192
+rank = 16
+epochs = 1
+learning_rate = 0.00002
+minimum_validation = 20
+suite = "examples/benchmark.jsonl"
+artifact = "model.gguf"
+auto_promote = false
+export_command = ["{python}", "-m", "trajectory_pipeline.export_gguf", "--job", "{job}"]
+serve_candidate_command = ["{python}", "-m", "trajectory_pipeline.ollama", "candidate", "--job", "{job}"]
+reload_command = ["{python}", "-m", "trajectory_pipeline.ollama", "reload", "--job", "{job}"]
+health_command = ["{python}", "-m", "trajectory_pipeline.ollama", "health", "--job", "{job}"]
+rollback_command = ["{python}", "-m", "trajectory_pipeline.ollama", "rollback", "--job", "{job}"]
+llama_cpp_env = "LLAMA_CPP_DIR"
+quantization = "Q4_K_M"
+# train_command = ["/absolute/path/.venv/bin/python", "-m", "trajectory_pipeline.train", "--job", "{job}"]
+# export_command = ["/absolute/path/export-gemma", "{adapter}", "{job_dir}/model.gguf"]
+# artifact = "model.gguf"  # Evaluate the exported artifact before promoting it.
+# serve_candidate_command = ["/absolute/path/start-candidate", "{artifact}"]
+# reload_command = ["/absolute/path/reload-local", "{artifact}"]
+# health_command = ["/absolute/path/check-local", "{artifact}"]
+# rollback_command = ["/absolute/path/reload-previous"]
+
+[targets.gemma_local.baseline_endpoint]
+url = "http://127.0.0.1:11434/v1"
+model = "gemma4:e4b" # Set to the baseline tag actually installed by the inference layer.
+
+[targets.gemma_local.candidate_endpoint]
+url = "http://127.0.0.1:11434/v1"
+model = "trajectory-gemma-admin:candidate" # Replaced with a unique job tag on import.
+
+[targets.gemma_local.ollama]
+url = "http://127.0.0.1:11434"
+model_prefix = "trajectory-gemma-admin"
+
+[targets.gemma_local.gate]
+minimum_cases = 50
+minimum_per_category = 5
+minimum_score = 0.9
+max_regression = 0.02
+categories = ["tool_use", "operations", "instruction", "safety"]
+
+[targets.qwen_cloud]
+enabled = false
+model = "Qwen/Qwen3.8-27B"
+revision = "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
+max_length = 8192
+rank = 16
+epochs = 1
+learning_rate = 0.00002
+minimum_validation = 20
+suite = "examples/benchmark.jsonl"
+artifact = "adapter"
+auto_promote = false
+# Run this worker on the cloud GPU with its own state_dir and identical dataset.
+
+[targets.qwen_cloud.baseline_endpoint]
+url = "http://127.0.0.1:8082/v1"
+model = "qwen-baseline"
+
+[targets.qwen_cloud.candidate_endpoint]
+url = "http://127.0.0.1:8083/v1"
+model = "qwen-candidate"
+
+[targets.qwen_cloud.gate]
+minimum_cases = 50
+minimum_per_category = 5
+minimum_score = 0.9
+max_regression = 0.02
+categories = ["tool_use", "operations", "instruction", "safety"]
