@@ -12,3 +12,20 @@
   # silently could not apply any static-config change, e.g. forwardedHeaders.)
   ansible.builtin.command: podman restart traefik
   changed_when: true
+
+- name: restart crowdsec
+  # tags: always — see the note on 'restart traefik' above.
+  #
+  # Defined HERE rather than reused from roles/security: shared-services runs
+  # at step 4 of site.yml and security at step 10, so at this point the
+  # security role's handlers are not yet loaded and notifying one fails with
+  # "The requested handler was not found".
+  #
+  # Needed because CrowdSec reads its parsers only at startup. When the
+  # container's volume list is unchanged, podman_container is a no-op and a
+  # changed parser file on the host would otherwise sit there inert.
+  tags: ['always']
+  containers.podman.podman_container:
+    name: crowdsec
+    state: started
+    force_restart: true

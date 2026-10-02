@@ -123,7 +123,10 @@ async def close_send_client() -> None:
 
 
 async def send_telegram_message(
-    chat_id: int, text: str, parse_mode: str | None = "HTML"
+    chat_id: int,
+    text: str,
+    parse_mode: str | None = "HTML",
+    reply_markup: dict | None = None,
 ) -> dict:
     """Send a message via Telegram Bot API.
 
@@ -143,10 +146,15 @@ async def send_telegram_message(
     chunks = chunk_message(text)
     result: dict = {}
     client = _get_client()
-    for chunk in chunks:
+    for idx, chunk in enumerate(chunks):
         payload: dict = {"chat_id": chat_id, "text": chunk}
         if parse_mode:
             payload["parse_mode"] = parse_mode
+        # Buttons go on the LAST chunk only. Attaching them to every chunk of a
+        # split message would render one keyboard per part, and pressing the
+        # one on an earlier chunk leaves the later parts looking un-actioned.
+        if reply_markup and idx == len(chunks) - 1:
+            payload["reply_markup"] = reply_markup
         resp = await client.post(f"{TELEGRAM_API_BASE}/sendMessage", json=payload)
         data = resp.json()
         if not data.get("ok"):
@@ -487,8 +495,90 @@ async def send_approval_request(
         return data
 
 
+_MUTE_LABEL = {3600: "1 hour", 28800: "8 hours", 86400: "24 hours"}
+
+
+async def _handle_alert_mute(
+    callback_id: str,
+    data_str: str,
+    chat_id: int | None,
+    message_id: int | None,
+    user_id: int,
+    username: str,
+) -> dict:
+    """Apply a mute from an alert's inline button.
+
+    This suppresses the NOTIFICATION only. vmalert keeps evaluating the rule and
+    the alert stays firing in Grafana — there is no silence API to tell it
+    otherwise. The buttons say "mute" rather than "resolve" for that reason.
+    """
+    # Imported here, not at module scope: alerts.py imports this module, so a
+    # top-level import would be circular.
+    from telegram_gateway import alerts
+
+    parts = data_str.split("|", 4)
+    if len(parts) != 5:
+        await answer_callback_query(callback_id, "Invalid mute action", show_alert=True)
+        return {"ok": True}
+
+    _, scope_char, short_id, secs_str, alertname = parts
+    try:
+        seconds = int(secs_str)
+    except ValueError:
+        await answer_callback_query(callback_id, "Invalid duration", show_alert=True)
+        return {"ok": True}
+
+    if scope_char == "n":
+        scope, mute_key = "alertname", alertname
+    else:
+        scope = "series"
+        mute_key = alerts.resolve_short_id(short_id)
+        if mute_key is None:
+            # The registry is in-memory and this gateway restarts often. Rather
+            # than fail the press, fall back to muting the whole rule and say so
+            # — silently doing something broader than asked would be worse.
+            scope, mute_key = "alertname", alertname
+            logger.info(
+                "mute: short_id %s unknown (restart?); falling back to alertname %s",
+                short_id, alertname,
+            )
+
+    try:
+        await db.add_alert_mute(
+            scope=scope,
+            mute_key=mute_key,
+            seconds=seconds,
+            alertname=alertname,
+            created_by=user_id,
+            created_by_name=username,
+        )
+    except Exception:
+        logger.exception("failed to persist alert mute")
+        await answer_callback_query(callback_id, "Mute failed — see logs", show_alert=True)
+        return {"ok": True}
+
+    pretty = _MUTE_LABEL.get(seconds, f"{seconds // 3600}h")
+    what = f"all {alertname}" if scope == "alertname" else alertname
+    await answer_callback_query(callback_id, f"Muted {what} for {pretty}")
+
+    if chat_id and message_id:
+        try:
+            await edit_message_text(
+                chat_id,
+                message_id,
+                f"🔕 <b>Muted</b> — {html_module.escape(what)} for {pretty}\n"
+                f"<i>by {html_module.escape(username)}. Still firing in Grafana; "
+                f"only the notification is suppressed.</i>",
+            )
+        except Exception:
+            logger.exception("failed to edit muted alert message")
+
+    logger.info("alert mute: scope=%s key=%s %ss by %s", scope, mute_key, seconds, username)
+    return {"ok": True}
+
+
 async def _handle_callback_query(callback_query: dict) -> dict:
-    """Process an inline button press (approval/denial)."""
+    """Process an inline button press (approval/denial, or an alert mute)."""
     callback_id = callback_query["id"]
     from_user = callback_query.get("from", {})
     user_id = from_user["id"]
@@ -502,6 +592,14 @@ async def _handle_callback_query(callback_query: dict) -> dict:
     if APPROVER_ALLOW_LIST and user_id not in APPROVER_ALLOW_LIST:
         await answer_callback_query(callback_id, "Unauthorized", show_alert=True)
         return {"ok": True}
+
+    # Alert mute buttons: "am|{scope}|{short_id}|{seconds}|{alertname}".
+    # Handled before the approval parser below, which splits on ":" and would
+    # reject this shape as an invalid action.
+    if data_str.startswith("am|"):
+        return await _handle_alert_mute(
+            callback_id, data_str, chat_id, message_id, user_id, username
+        )
 
     # Parse callback data: "a:{id}:{sig}" or "d:{id}:{sig}"
     parts = data_str.split(":", 2)
