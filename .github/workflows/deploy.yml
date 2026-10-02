@@ -81,6 +81,7 @@ jobs:
               roles/cloudflare/*)           add_tag "cloudflare" ;;
               roles/shared-services/*)      add_tag "shared-services" ;;
               roles/management/*)           add_tag "management" ;;
+              roles/media/*)                add_tag "media" ;;
               roles/monitoring/*)           add_tag "monitoring" ;;
               roles/security/*)             add_tag "security" ;;
               roles/authentication/*)       add_tag "authentication" ;;
