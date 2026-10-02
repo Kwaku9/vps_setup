@@ -6,16 +6,28 @@ import { StatTile } from '../overview/StatTile';
 type Filter = 'attention' | 'all';
 
 function needsAttention(r: RadarRepo, prs: number) {
-  return r.dirty > 0 || r.ahead > 0 || r.behind > 0 || !!r.detached || !!r.unborn || !!r.error || prs > 0 || !r.upstream;
+  return r.dirty > 0 || r.ahead > 0 || r.behind > 0 || !!r.detached || !!r.unborn || !!r.error || prs > 0 || !r.upstream
+    || !!r.diverged || (r.unmerged ?? 0) > 0 || (r.unrelated ?? 0) > 0;
+}
+function defShort(r: RadarRepo) {
+  return (r.defaultBranch || '').replace(/^origin\//, '');
 }
 function stripe(r: RadarRepo) {
   if (r.error || r.dirty > 0) return 'border-l-rose-400';
+  if (r.diverged) return 'border-l-fuchsia-400';
   if (r.detached || r.unborn) return 'border-l-violet-400';
-  if (r.ahead > 0 || r.behind > 0) return 'border-l-amber-400';
+  if (r.ahead > 0 || r.behind > 0 || (r.unmerged ?? 0) > 0) return 'border-l-amber-400';
   return 'border-l-white/10';
 }
 function rank(r: RadarRepo) {
-  return r.error ? 0 : r.dirty ? 1 : r.detached || r.unborn ? 2 : r.ahead || r.behind ? 3 : 4;
+  if (r.error) return 0;
+  if (r.dirty) return 1;
+  if (r.diverged) return 2;
+  if (r.detached || r.unborn) return 3;
+  if (r.ahead || r.behind) return 4;
+  if ((r.unmerged ?? 0) > 0) return 5;
+  if ((r.unrelated ?? 0) > 0) return 6;
+  return 7;
 }
 function ago(iso?: string | null) {
   if (!iso) return '';
@@ -26,7 +38,7 @@ function ago(iso?: string | null) {
   return `${Math.round(s / 86400)}d ago`;
 }
 
-const Pill = ({ tone, children }: { tone: 'branch' | 'clean' | 'dirty' | 'ahead' | 'detached' | 'pr' | 'muted'; children: React.ReactNode }) => {
+const Pill = ({ tone, children }: { tone: 'branch' | 'clean' | 'dirty' | 'ahead' | 'detached' | 'pr' | 'muted' | 'diverged' | 'prunable'; children: React.ReactNode }) => {
   const cls: Record<string, string> = {
     branch: 'bg-white/8 text-white/70 border border-white/10',
     clean: 'bg-emerald-400/15 text-emerald-300',
@@ -35,12 +47,40 @@ const Pill = ({ tone, children }: { tone: 'branch' | 'clean' | 'dirty' | 'ahead'
     detached: 'bg-violet-400/15 text-violet-300',
     pr: 'bg-cyan-400/15 text-cyan-300',
     muted: 'text-white/40 border border-dashed border-white/15',
+    diverged: 'bg-fuchsia-400/15 text-fuchsia-300',
+    prunable: 'bg-emerald-400/10 text-emerald-300/80 border border-emerald-400/20',
   };
   return <span className={`font-mono text-[11px] px-1.5 py-px rounded whitespace-nowrap tabular-nums ${cls[tone]}`}>{children}</span>;
 };
 
+/**
+ * Two-sided bar for one branch against the default branch: commits the default
+ * branch has that this one lacks grow left of the centre line, commits only
+ * this branch has grow right. Both sides are scaled against the widest branch
+ * in the SAME repository, so a row reads as a shape — merged branches sit flat
+ * on the line, a diverged branch pushes out both ways.
+ */
+const DivergenceBar = ({ ahead, behind, scale }: { ahead: number; behind: number; scale: number }) => {
+  // A non-zero count always gets a visible sliver, so "1 commit" never renders
+  // as nothing next to a branch that is 500 ahead.
+  const pct = (n: number) => (n <= 0 ? 0 : Math.max(5, Math.round((n / scale) * 50)));
+  return (
+    <span className="inline-flex w-24 shrink-0" title={`${behind} behind · ${ahead} ahead of the default branch`}>
+      <span className="relative flex w-full h-1.5 rounded bg-white/[0.07]">
+        <span className="absolute left-1/2 -top-1 h-3.5 w-px bg-white/25" />
+        <span className="absolute right-1/2 h-1.5 rounded-l bg-sky-400/70" style={{ width: `${pct(behind)}%` }} />
+        <span className="absolute left-1/2 h-1.5 rounded-r bg-amber-400/80" style={{ width: `${pct(ahead)}%` }} />
+      </span>
+    </span>
+  );
+};
+
 function RepoRow({ r, prs, open }: { r: RadarRepo; prs: RadarSnapshot['prs']; open: boolean }) {
   const list = prs[r.name] || [];
+  const scale = Math.max(
+    1,
+    ...(r.branches || []).map((b) => Math.max(b.vsDefault?.ahead ?? 0, b.vsDefault?.behind ?? 0)),
+  );
   return (
     <details open={open} className={`border-b border-white/5 last:border-b-0 border-l-[3px] ${stripe(r)}`}>
       <summary className="list-none cursor-pointer px-3 py-2 grid grid-cols-[1fr_auto] gap-3 items-center hover:bg-white/5">
@@ -54,6 +94,15 @@ function RepoRow({ r, prs, open }: { r: RadarRepo; prs: RadarSnapshot['prs']; op
           {r.untracked > 0 && <Pill tone="dirty">{r.untracked} untracked</Pill>}
           {r.conflicted > 0 && <Pill tone="dirty">{r.conflicted} conflicted</Pill>}
           {!r.dirty && !r.error && !r.unborn && <Pill tone="clean">clean</Pill>}
+          {r.headVsDefault && r.head && r.head !== defShort(r) && (r.headVsDefault.ahead > 0 || r.headVsDefault.behind > 0) && (
+            <Pill tone={r.diverged ? 'diverged' : 'ahead'}>
+              {r.diverged ? 'diverged' : 'unmerged'}{' '}
+              {r.headVsDefault.behind > 0 ? `↓${r.headVsDefault.behind}` : ''}{r.headVsDefault.ahead > 0 ? ` ↑${r.headVsDefault.ahead}` : ''} vs {defShort(r)}
+            </Pill>
+          )}
+          {(r.unmerged ?? 0) > 0 && <Pill tone="ahead">{r.unmerged} unmerged branch{(r.unmerged ?? 0) > 1 ? 'es' : ''}</Pill>}
+          {(r.prunable ?? 0) > 0 && <Pill tone="prunable">{r.prunable} prunable</Pill>}
+          {(r.unrelated ?? 0) > 0 && <Pill tone="detached">unrelated history</Pill>}
           {r.ahead > 0 && <Pill tone="ahead">↑{r.ahead} unpushed</Pill>}
           {r.behind > 0 && <Pill tone="ahead">↓{r.behind} behind</Pill>}
           {!r.upstream && !r.detached && !r.unborn && <Pill tone="muted">no upstream</Pill>}
@@ -73,6 +122,7 @@ function RepoRow({ r, prs, open }: { r: RadarRepo; prs: RadarSnapshot['prs']; op
                   <th className="text-left font-semibold px-2 py-1.5 border-b border-white/10">Branch</th>
                   <th className="text-left font-semibold px-2 py-1.5 border-b border-white/10">Upstream</th>
                   <th className="text-left font-semibold px-2 py-1.5 border-b border-white/10">Position</th>
+                  <th className="text-left font-semibold px-2 py-1.5 border-b border-white/10">vs {defShort(r) || 'default'}</th>
                   <th className="text-left font-semibold px-2 py-1.5 border-b border-white/10">Last commit</th>
                   <th className="text-left font-semibold px-2 py-1.5 border-b border-white/10">Subject</th>
                 </tr>
@@ -87,6 +137,20 @@ function RepoRow({ r, prs, open }: { r: RadarRepo; prs: RadarSnapshot['prs']; op
                         : !b.upstream ? <Pill tone="muted">no upstream</Pill>
                         : (b.ahead || b.behind) ? <Pill tone="ahead">{b.ahead ? `↑${b.ahead}` : ''}{b.behind ? ` ↓${b.behind}` : ''}</Pill>
                         : <Pill tone="clean">in sync</Pill>}
+                    </td>
+                    <td className="px-2 py-1 whitespace-nowrap">
+                      {!b.vsDefault ? <span className="text-white/30">—</span>
+                        : b.vsDefault.unrelated ? <Pill tone="detached">unrelated</Pill>
+                        : b.name === defShort(r) ? <span className="text-white/30">default</span>
+                        : b.vsDefault.ahead === 0 && b.vsDefault.behind === 0 ? <Pill tone="prunable">merged</Pill>
+                        : (
+                          <span className="flex items-center gap-2">
+                            <DivergenceBar ahead={b.vsDefault.ahead} behind={b.vsDefault.behind} scale={scale} />
+                            <span className="font-mono text-[11px] text-white/55 tabular-nums">
+                              {b.vsDefault.behind > 0 ? `↓${b.vsDefault.behind}` : ''}{b.vsDefault.ahead > 0 ? ` ↑${b.vsDefault.ahead}` : ''}
+                            </span>
+                          </span>
+                        )}
                     </td>
                     <td className="px-2 py-1 font-mono whitespace-nowrap text-white/60">{b.when ? new Date(b.when * 1000).toISOString().slice(0, 10) : ''}</td>
                     <td className="px-2 py-1 text-white/70">{b.subject}</td>
@@ -144,7 +208,12 @@ export function RadarView() {
     const prCount = Object.values(prs).reduce((n, a) => n + a.length, 0);
     const off = repos.reduce((n, r) => n + (r.branches || []).filter((b) => b.upstream && !b.gone && (b.ahead || b.behind)).length, 0);
     const gone = repos.reduce((n, r) => n + (r.branches || []).filter((b) => b.gone).length, 0);
-    return { total: repos.length, dirty, ahead, behind, noUp, odd, prCount, off, gone };
+    // Branch topology, aggregated: `diverged` counts repositories needing a
+    // real merge; the other two count branches, not repositories.
+    const diverged = repos.filter((r) => r.diverged).length;
+    const unmergedBranches = repos.reduce((n, r) => n + (r.unmerged ?? 0), 0);
+    const prunableBranches = repos.reduce((n, r) => n + (r.prunable ?? 0), 0);
+    return { total: repos.length, dirty, ahead, behind, noUp, odd, prCount, off, gone, diverged, unmergedBranches, prunableBranches };
   }, [snap]);
 
   const list = useMemo(() => {
@@ -198,11 +267,14 @@ export function RadarView() {
 
       {error && <div className="glass rounded-2xl p-4 text-rose-300 text-sm">Repo Radar unavailable: {error}</div>}
 
-      <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
+      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
         <StatTile label="Repos" value={stats.total} />
         <StatTile label="Uncommitted" value={stats.dirty} accent={stats.dirty ? 'var(--status-red)' : undefined} />
         <StatTile label="Unpushed" value={stats.ahead} accent={stats.ahead ? 'var(--status-orange)' : undefined} sub="HEAD" />
         <StatTile label="Behind" value={stats.behind} accent={stats.behind ? 'var(--status-orange)' : undefined} sub="HEAD" />
+        <StatTile label="Diverged" value={stats.diverged} accent={stats.diverged ? 'var(--status-red)' : undefined} sub="needs a merge" />
+        <StatTile label="Unmerged" value={stats.unmergedBranches} accent={stats.unmergedBranches ? 'var(--status-orange)' : undefined} sub="branches vs default" />
+        <StatTile label="Prunable" value={stats.prunableBranches} sub="branches, fully merged" />
         <StatTile label="No upstream" value={stats.noUp} />
         <StatTile label="Detached" value={stats.odd} accent={stats.odd ? 'var(--status-red)' : undefined} sub="or unborn" />
         <StatTile label="Branches off" value={stats.off} accent={stats.off ? 'var(--status-orange)' : undefined} sub="every branch" />
@@ -213,7 +285,7 @@ export function RadarView() {
       <div className="glass rounded-2xl overflow-hidden">
         {!snap ? (
           <p className="p-6 text-sm text-white/50">
-            No snapshot for this host yet. The laptop pushes one every 5 minutes (repo-radar-push.timer); the VPS scans itself every 5 minutes.
+            No snapshot for this host yet. The laptop scans hourly and pushes every 5 minutes (repo-radar-push.timer); the VPS scans itself every 300s.
           </p>
         ) : list.length === 0 ? (
           <p className="p-6 text-sm text-white/50">Nothing matches.{filter === 'attention' ? ' Every repository is clean, synced and has an upstream.' : ''}</p>

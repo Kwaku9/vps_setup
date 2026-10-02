@@ -156,6 +156,18 @@ export interface SessionUpdate {
 }
 
 // ── Repo Radar ─────────────────────────────────────────────────────────
+/**
+ * A branch's position relative to the repository's DEFAULT branch, which is a
+ * different question from its position relative to its own upstream: a branch
+ * can be perfectly in sync with origin and still hold work that never reached
+ * main. `unrelated` means the two share no merge base at all.
+ */
+export interface RadarVsDefault {
+  unrelated: boolean;
+  ahead: number;
+  behind: number;
+}
+
 export interface RadarBranch {
   name: string;
   upstream: string | null;
@@ -165,6 +177,7 @@ export interface RadarBranch {
   when: number;
   subject: string;
   author: string;
+  vsDefault?: RadarVsDefault | null;
 }
 
 export interface RadarRepo {
@@ -185,6 +198,17 @@ export interface RadarRepo {
   unborn?: boolean;
   last?: { hash: string; rel: string; subject: string } | null;
   dirty: number;
+  /** e.g. "origin/main" — where a fresh clone would land. */
+  defaultBranch?: string | null;
+  headVsDefault?: RadarVsDefault | null;
+  /** Checked-out branch is ahead AND behind the default: needs a real merge. */
+  diverged?: boolean;
+  /** Branches holding commits the default branch does not have. */
+  unmerged?: number;
+  /** Branches fully contained in the default branch: deleting loses nothing. */
+  prunable?: number;
+  /** Branches sharing no history with the default branch. */
+  unrelated?: number;
 }
 
 export interface RadarPR {
