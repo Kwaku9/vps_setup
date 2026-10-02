@@ -16,14 +16,18 @@ route is deliberately NOT in its exemption list.
 
 from __future__ import annotations
 
+import hashlib
 import html
 import logging
 import os
+import time
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Request
 
+from telegram_gateway import db
 from telegram_gateway.bot import send_telegram_message
 from telegram_gateway.config import TELEGRAM_ALLOWED_USER_IDS
 
@@ -161,18 +165,149 @@ def _alert_key(alert: dict) -> str:
     return f"{(alert.get('status') or 'firing').lower()}|" + ",".join(parts)
 
 
-def should_send_now(alert: dict, now: float | None = None) -> bool:
-    """Has enough time passed to repeat an alert already sent?
+# A stuck rule does not repeat one key — it fans out across many. The 2026-09-05
+# storm was 126 DISTINCT HoneypotSilent series, so per-key suppression alone
+# would still have delivered 126 messages in one burst and tripped the same rate
+# limit. The ceiling below is what actually defends against a malformed rule.
+ALERT_BURST_MAX = 20
+ALERT_BURST_WINDOW_SECONDS = 600
+_sent_times: deque[float] = deque()
 
-    Called only for alerts should_notify() has already approved. Returning True
-    sends; returning False silently suppresses this repeat.
+# _last_sent is keyed on the full label set, so its cardinality is bounded only
+# by how creative the alert rules get. Evict lapsed entries once it grows past
+# this; the host runs at 100% swap and an unbounded dict is a slow leak.
+_LAST_SENT_MAX = 2000
 
-    Available: _alert_key(alert), _last_sent (key -> unix time last sent),
-    ALERT_REPEAT_SUPPRESSION_SECONDS, and `now` (unix time, injected for tests).
 
-    TODO(kwaku): implement the repeat policy — see the note in the review.
+def _evict_last_sent(now: float) -> None:
+    """Drop entries older than the suppression window once the dict is large."""
+    if len(_last_sent) <= _LAST_SENT_MAX:
+        return
+    cutoff = now - ALERT_REPEAT_SUPPRESSION_SECONDS
+    for key in [k for k, ts in _last_sent.items() if ts < cutoff]:
+        _last_sent.pop(key, None)
+
+
+def burst_budget_remaining(now: float | None = None) -> int:
+    """How many more sends the global ceiling allows in the current window."""
+    now = now or time.time()
+    cutoff = now - ALERT_BURST_WINDOW_SECONDS
+    while _sent_times and _sent_times[0] < cutoff:
+        _sent_times.popleft()
+    return max(0, ALERT_BURST_MAX - len(_sent_times))
+
+
+def is_muted(alert: dict, mutes: set[tuple[str, str]]) -> bool:
+    """True if a Telegram mute covers this alert, by series or by alertname."""
+    if not mutes:
+        return False
+    labels = alert.get("labels", {}) or {}
+    alertname = labels.get("alertname", "")
+    return ("series", _alert_key(alert)) in mutes or ("alertname", alertname) in mutes
+
+
+def decide(
+    alert: dict,
+    mutes: set[tuple[str, str]] | None = None,
+    now: float | None = None,
+) -> str:
+    """Why this alert will or won't be sent: 'send'|'muted'|'repeat'|'burst'.
+
+    Returning 'send' RECORDS the send (burst window + last-sent), so call this
+    exactly once per alert per delivery attempt.
+
+    Three gates, cheapest first:
+      1. muted from Telegram  — explicit human "stop telling me about this"
+      2. repeat suppression   — same key inside ALERT_REPEAT_SUPPRESSION_SECONDS
+      3. global burst ceiling — ALERT_BURST_MAX sends per ALERT_BURST_WINDOW
+
+    `mutes` is passed in rather than queried here so one DB round-trip covers a
+    whole batch; this also keeps the function sync and trivially testable.
     """
-    raise NotImplementedError
+    now = now or time.time()
+
+    if is_muted(alert, mutes or set()):
+        return "muted"
+
+    # A resolve means the next firing is genuinely new information, so clear the
+    # firing key rather than making a recovered-then-broken service wait out the
+    # window. Without this, "it broke again 10 minutes later" stays silent.
+    # Done before the repeat check so a resolve is never itself suppressed by a
+    # stale firing entry.
+    if (alert.get("status") or "firing").lower() == "resolved":
+        _last_sent.pop(_alert_key({**alert, "status": "firing"}), None)
+
+    key = _alert_key(alert)
+    last = _last_sent.get(key)
+    if last is not None and (now - last) < ALERT_REPEAT_SUPPRESSION_SECONDS:
+        return "repeat"
+
+    if burst_budget_remaining(now) <= 0:
+        return "burst"
+
+    _sent_times.append(now)
+    _last_sent[key] = now
+    _evict_last_sent(now)
+    return "send"
+
+
+def should_send_now(
+    alert: dict,
+    mutes: set[tuple[str, str]] | None = None,
+    now: float | None = None,
+) -> bool:
+    """Boolean form of decide(). Kept because it is the documented contract."""
+    return decide(alert, mutes, now) == "send"
+
+
+# --- mute buttons -------------------------------------------------------------
+# Telegram caps callback_data at 64 BYTES, and _alert_key() is the full label
+# set — far too long to embed. Send a short hash and keep a lookup here.
+# The alertname rides along in the payload as a fallback so an "all of this
+# rule" press still works after a restart has emptied the registry.
+_KEY_REGISTRY_MAX = 2000
+_key_registry: dict[str, str] = {}
+
+# Offered durations. `critical` deliberately stops at 8h: a 24h mute on a
+# critical is how something stays broken overnight without anyone noticing.
+_MUTE_CHOICES = [("1h", 3600), ("8h", 28800), ("24h", 86400)]
+_MUTE_MAX_CRITICAL_SECONDS = 28800
+
+
+def _short_id(key: str) -> str:
+    """8 hex chars of the alert key — short enough for callback_data."""
+    sid = hashlib.sha256(key.encode()).hexdigest()[:8]
+    if len(_key_registry) > _KEY_REGISTRY_MAX:
+        _key_registry.clear()
+    _key_registry[sid] = key
+    return sid
+
+
+def resolve_short_id(sid: str) -> str | None:
+    """Full alert key for a short id, or None if the registry has lost it."""
+    return _key_registry.get(sid)
+
+
+def _mute_keyboard(alert: dict[str, Any]) -> dict[str, Any]:
+    """Inline keyboard: mute this series, or every series of this rule."""
+    labels = alert.get("labels", {}) or {}
+    alertname = str(labels.get("alertname", "UnknownAlert"))[:30]
+    severity = (labels.get("severity") or "info").lower()
+    sid = _short_id(_alert_key(alert))
+
+    cap = _MUTE_MAX_CRITICAL_SECONDS if severity == "critical" else None
+    series_row = [
+        {"text": f"🔕 {label}", "callback_data": f"am|s|{sid}|{secs}|{alertname}"}
+        for label, secs in _MUTE_CHOICES
+        if cap is None or secs <= cap
+    ]
+    # Muting by alertname is the "all 126 honeypot series" button. Kept to a
+    # single conservative duration so it cannot be fat-fingered into a day.
+    rule_row = [{
+        "text": f"🔕 All {alertname} 8h",
+        "callback_data": f"am|n|{sid}|28800|{alertname}",
+    }]
+    return {"inline_keyboard": [series_row, rule_row]}
 
 
 @router.post("/api/v2/alerts", include_in_schema=False)
@@ -189,37 +324,67 @@ async def receive_alerts(request: Request) -> dict[str, Any]:
     if not isinstance(alerts, list):
         return {"status": "error", "reason": "expected array", "sent": 0}
 
+    # One query per batch, not per alert: a fanned-out rule can put hundreds of
+    # alerts in a single POST. A DB failure here must not silence anything, so
+    # an empty mute set (send everything) is the fallback.
+    try:
+        mutes = await db.active_alert_mutes()
+    except Exception:
+        logger.exception("could not load alert mutes; treating nothing as muted")
+        mutes = set()
+
     sent = 0
+    suppressed_burst = 0
     for alert in alerts:
         if not isinstance(alert, dict):
             continue
         try:
             if not should_notify(alert):
                 continue
-        except NotImplementedError:
-            # Fail loud in logs, but never 500 back at vmalert.
-            logger.error("alert dropped: should_notify() is not implemented yet")
-            continue
         except Exception:
             logger.exception("should_notify() raised; dropping alert")
             continue
 
         try:
-            if not should_send_now(alert):
+            verdict = decide(alert, mutes)
+            if verdict != "send":
+                # Only the ceiling gets summarised: a muted or repeated alert is
+                # suppression working as intended, not a gap worth reporting.
+                if verdict == "burst":
+                    suppressed_burst += 1
                 continue
-        except NotImplementedError:
-            # Fail OPEN: an unimplemented policy must not silence real alerts.
-            logger.error("should_send_now() is not implemented yet; sending anyway")
         except Exception:
-            logger.exception("should_send_now() raised; sending anyway")
+            # Fail OPEN: a policy bug must never silence a real alert.
+            logger.exception("decide() raised; sending anyway")
 
         text = _format_alert(alert)
+        markup = _mute_keyboard(alert)
         for chat_id in TELEGRAM_ALLOWED_USER_IDS:
             try:
-                await send_telegram_message(chat_id, text)
+                await send_telegram_message(chat_id, text, reply_markup=markup)
                 sent += 1
             except Exception:
                 # One bad recipient must not stop the rest.
                 logger.exception("failed sending alert to chat_id=%s", chat_id)
 
-    return {"status": "ok", "received": len(alerts), "sent": sent}
+    # The ceiling exists to stop a storm, but going silent mid-storm is its own
+    # failure. Say once that it happened, so the gap is visible rather than
+    # indistinguishable from "nothing is wrong".
+    if suppressed_burst:
+        note = (
+            f"⚠️ <b>{suppressed_burst} further alerts suppressed</b>\n"
+            f"Burst ceiling hit ({ALERT_BURST_MAX} per "
+            f"{ALERT_BURST_WINDOW_SECONDS // 60}m). Check Grafana for the full set."
+        )
+        for chat_id in TELEGRAM_ALLOWED_USER_IDS:
+            try:
+                await send_telegram_message(chat_id, note)
+            except Exception:
+                logger.exception("failed sending burst summary to chat_id=%s", chat_id)
+
+    return {
+        "status": "ok",
+        "received": len(alerts),
+        "sent": sent,
+        "suppressed_burst": suppressed_burst,
+    }
