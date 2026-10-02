@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -34,6 +35,47 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+
+# httpx logs every request URL at INFO, and for Telegram API calls the bot token
+# sits in the path (api.telegram.org/bot<TOKEN>/sendMessage). That put the token
+# into stdout and from there into Loki. Redact rather than silence, so we keep
+# per-request status codes and latencies.
+_TELEGRAM_TOKEN_RE = re.compile(r"(bot)\d{6,}:[A-Za-z0-9_-]{30,}")
+
+
+class RedactTelegramToken(logging.Filter):
+    """Strip Telegram bot tokens from log records before they are emitted.
+
+    Attached to the *root handler* rather than to the httpx logger, so it also
+    catches any other library that happens to log the URL.
+    """
+
+    @staticmethod
+    def _scrub(value):
+        if isinstance(value, str):
+            return _TELEGRAM_TOKEN_RE.sub(r"\1<redacted>", value)
+        # httpx passes an httpx.URL *object* as a %s arg, not a string, so a
+        # str-only check would silently miss the token. Stringify only when the
+        # rendered form actually contains one — otherwise ints stay ints and
+        # %d-style format specifiers keep working.
+        text = str(value)
+        if _TELEGRAM_TOKEN_RE.search(text):
+            return _TELEGRAM_TOKEN_RE.sub(r"\1<redacted>", text)
+        return value
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = self._scrub(record.msg)
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {k: self._scrub(v) for k, v in record.args.items()}
+            else:
+                record.args = tuple(self._scrub(a) for a in record.args)
+        return True
+
+
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(RedactTelegramToken())
+
 logger = logging.getLogger(__name__)
 
 _listen_task: asyncio.Task | None = None

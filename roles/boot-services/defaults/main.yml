@@ -80,6 +80,10 @@ boot_services:
     # one pod; the API needs the enterprise DB, the frontend needs traefik).
     # Added with roles/marketplace.
     - { name: marketplace-pod,           enabled: true,  depends_on: [traefik, shared-db-pod] }
+    # mailkit-pod (mailkit-mcp-read + -send): claude.ai Mail Kit connectors.
+    # Registered with the pod so it survives reboot and is never a prune-reap
+    # candidate. Stateless; Traefik tolerates it being absent.
+    - { name: mailkit-pod,               enabled: true,  depends_on: [traefik] }
     # hermes-pod intentionally not auto-started — disabled in app config and
     # marked as "stopped on purpose" in project memory.
     - { name: hermes-pod,                enabled: false, depends_on: [] }

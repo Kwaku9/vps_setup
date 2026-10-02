@@ -1,0 +1,46 @@
+# Managed by Ansible (roles/security) — do not edit on the host.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# This host logs to /var/log/messages via *busybox syslogd* (Alpine), which
+# writes a bare `facility.priority` token between the hostname and the program
+# tag. A real line from this box:
+#
+#   Sep 21 06:20:54 srv1234518 auth.info sshd-session[1212]: Accepted publickey ...
+#                              ^^^^^^^^^
+#
+# fail2ban's filter.d/common.conf builds every filter's line prefix from
+#
+#   __prefix_line = ... (?:<__hostname>\s+)? ... (?:<__daemon_combs_re>\s+)? ...
+#   __hostname    = \S+
+#
+# `__hostname` is a SINGLE token, and the only facility form the prefix knows
+# about is `__bsd_syslog_verbose` = `<[^.]+\.[^.]+>`, which requires literal
+# angle brackets (BSD syslogd -v). busybox emits the token WITHOUT brackets, so
+# `__hostname` eats the hostname, the daemon group then has to match
+# "auth.info" and fails. The daemon group is optional, so the prefix regex
+# still "succeeds" — but it hands the failregex a <content> of
+# "auth.info sshd-session[1212]: Failed password for ..." instead of
+# "Failed password for ...". Every upstream failregex is `^`-anchored on the
+# message, so 100% of them miss.
+#
+# Verified with fail2ban-regex against the stock filter.d/sshd.conf:
+#   without this file: 0 matched / 11 missed
+#   with this file  : 9 matched /  0 missed   (sshd[mode=aggressive])
+#
+# common.conf ends with `[INCLUDES] after = common.local`, so this file is the
+# supported override hook and the widening applies to EVERY filter on the host,
+# not just sshd — the log format is a host-wide property.
+#
+# The alternative fix would be changing the syslog format itself, but
+# /var/log/messages is also scraped by Alloy -> Loki and parsed by CrowdSec,
+# so widening the consumers is the lower-blast-radius change.
+
+[DEFAULT]
+
+# hostname, optionally followed by busybox syslogd's bare `facility.priority`.
+# Deliberately an explicit enumeration of the RFC 5424 facility and severity
+# keywords rather than `\S+\.\S+` — a loose pattern would let an attacker-
+# controlled token (e.g. a crafted username echoed into the log) be swallowed
+# as "hostname", shifting what fail2ban treats as the message body.
+__hostname = \S+(?:\s+(?:auth|authpriv|cron|daemon|ftp|kern|lpr|mail|news|security|syslog|user|uucp|local[0-7])\.(?:emerg|alert|crit|err|error|warn|warning|notice|info|debug))?

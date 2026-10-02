@@ -1,0 +1,52 @@
+# Managed by Ansible (roles/security/files/crowdsec) and bind-mounted into the
+# crowdsec container by roles/shared-services. Do NOT edit inside the
+# container: /etc/crowdsec/parsers/ is the image's writable layer, not a
+# volume, so anything written there is lost the next time the container is
+# recreated.
+#
+# Alpine/busybox syslogd emits a bare `facility.priority` token between the
+# hostname and the program tag:
+#
+#   Sep 21 06:30:03 host auth.info sshd-session[11003]: Invalid user admin from ...
+#                        ^^^^^^^^^
+#
+# crowdsecurity/syslog-logs greps Line.Raw with `^%{SYSLOGLINE}`, whose
+# SYSLOGBASE only tolerates a *bracketed* RFC3164 facility (`<13.6>`). Against
+# the busybox form SYSLOGHOST binds the hostname, %{SYSLOGPROG} then binds
+# "auth.info" and the trailing ":" assertion fails -- so the grok degrades to
+# its loose fallback and `evt.Parsed.program` comes back EMPTY, with the whole
+# "auth.info sshd-session[...]: ..." string dumped into evt.Parsed.message.
+#
+# Every s01-parse filter keys off evt.Parsed.program
+# (crowdsecurity/sshd-logs: `evt.Parsed.program in ['sshd-session', 'sshd']`),
+# so an empty program means 100% of host syslog lines reach s01-parse and are
+# dropped as a parser failure. That is the 2.07M-lines-read / 0-parsed metric.
+#
+# This node peels the facility token off and populates program/pid/message the
+# way syslog-logs would have. It is filename-sorted BEFORE cri-logs.yaml,
+# docker-logs.yaml and syslog-logs.yaml so it gets first refusal on the stage;
+# lines WITHOUT a facility token simply fail this grok and fall through to the
+# stock crowdsecurity/syslog-logs node unchanged.
+onsuccess: next_stage
+filter: "evt.Line.Labels.type == 'syslog'"
+name: local/alpine-busybox-syslog-logs
+description: "Parse busybox syslogd lines carrying a bare facility.priority token"
+pattern_syntax:
+  BB_FACPRIO: '(?:auth|authpriv|cron|daemon|ftp|kern|lpr|mail|news|security|syslog|user|uucp|local[0-7])\.(?:emerg|alert|crit|err|error|warn|warning|notice|info|debug)'
+nodes:
+  - grok:
+      pattern: '^%{SYSLOGTIMESTAMP:timestamp} %{SYSLOGHOST:logsource} %{BB_FACPRIO:facility_priority} %{PROG:program}(?:\[%{POSINT:pid}\])?: %{GREEDYDATA:message}$'
+      apply_on: Line.Raw
+statics:
+  # NOTE: order matters and mirrors crowdsecurity/syslog-logs -- meta.machine
+  # must be taken from the grokked hostname BEFORE logsource is overwritten.
+  - meta: machine
+    expression: evt.Parsed.logsource
+  - parsed: "logsource"
+    value: "syslog"
+  - target: evt.StrTime
+    expression: evt.Parsed.timestamp
+  - meta: datasource_path
+    expression: evt.Line.Src
+  - meta: datasource_type
+    expression: evt.Line.Module

@@ -16,6 +16,11 @@ mailkit_mcp:
   app_dir: /root/mailkit-mcp
   image: docker.io/library/node:22-alpine
   memory: 192m
+  # One pod, two containers: ports 8790/8791 do not collide, so both share
+  # mailkit-pod's network namespace. Pods-first (scripts/lint-pods.sh) — the pod
+  # maps 1:1 onto a Kubernetes Pod. Traefik dials the pod name, which is the
+  # pod's DNS alias on enterprise_network.
+  pod_name: mailkit-pod
   network: "{{ podman_network_name | default('enterprise_network') }}"
   servers:
     - role: read

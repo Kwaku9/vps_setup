@@ -40,6 +40,15 @@ security:
     allowed_ports:
       - 22     # SSH (all other services accessed via Cloudflare Tunnel)
 
+    # IPv6 INPUT policy (see roles/security/templates/firewall.sh.j2).
+    ipv6:
+      enabled: true      # false = legacy v6 port DROPs only, INPUT stays ACCEPT
+      policy_drop: true  # false = install the allow rules but do NOT deny by
+                         #         default. Staged-rollout / rollback lever; the
+                         #         terminal DROP rule is skipped with it.
+      # allowed_ports:   # defaults to security.firewall.allowed_ports above so
+      #   - 22           # v4 and v6 cannot drift. Override only to differ.
+
   squid:
     enabled: false  # Transparent egress proxy — enable manually
     mode: "discovery"  # discovery = log-only, enforcement = whitelist-based blocking

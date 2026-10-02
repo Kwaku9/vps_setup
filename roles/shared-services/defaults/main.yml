@@ -31,6 +31,11 @@ crowdsec_bouncer_api_key: "VAULT_OVERRIDE"
 # middleware in templates/traefik-dynamic.yml.j2.
 # Replaced by the net-edge CIDR in step 2 of the network segmentation plan.
 traefik_internal_sources:
+  # This MUST match cloudflared.static_ip (see shared-services/tasks/main.yml).
+  # cloudflared is pinned to a static address precisely so this entry can be a
+  # constant: when it was DHCP-assigned, every recreate silently 403'd all 18
+  # internal-only routers (2026-09-21: .235 -> .129 -> .141 in one day). The
+  # assert in tasks/main.yml still verifies the two agree before templating.
   - "10.89.0.235/32"   # cloudflared — the tunnel, i.e. all external traffic
   - "10.89.0.1/32"     # bridge gateway — dep-health-check.sh probing from the host
   - "127.0.0.0/8"      # loopback

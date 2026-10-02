@@ -48,6 +48,16 @@ neo4j:
 
   # Idempotent sessions-graph loader (Claude Code session history + Telegram-queryable).
   # Heavy (~226k messages) -> runs via nightly cron, not on every deploy.
+  # infra-graph: nightly collector that rebuilds the service map from LIVE
+  # sources (podman, crontab, DB catalogs, Traefik, Grafana, backup script) and
+  # deletes whatever a successful source no longer sees. See files/infra-graph/.
+  infra_graph:
+    enabled: true
+    script_dir: "/opt/compose/infra-graph"
+    cron_hour: "4"
+    cron_minute: "40"          # clear of the 03:00 ingest/03:30 sync and 04:20 jobs
+    run_on_deploy: true
+
   sessions_graph:
     enabled: true
     script_dir: "/opt/compose/sessions-graph"
@@ -57,7 +67,11 @@ neo4j:
 
   # Load docs/service-map.cypher into the graph after the DB is ready.
   # Idempotent (MERGE-based) — safe to re-run on every deploy.
-  load_service_map: true
+  # Superseded 2026-10-02 by infra_graph below. The hand-written map went stale
+  # within weeks (11 live containers missing, 3 dead ones present by 10-01), and
+  # re-loading it on deploy would re-create nodes the collector has correctly
+  # deleted. Kept switchable for its non-collected labels (Risk, External, Role).
+  load_service_map: false
   cypher_file: "service-map.cypher"   # sourced from repo docs/ at deploy time
 
   # timeline-context-api: FastAPI graph-RAG service that turns this graph into a

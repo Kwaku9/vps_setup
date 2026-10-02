@@ -110,6 +110,34 @@ ALTER TABLE gateway.approvals ADD COLUMN IF NOT EXISTS decided_by_username TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_approvals_pending
     ON gateway.approvals(status) WHERE status = 'pending';
+
+-- Alert mutes set from Telegram. Persisted rather than held in memory because
+-- the gateway container restarts often (5x on 2026-09-21 alone) and a 24h mute
+-- that evaporates on restart is worse than no mute: you believe you silenced
+-- something and it starts shouting again unannounced.
+--
+-- scope='series'    -> mute_key is the full alert key (status|sorted labels)
+-- scope='alertname' -> mute_key is just the alertname, muting every series of
+--                      that rule. This is the one-honeypot vs all-126 choice.
+CREATE TABLE IF NOT EXISTS gateway.alert_mutes (
+    id              SERIAL PRIMARY KEY,
+    scope           TEXT NOT NULL CHECK (scope IN ('series', 'alertname')),
+    mute_key        TEXT NOT NULL,
+    alertname       TEXT,
+    muted_until     TIMESTAMPTZ NOT NULL,
+    created_by      BIGINT,
+    created_by_name TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One active mute per (scope, key): re-pressing a button extends rather than
+-- accumulating rows. Partial-unique is not possible on a time predicate, so
+-- upserts target this and callers filter on muted_until.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_alert_mutes_scope_key
+    ON gateway.alert_mutes(scope, mute_key);
+
+CREATE INDEX IF NOT EXISTS idx_alert_mutes_active
+    ON gateway.alert_mutes(muted_until);
 CREATE INDEX IF NOT EXISTS idx_approvals_hmac
     ON gateway.approvals(hmac_token);
 
@@ -525,3 +553,56 @@ async def check_agent_access(user_id: int, agent_type: str, chat_id: int) -> boo
         user_id, agent_type, chat_id,
     )
     return row is not None
+
+
+# --- alert mutes --------------------------------------------------------------
+
+async def add_alert_mute(
+    scope: str,
+    mute_key: str,
+    seconds: int,
+    alertname: str | None = None,
+    created_by: int | None = None,
+    created_by_name: str | None = None,
+) -> None:
+    """Mute an alert until now()+seconds. Re-muting extends, never duplicates."""
+    p = await get_pool()
+    await p.execute(
+        """
+        INSERT INTO gateway.alert_mutes
+            (scope, mute_key, alertname, muted_until, created_by, created_by_name)
+        VALUES ($1, $2, $3, now() + ($4 || ' seconds')::interval, $5, $6)
+        ON CONFLICT (scope, mute_key) DO UPDATE SET
+            muted_until     = EXCLUDED.muted_until,
+            created_by      = EXCLUDED.created_by,
+            created_by_name = EXCLUDED.created_by_name,
+            created_at      = now()
+        """,
+        scope, mute_key, alertname, str(int(seconds)), created_by, created_by_name,
+    )
+
+
+async def active_alert_mutes() -> set[tuple[str, str]]:
+    """Every currently-active mute as {(scope, mute_key), ...}.
+
+    Returned as a set so the caller can test both the series key and the
+    alertname in O(1) without a query per alert — an alert batch can be large
+    and this runs on the hot path.
+    """
+    p = await get_pool()
+    rows = await p.fetch(
+        "SELECT scope, mute_key FROM gateway.alert_mutes WHERE muted_until > now()"
+    )
+    return {(r["scope"], r["mute_key"]) for r in rows}
+
+
+async def purge_expired_alert_mutes() -> int:
+    """Delete mutes that have lapsed. Returns how many were removed."""
+    p = await get_pool()
+    result = await p.execute(
+        "DELETE FROM gateway.alert_mutes WHERE muted_until <= now()"
+    )
+    try:
+        return int(result.split()[-1])
+    except (ValueError, IndexError):
+        return 0
