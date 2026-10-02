@@ -9,7 +9,6 @@ roles/honeypot-threatmap/tasks/main.yml::{{ honeypot_threatmap.honeypot.containe
 roles/honeypot-threatmap/tasks/main.yml::{{ honeypot_threatmap.legal.container_name }}
 roles/honeypot-threatmap/tasks/main.yml::{{ honeypot_threatmap.threat_map.container_name }}
 roles/lab/tasks/main.yml::{{ lab.container_name }}
-roles/mcp-servers/tasks/google-docs-mcp.yml::{{ _mcp.container_name }}
 roles/mcp-servers/tasks/ib-mcp.yml::ibeam
 roles/mcp-servers/tasks/ib-mcp.yml::{{ _mcp.container_name }}
 roles/mcp-servers/tasks/owui-coder.yml::{{ _owui.container_name }}
