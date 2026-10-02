@@ -1,0 +1,28 @@
+# Managed by Ansible (roles/security) — do not edit on the host.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# OpenSSH 9.8 split the per-connection work out of the listener into a separate
+# binary, so the syslog tag for everything that happens *before* a session is
+# established changed from `sshd` to `sshd-session` (and `sshd-auth` for the
+# auth phase). This host runs OpenSSH 10.3p1, so every authentication line is
+# tagged `sshd-session[...]`:
+#
+#   Sep 21 06:20:54 srv1234518 auth.info sshd-session[1212]: ...
+#
+# filter.d/sshd.conf still declares `_daemon = sshd`, which feeds
+# `__daemon_combs_re` in the prefix regex. With the literal `sshd`, the daemon
+# group never matches `sshd-session[1212]:`, so the tag is left inside
+# <content> and every `^`-anchored failregex misses. This is the upstream
+# fix (fail2ban gh-3862): widen `_daemon` to cover both binaries.
+#
+# NOTE: this is only HALF the fix on this host — see common.local for the
+# busybox syslogd `facility.priority` token, which breaks the prefix
+# independently. Both files are required; either one alone still yields 0
+# matches.
+
+[DEFAULT]
+
+# OpenSSH >= 9.8: listener is `sshd`, per-connection workers are
+# `sshd-session` / `sshd-auth`.
+_daemon = sshd(?:-session|-auth)?
