@@ -1,7 +1,7 @@
 ---
 # media.aicortex.cloud: static video hosting (mp4 / webm, plus .vtt captions).
 #
-# A standalone nginx container on enterprise_network, routed by Traefik's file
+# An nginx container in media-pod on enterprise_network, routed by Traefik's file
 # provider. Same shape as roles/decks: this role owns the INFRASTRUCTURE (dir,
 # nginx config, container, Traefik route); the videos are DATA, published by
 # scp-ing files into data_dir. nginx serves the directory live, no rebuild.
@@ -20,6 +20,7 @@
 #   secure-headers are attached to the router.
 media:
   enabled: true
+  pod_name: "media-pod"
   container_name: "media-nginx"
   image: "docker.io/library/nginx:1.29-alpine"
   data_dir: "/opt/compose/media"
