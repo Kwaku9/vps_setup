@@ -5,7 +5,8 @@
 cloudflared:
   enabled: true
   container_name: "cloudflared"
-  image: "docker.io/cloudflare/cloudflared:latest"
+  # Single source of truth is cloudflare.tunnel.image in all.yml (pinned tag).
+  image: "{{ cloudflare.tunnel.image | default('docker.io/cloudflare/cloudflared:2026.9.3') }}"
   network: "enterprise_network"
   memory: "128m"  # Reduced from 256m — using 48MB
   config_dir: "/opt/compose/cloudflare"
