@@ -36,8 +36,8 @@ domain_baseline:
       # Senders verified 2026-08-21 against the live zone and the AWS account:
       #   icloud.com  — iCloud+ Custom Email Domain. DKIM selector sig1 present.
       #   resend.com  — DKIM selector `resend` present (apex + mail. subdomain).
-      #   amazonses   — REMOVED. aicortex.cloud is not an SES identity in account
-      #                 523069754952 (only larougebrows.com is, and unverified),
+      #   amazonses   — REMOVED. aicortex.cloud is not an SES identity in the
+      #                 checked AWS account at the time of this audit,
       #                 SentLast24Hours=0, and there is no SES DKIM record in the
       #                 zone. The include therefore authorised a large shared
       #                 sender pool for no benefit, AND was the one sender that

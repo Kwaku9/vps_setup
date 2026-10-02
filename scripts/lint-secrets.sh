@@ -18,19 +18,40 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-FILES=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || git ls-files)
+# Default: only what is being committed, which is what a pre-commit hook wants.
+# `--all` scans every tracked file, for an audit. Without that mode the lint
+# reports "OK" on a repo with known findings simply because nothing is staged,
+# which reads as a pass and is not one.
+if [ "${1:-}" = "--all" ]; then
+  FILES=$(git ls-files)
+else
+  FILES=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || git ls-files)
+fi
 [ -n "$FILES" ] || { echo "  secrets: nothing to scan"; exit 0; }
 
-CRYPT_PATTERNS=$(grep -E 'filter=git-crypt' .gitattributes 2>/dev/null | awk '{print $1}' || true)
+# Ask GIT which files are encrypted, rather than glob-matching .gitattributes
+# ourselves. The old version did the latter, and it was wrong in the one
+# direction that matters: in a shell `case` pattern `*` MATCHES `/`, while in
+# gitattributes it does NOT. So a rule like `tools/*.py` made this lint skip
+# `tools/redaction/redact.py` as "encrypted" when git was leaving it in the
+# clear. The lint was blind to exactly the files in the coverage gap, which is
+# how a plaintext hostname reached this public repo unnoticed (audited
+# 2026-10-01). git check-attr is git's own answer and cannot drift from it.
+ENC=$(printf '%s\n' $FILES | git check-attr --stdin filter 2>/dev/null \
+        | awk -F': ' '$3 == "git-crypt" { print $1 }')
+
+is_encrypted() {
+  # Consume the whole list. grep -q exits on its first match and closes the
+  # pipe while printf is still writing, producing spurious Broken pipe errors
+  # once the encrypted path list grows past the pipe buffer.
+  printf '%s\n' "$ENC" | grep -xF "$1" >/dev/null
+}
 
 hits=0
+warns=0
 for f in $FILES; do
   [ -f "$f" ] || continue
-  skip=0
-  for pat in $CRYPT_PATTERNS; do
-    case "$f" in $pat) skip=1; break;; esac
-  done
-  [ "$skip" = 1 ] && continue
+  is_encrypted "$f" && continue
   case "$f" in scripts/lint-secrets.sh) continue;; esac
 
   # Cloudflare account id: 32 hex in an R2 endpoint or an account_id assignment
@@ -49,6 +70,23 @@ for f in $FILES; do
   if grep -qE 'BEGIN (RSA|OPENSSH|EC|PGP) PRIVATE KEY' "$f" 2>/dev/null; then
     echo "  PRIVATE KEY             $f"; hits=$((hits+1))
   fi
+  # Tailscale MagicDNS hostname. Unambiguous and zero false positives, and the
+  # exact class that leaked: real values belong in all.yml (encrypted) as
+  # laptop_tailnet_host / vps_tailnet_host and are referenced as {{ vars }}.
+  if grep -qE '\b[a-z0-9-]+\.[a-z0-9-]+\.ts\.net\b' "$f" 2>/dev/null; then
+    echo "  TAILNET HOSTNAME        $f"; hits=$((hits+1))
+  fi
+  # Cloudflare zone / DNS-record id in an API URL. The existing account_id rule
+  # above does not see these: they sit in the URL PATH, not an assignment.
+  if grep -qE 'api\.cloudflare\.com/client/v4/(zones|accounts)/[0-9a-f]{32}' "$f" 2>/dev/null; then
+    echo "  CLOUDFLARE ZONE ID      $f"; hits=$((hits+1))
+  fi
+  # AWS account id, only in an AWS context so a random 12-digit number is not a
+  # finding. WARN, not block: these appear in comments and ARNs all over IaC and
+  # an account id alone grants nothing.
+  if grep -qE 'arn:aws:[a-z0-9-]*:[a-z0-9-]*:[0-9]{12}:|(aws_)?account_id[[:space:]]*[:=][[:space:]]*"?[0-9]{12}' "$f" 2>/dev/null; then
+    echo "  warn: AWS ACCOUNT ID    $f"; warns=$((warns+1))
+  fi
 done
 
 if [ "$hits" -gt 0 ]; then
@@ -57,4 +95,5 @@ if [ "$hits" -gt 0 ]; then
   echo "  env var and reference it. Committing then deleting does NOT remove it."
   exit 1
 fi
-echo "  secrets: OK"
+[ "$warns" -gt 0 ] && echo "  secrets: OK ($warns warning(s), not blocking)"
+[ "$warns" -gt 0 ] || echo "  secrets: OK"

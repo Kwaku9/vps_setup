@@ -1,5 +1,14 @@
 # Cloudflare Role
 
+> **Why the placeholders.** This repo is public, and git-crypt only covers the
+> paths listed in `.gitattributes` — which does not include `roles/*/README.md`.
+> So the real zone id and server IP are not written here. `cloudflare_zone_id`
+> and `cloudflare_account_id` come from the git-crypt encrypted `all.yml` (see
+> `roles/cloudflare/defaults/main.yml`, which maps them to `cf_zone_id` /
+> `cf_account_id`); substitute `<VPS_PUBLIC_IP>` from your inventory. `1.1.1.1`
+> is left as-is on purpose: it is Cloudflare's public resolver, not infrastructure.
+
+
 Ansible role for Cloudflare Tunnel integration providing secure public access to internal services without exposing ports to the internet.
 
 ## Architecture
@@ -88,7 +97,7 @@ Direct access via SSH port forwarding. No public exposure.
 
 **DNS Configuration:**
 ```
-aicortex.cloud → A → 72.61.0.187 (VPS IP)
+aicortex.cloud → A → <VPS_PUBLIC_IP> (VPS IP)
 ```
 
 **Access Method:**
@@ -100,7 +109,7 @@ ssh -L 3000:127.0.0.1:3000 `
     -L 9443:127.0.0.1:9444 `
     -L 5001:127.0.0.1:5001 `
     -L 8081:127.0.0.1:8081 `
-    root@72.61.0.187
+    root@<VPS_PUBLIC_IP>
 ```
 
 ```bash
@@ -111,7 +120,7 @@ ssh -L 3000:127.0.0.1:3000 \
     -L 9443:127.0.0.1:9444 \
     -L 5001:127.0.0.1:5001 \
     -L 8081:127.0.0.1:8081 \
-    root@72.61.0.187
+    root@<VPS_PUBLIC_IP>
 ```
 
 Then access via `http://localhost:<port>`.
@@ -279,7 +288,7 @@ podman rm cloudflared
 curl -X PATCH "https://api.cloudflare.com/client/v4/zones/ZONE_ID/dns_records/RECORD_ID" \
   -H "Authorization: Bearer API_TOKEN" \
   -H "Content-Type: application/json" \
-  --data '{"type":"A","name":"aicortex.cloud","content":"72.61.0.187","proxied":true}'
+  --data '{"type":"A","name":"aicortex.cloud","content":"<VPS_PUBLIC_IP>","proxied":true}'
 
 # 3. (Optional) Delete tunnel from Cloudflare
 cloudflared tunnel delete alpine-vps
@@ -312,22 +321,22 @@ podman stop cloudflared
 
 2. Update DNS to A record:
 ```bash
-curl -X PATCH "https://api.cloudflare.com/client/v4/zones/a8990e0ce8a1d081ec1226ef3f8d49d2/dns_records/c3907e4a26c30ee46622368d7f31fda2" \
+curl -X PATCH "https://api.cloudflare.com/client/v4/zones/{{ cloudflare_zone_id }}/dns_records/<DNS_RECORD_ID>" \
   -H "Authorization: Bearer $CF_API_TOKEN" \
   -H "Content-Type: application/json" \
-  --data '{"type":"A","name":"aicortex.cloud","content":"72.61.0.187","proxied":false}'
+  --data '{"type":"A","name":"aicortex.cloud","content":"<VPS_PUBLIC_IP>","proxied":false}'
 ```
 
 3. Access via SSH tunnel:
 ```bash
-ssh -L 3000:127.0.0.1:3000 -L 5678:127.0.0.1:5678 root@72.61.0.187
+ssh -L 3000:127.0.0.1:3000 -L 5678:127.0.0.1:5678 root@<VPS_PUBLIC_IP>
 ```
 
 ### Restore Tunnel Later
 
 1. Update DNS back to CNAME:
 ```bash
-curl -X PATCH "https://api.cloudflare.com/client/v4/zones/a8990e0ce8a1d081ec1226ef3f8d49d2/dns_records/c3907e4a26c30ee46622368d7f31fda2" \
+curl -X PATCH "https://api.cloudflare.com/client/v4/zones/{{ cloudflare_zone_id }}/dns_records/<DNS_RECORD_ID>" \
   -H "Authorization: Bearer $CF_API_TOKEN" \
   -H "Content-Type: application/json" \
   --data '{"type":"CNAME","name":"aicortex.cloud","content":"f9183e88-728a-4820-ac65-456f21cdb075.cfargotunnel.com","proxied":true}'
@@ -399,7 +408,7 @@ nsenter -t $CPID -n curl -sI http://SERVICE_IP:PORT
 | Resource | ID |
 |----------|-----|
 | Tunnel ID | `f9183e88-728a-4820-ac65-456f21cdb075` |
-| Zone ID | `a8990e0ce8a1d081ec1226ef3f8d49d2` |
+| Zone ID | `{{ cloudflare_zone_id }}` |
 | Account ID | `{{ cloudflare_account_id }}` — value in vault, never in the repo |
 
 ### Ansible Tags

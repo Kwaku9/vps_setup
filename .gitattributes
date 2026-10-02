@@ -36,8 +36,8 @@ roles/*/templates/*.alloy filter=git-crypt diff=git-crypt
 roles/security/files/tetragon/*.yaml filter=git-crypt diff=git-crypt
 
 # ── Monitoring Scripts & Files ──
-roles/monitoring/files/*.py filter=git-crypt diff=git-crypt
-roles/monitoring/files/*.sh filter=git-crypt diff=git-crypt
+roles/monitoring/files/**/*.py filter=git-crypt diff=git-crypt
+roles/monitoring/files/**/*.sh filter=git-crypt diff=git-crypt
 
 # ── Trading Strategies & Data Pipeline ──
 roles/trading/files/*.py filter=git-crypt diff=git-crypt
@@ -67,7 +67,7 @@ docker/docker-compose-openwebui.yml filter=git-crypt diff=git-crypt
 docs/ENCRYPTION_MAP.md !filter !diff
 
 # ── Tools (integration utilities) ──
-tools/*.py filter=git-crypt diff=git-crypt
+tools/**/*.py filter=git-crypt diff=git-crypt
 tools/*.js filter=git-crypt diff=git-crypt
 tools/yt-transcript-worker/*.js filter=git-crypt diff=git-crypt
 tools/yt-transcript-worker/*.toml filter=git-crypt diff=git-crypt
