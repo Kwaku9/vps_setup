@@ -20,7 +20,11 @@ backup:
   # at the same time. At 8 the guard passed with 10.5 G free while a run needed
   # ~13.4 G — it would stop 9 pods, grind, then die on a full disk. The floor
   # must track archive size, so revisit it when the archive grows past ~8 G.
-  min_free_gb: 16
+  # 2026-09-15: victoriametrics (5.5G, ~5G gzipped) added to data_dirs, so the
+  # staging dir is ~8G and the peak (staging + final tar) ~16G. Raised 16 -> 18.
+  # The disk had 20.2G free at the time; if this gate starts aborting, reclaim
+  # space (dangling images, `podman system df`) rather than lowering it.
+  min_free_gb: 18
   # Google One (consumer Drive) offsite copy via rclone.
   # Google One is CONSUMER Drive, so this needs a personal OAuth token — a
   # service account will not work: files an SA creates count against the SA's
@@ -62,8 +66,8 @@ backup:
   s3_delete_local: true
 
   # Data directories to backup (bind mounts under /opt/podman-data)
-  # Sizes noted 2026-07-05. victoriametrics (metrics TSDB, 2.3G) intentionally
-  # DROPPED: transient time-series with no DR value — it rebuilds after restore.
+  # Sizes noted 2026-07-05 unless stated. victoriametrics was dropped as a
+  # "transient metrics TSDB" until 2026-09-15 — see its entry below.
   data_dirs:
     - /opt/podman-data/postgres            # 2.7G  session history + recall vectors — CRITICAL
     - /opt/podman-data/ai-stack/postgres   # 104M  OWUI/litellm postgres
@@ -79,7 +83,15 @@ backup:
     - /opt/podman-data/mcp                 # 99M
     - /opt/podman-data/catalog-api         # marketplace blueprint artifacts (paid deliverables:
                                            # regenerable from the DB, but customers hold the URLs)
-    # - /opt/podman-data/victoriametrics   # 2.3G  DROPPED — transient metrics TSDB
+    # ADDED 2026-09-15 (5.5G: data 5.0G + indexdb 0.5G; cache/tmp/snapshots
+    # excluded below). It is NOT transient: -retentionPeriod=20y exists so this
+    # store can hold the ATLAS OHLC history (ohlc_* from IBKR, 2021 dataset),
+    # and it will hold TimesFM forecast series once that sidecar lands. The
+    # IBKR ingest only reaches back 1y, so a lost TSDB is NOT rebuildable.
+    # metrics-pod is in stop_pods, so tar sees a quiescent, flushed store.
+    # Cost: peak disk during a run rises from ~6G to ~16G — min_free_gb below
+    # was raised to match. Run to verify: `vps-backup` then check the log.
+    - /opt/podman-data/victoriametrics     # 5.5G  metrics + OHLC TSDB — ADDED 2026-09-15
     # Added 2026-08-21. Honeypot hits live in Loki, and loki-data is
     # (correctly) dropped below as a transient log TSDB. But attacker telemetry
     # is not operational noise — it is EVIDENCE, and the only record of who
@@ -128,6 +140,9 @@ backup:
     - "*.bak"
     - "*.bak.*"
     - "neo4j/data/transactions"   # WAL only; safe to drop because the pod is stopped
+    - "victoriametrics/cache"     # 38M rebuildable query/index caches
+    - "victoriametrics/tmp"       # transient
+    - "victoriametrics/snapshots" # hard-link snapshots; would double the archive if any exist
     # tar cannot read a live SQLite file consistently — it exits 1 ("file
     # changed as we read it") and can capture a torn, corrupt copy.
     # sqlite_snapshots below takes a proper online-backup copy instead.
