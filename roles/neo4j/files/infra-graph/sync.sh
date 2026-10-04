@@ -40,7 +40,7 @@ for k, v in d["sources"].items():
     print(f'infra_graph_source_ok{{source="{k}"}} {1 if v["ok"] else 0}')
 print("# HELP infra_graph_objects Objects discovered this run.")
 print("# TYPE infra_graph_objects gauge")
-for k in ("pods", "containers", "jobs", "datastores", "routes", "dashboards"):
+for k in ("pods", "containers", "jobs", "datastores", "routes", "dashboards", "scripts", "apis", "api_paths"):
     print(f'infra_graph_objects{{kind="{k}"}} {len(d.get(k, []))}')
 PY
 chmod 0644 "$OUT/infra_graph.prom.tmp"

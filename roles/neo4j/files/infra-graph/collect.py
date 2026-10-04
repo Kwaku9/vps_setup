@@ -9,6 +9,9 @@ Every fact comes from a live source on this host, never from a hand-written map:
   traefik  routes, middlewares, backends                     (/opt/compose/traefik/dynamic/*.yml)
   grafana  dashboards, datasources, panel->datasource links  (Grafana HTTP API)
   backup   which mounts/volumes the nightly backup covers    (/usr/local/bin/vps-backup)
+  scripts  the scripts cron runs, what they call and exec    (script files on disk, read-only)
+  egress   outbound APIs actually called, by container      (Squid access-json.log, last 7 days)
+  ingress  which routed API paths are actually used          (Traefik access.log, last 7 days)
 
 Output is one JSON document consumed by load-infra.cypher via apoc.load.json.
 Each source reports ok/failed in `sources`; the loader only reconciles (deletes
@@ -21,6 +24,10 @@ output. Connection strings are reduced to host/port/db before they are stored.
 
 Stdlib + PyYAML only (both present on the host).
 """
+import glob
+import gzip
+import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -29,6 +36,7 @@ import sys
 import time
 import urllib.request
 import base64
+import calendar
 from datetime import datetime, timezone
 
 import yaml
@@ -38,6 +46,11 @@ DYNAMIC_DIR = "/opt/compose/traefik/dynamic"
 CRONTAB = "/etc/crontabs/root"
 BACKUP_SCRIPT = "/usr/local/bin/vps-backup"
 SQLITE_ROOTS = ["/opt/podman-data", "/opt/compose"]
+REPO = "/workspace/vscode-projects/vps_setup"
+SQUID_LOGS = "/var/log/squid/access-json.log*"
+TRAEFIK_LOGS = "/opt/podman-data/crowdsec/traefik-logs/access.log*"
+WINDOW_DAYS = 7
+OWN_DOMAIN = "aicortex.cloud"
 
 # Which engine a container runs, by image substring. Order matters: vmalert
 # must not be mistaken for victoriametrics.
@@ -162,6 +175,18 @@ class Resolver:
             for ip in c["networks"].values():
                 if ip:
                     self.by_ip.setdefault(ip, []).append(c)
+        # Host-published ports ("127.0.0.1:8428->8428/tcp"), so a host script's
+        # http://127.0.0.1:8428 resolves to the container behind it. Pods publish
+        # through their infra container, so map those to the member that listens.
+        self.host_ports = {}
+        for c in out["containers"]:
+            for p in c["ports"]:
+                self.host_ports.setdefault(p.split("->")[0].rsplit(":", 1)[-1], c["name"])
+        for p in out.get("pods", []):
+            for x in p.get("ports", []):
+                hp, _, cp = x.partition("->")
+                member = self._pick(self.pod_members.get(p["name"], []), cp.split("/")[0])
+                self.host_ports.setdefault(hp.rsplit(":", 1)[-1], member or p["name"])
 
     def _pick(self, cands, port):
         if not cands:
@@ -186,6 +211,8 @@ class Resolver:
             if fc and fc["pod"]:
                 return self._pick(self.pod_members[fc["pod"]], port)
             return from_container
+        if host in ("localhost", "127.0.0.1", "::1"):  # seen from the host itself
+            return self.host_ports.get(str(port)) if port else None
         if host in self.by_name:
             return host
         if host in self.pod_members and host:
@@ -632,6 +659,442 @@ def collect_mcp(out):
     out["mcp_servers"] = servers
 
 
+# ───────────────────────────── outbound API naming ─────────────────────────────
+# Host suffix -> (API name, category). Names match the hand-curated External
+# nodes (OpenAI, api.telegram.org, CrowdSec CAPI, ...) so observed traffic lands
+# on those nodes instead of beside them. First match wins: specific hosts first.
+API_PROVIDERS = [
+    ("aiplatform.googleapis.com", "Google Vertex AI", "llm"),
+    ("generativelanguage.googleapis.com", "Google Gemini API", "llm"),
+    ("openai.com", "OpenAI", "llm"), ("anthropic.com", "Anthropic", "llm"),
+    ("openrouter.ai", "OpenRouter", "llm"), ("groq.com", "Groq", "llm"),
+    ("cohere.com", "Cohere", "llm"), ("cohere.ai", "Cohere", "llm"), ("x.ai", "xAI", "llm"),
+    ("deepseek.com", "DeepSeek", "llm"), ("huggingface.co", "Hugging Face", "llm"),
+    ("api.telegram.org", "api.telegram.org", "messaging"), ("resend.com", "Resend SMTP", "messaging"),
+    ("twilio.com", "Twilio", "messaging"), ("heygen.com", "HeyGen", "media"),
+    ("ibkr.com", "IBKR", "market-data"), ("interactivebrokers.com", "IBKR", "market-data"),
+    ("aisstream.io", "aisstream.io", "data-feed"), ("wigle.net", "WiGLE API", "data-feed"),
+    ("wikidata.org", "Wikidata", "data-feed"),
+    ("version.crowdsec.net", "CrowdSec version check", "vendor-phone-home"),
+    ("crowdsec.net", "CrowdSec CAPI", "security-feed"), ("maxmind.com", "MaxMind", "security-feed"),
+    ("abuse.ch", "abuse.ch", "security-feed"),
+    ("stats.grafana.org", "Grafana usage stats", "vendor-phone-home"),
+    ("grafana.com", "grafana.com", "vendor"),
+    ("version.goauthentik.io", "Authentik version check", "vendor-phone-home"),
+    ("goauthentik.io", "goauthentik.io", "vendor"),
+    ("checkpoint.prisma.io", "Prisma telemetry", "vendor-phone-home"),
+    ("update.argotunnel.com", "cloudflared update check", "vendor-phone-home"),
+    ("argotunnel.com", "Cloudflare Edge", "infra"), ("cftunnel.com", "Cloudflare Edge", "infra"),
+    ("r2.cloudflarestorage.com", "Cloudflare R2", "storage"), ("api.cloudflare.com", "Cloudflare API", "infra"),
+    ("cloudflareaccess.com", "Cloudflare Access", "infra"), ("tailscale.com", "Tailscale", "infra"),
+    ("gravatar.com", "Gravatar", "vendor"),
+    # Chromium inside the Grafana image renderer / Playwright phones home on its own.
+    ("clients.google.com", "Chromium phone-home", "vendor-phone-home"),
+    ("clients2.google.com", "Chromium phone-home", "vendor-phone-home"),
+    ("optimizationguide-pa.googleapis.com", "Chromium phone-home", "vendor-phone-home"),
+    ("content-autofill.googleapis.com", "Chromium phone-home", "vendor-phone-home"),
+    ("update.googleapis.com", "Chromium phone-home", "vendor-phone-home"),
+    ("gvt1.com", "Chromium phone-home", "vendor-phone-home"),
+    ("go-mpulse.net", "Akamai mPulse", "vendor-phone-home"),
+    ("accounts.google.com", "Google accounts", "vendor"), ("www.google.com", "google.com", "vendor"),
+    ("googleapis.com", "Google APIs", "cloud"),
+    ("github.com", "GitHub", "dev"), ("githubusercontent.com", "GitHub", "dev"), ("ghcr.io", "GitHub", "registry"),
+    ("docker.io", "Docker Hub", "registry"), ("quay.io", "Quay", "registry"),
+    ("pypi.org", "PyPI", "registry"), ("pythonhosted.org", "PyPI", "registry"),
+    ("npmjs.org", "npm", "registry"), ("debian.org", "Debian packages", "registry"),
+    ("nodesource.com", "NodeSource packages", "registry"), ("alpinelinux.org", "Alpine packages", "registry"),
+]
+
+
+def api_of(host):
+    h = host.lower().rstrip(".")
+    for suffix, name, cat in API_PROVIDERS:
+        if h == suffix or h.endswith("." + suffix):
+            return name, cat
+    if h.endswith(".amazonaws.com"):
+        return "AWS " + h.split(".")[0], "cloud"
+    return ".".join(h.split(".")[-2:]), "other"
+
+
+def is_public_host(h):
+    h = h.lower()
+    if "." not in h or h.endswith((".internal", ".local", ".lan", ".localdomain")):
+        return False
+    try:
+        return ipaddress.ip_address(h).is_global
+    except ValueError:
+        return True
+
+
+def norm_path(p):
+    """Collapse ids, numbers and templated/secret-looking segments so paths aggregate."""
+    p = (p or "/").split("?")[0].split("#")[0] or "/"
+    segs = []
+    for s in p.split("/"):
+        if "$" in s or "{" in s or "%" in s:
+            s = "{var}"
+        elif re.fullmatch(r"\d+", s):
+            s = "{n}"
+        elif re.fullmatch(r"[0-9a-fA-F-]{16,}", s):
+            s = "{id}"
+        elif len(s) > 40 or re.fullmatch(r"[A-Za-z0-9_:-]{28,}", s):
+            s = "{x}"
+        segs.append(s)
+    return "/".join(segs)[:160] or "/"
+
+
+def read_json_log(pattern, since):
+    """JSON lines from a log and its rotations (plain or .gz) modified since `since`."""
+    for p in sorted(glob.glob(pattern)):
+        try:
+            if os.path.getmtime(p) < since:
+                continue
+            opener = gzip.open if p.endswith(".gz") else open
+            with opener(p, "rt", errors="replace") as fh:
+                for line in fh:
+                    if line.startswith("{"):
+                        try:
+                            yield json.loads(line)
+                        except ValueError:
+                            pass
+        except OSError:
+            continue
+
+
+# ───────────────────────────── scripts ─────────────────────────────
+SCRIPT_RE = re.compile(r"(?<![\w.-])(/(?:usr/local/s?bin|opt/compose|opt/scripts|root/bin)/[\w./+-]+)")
+REL_SCRIPT_RE = re.compile(r"\$\{?(?:HERE|DIR|SCRIPT_DIR|BASEDIR)\}?/([\w./+-]+)")
+TEXT_URL_RE = re.compile(r"\b(https?)://([A-Za-z0-9._-]+)(?::(\d+))?(/[^\s\"'`<>)\]}]*)?")
+EXEC_FLAGS_WITH_VALUE = {"-e", "--env", "-u", "--user", "-w", "--workdir", "--env-file"}
+
+
+def exec_targets(text):
+    """Container names after `podman exec [flags]`, flags with values skipped."""
+    found = []
+    for m in re.finditer(r"podman\s+exec\s+([^\n;|&]*)", text):
+        toks = m.group(1).split()
+        i = 0
+        while i < len(toks) and toks[i].startswith("-"):
+            i += 2 if toks[i] in EXEC_FLAGS_WITH_VALUE else 1
+        if i < len(toks):
+            found.append(toks[i].strip("\"'"))
+    return found
+
+
+def _tasks(node):
+    """Every task dict in a tasks file, descending into block/rescue/always."""
+    if isinstance(node, list):
+        for x in node:
+            yield from _tasks(x)
+    elif isinstance(node, dict):
+        yield node
+        for k in ("block", "rescue", "always"):
+            yield from _tasks(node.get(k))
+
+
+def repo_sources():
+    """(deployed path -> repo file, stem -> candidate repo files).
+
+    The first map is exact: it comes from the roles' copy/template tasks,
+    including simple `loop:` lists of {src, dest} items. The second is the
+    fallback, matched on name with .py/.sh/.j2 stripped, because deployed
+    scripts usually drop their extension (cloudflare-zone-metrics.py.j2).
+    """
+    dests, names = {}, {}
+    roles = os.path.join(REPO, "roles")
+    if not os.path.isdir(roles):
+        return dests, names
+    # Some scripts ship straight from tools/ rather than from a role.
+    for dirpath, dirs, files in os.walk(os.path.join(REPO, "tools")):
+        dirs[:] = [d for d in dirs if d not in ("node_modules", ".git", "__pycache__", "tests")]
+        for f in files:
+            names.setdefault(script_stem(f), []).append(os.path.join(dirpath, f))
+    for role in sorted(os.listdir(roles)):
+        rdir = os.path.join(roles, role)
+        for kind in ("files", "templates"):
+            for dirpath, dirs, files in os.walk(os.path.join(rdir, kind)):
+                dirs[:] = [d for d in dirs if d not in ("node_modules", ".git", "__pycache__", "tests")]
+                for f in files:
+                    names.setdefault(script_stem(f), []).append(os.path.join(dirpath, f))
+        for tf in glob.glob(os.path.join(rdir, "tasks", "*.yml")):
+            try:
+                with open(tf) as fh:
+                    doc = yaml.safe_load(fh)
+            except Exception:
+                continue
+            for t in _tasks(doc):
+                for mod in ("template", "copy", "ansible.builtin.template", "ansible.builtin.copy"):
+                    a = t.get(mod)
+                    if not isinstance(a, dict) or not isinstance(a.get("src"), str) or not isinstance(a.get("dest"), str):
+                        continue
+                    items = t.get("loop") or t.get("with_items")
+                    pairs = [(a["src"], a["dest"])]
+                    if isinstance(items, list) and "{{" in a["src"] + a["dest"]:
+                        sub = lambda s, it: re.sub(r"\{\{\s*item\.(\w+)\s*\}\}", lambda m: str(it.get(m[1], m[0])), s)
+                        pairs = [(sub(a["src"], it), sub(a["dest"], it)) for it in items if isinstance(it, dict)]
+                    for src, dest in pairs:
+                        if "{{" in src or "{{" in dest:
+                            continue
+                        src = src if src.startswith("/") else os.path.join(rdir, "templates" if "template" in mod else "files", src)
+                        if dest.endswith("/"):
+                            dest += os.path.basename(src).removesuffix(".j2")
+                        if os.path.isfile(src):
+                            dests[dest] = src
+    return dests, names
+
+
+def sha1_file(p):
+    try:
+        with open(p, "rb") as fh:
+            return hashlib.sha1(fh.read()).hexdigest()
+    except OSError:
+        return None
+
+
+def analyze_script(path, resolver, containers, sources):
+    with open(path, "rb") as fh:
+        raw = fh.read(512 * 1024)
+    st = os.stat(path)
+    info = {"path": path, "name": os.path.basename(path), "bytes": st.st_size, "mtime": int(st.st_mtime),
+            "sha": hashlib.sha1(raw).hexdigest()[:12], "lang": None, "source": None,
+            "invokes": [], "execs": [], "calls": [], "routes": [], "externals": []}
+    if b"\0" in raw[:4096]:
+        info["lang"] = "binary"
+        return info
+    text = raw.decode("utf-8", "replace")
+    first = text.split("\n", 1)[0]
+    info["lang"] = ("python" if "python" in first or path.endswith(".py") else
+                    "shell" if re.search(r"\b(ba|a|da)?sh\b", first) or path.endswith(".sh") else "other")
+    # Comments name URLs and paths too (docs links, examples); only code counts.
+    code = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+
+    calls, routes, ext = {}, {}, {}
+    for scheme, host, port, upath in TEXT_URL_RE.findall(code):
+        h = host.lower()
+        if h.endswith(OWN_DOMAIN):
+            routes.setdefault(h, set()).add(norm_path(upath))
+        elif is_public_host(h):
+            name, cat = api_of(h)
+            ext.setdefault(name, {"api": name, "category": cat, "hosts": set()})["hosts"].add(h)
+        else:
+            tgt = resolver.resolve(h, port or ("443" if scheme == "https" else "80"))
+            if tgt:
+                calls.setdefault((tgt, port), set()).add(norm_path(upath))
+    info["calls"] = [{"to": t, "port": p, "paths": sorted(ps)} for (t, p), ps in calls.items()]
+    info["routes"] = [{"host": h, "paths": sorted(ps)} for h, ps in routes.items()]
+    # SDK clients never spell out a URL; name the API from the client call.
+    for svc in re.findall(r"boto3\.(?:client|resource)\(\s*['\"]([\w-]+)", code):
+        ext.setdefault("AWS " + svc, {"api": "AWS " + svc, "category": "cloud", "hosts": set()})
+    if re.search(r"\brclone\b", code) and re.search(r"\br2[-\w]*:", code):
+        ext.setdefault("Cloudflare R2", {"api": "Cloudflare R2", "category": "storage", "hosts": set()})
+    info["externals"] = [dict(v, hosts=sorted(v["hosts"])) for v in ext.values()]
+    info["execs"] = sorted({c for c in exec_targets(code) if c in containers})
+
+    # A Python file naming a path is usually reading it, not running it; only
+    # count paths on lines that start a process.
+    lines = code.splitlines()
+    if info["lang"] == "python":
+        lines = [l for l in lines if re.search(r"subprocess|Popen|\brun\(|\bcall\(|check_output|os\.system|execv", l)]
+    body = "\n".join(lines)
+    inv = set(SCRIPT_RE.findall(body))
+    inv |= {os.path.normpath(os.path.join(os.path.dirname(path), r)) for r in REL_SCRIPT_RE.findall(body)}
+    info["invokes"] = sorted(p for p in inv if p != path and is_script(p))
+
+    # Which repo file deployed it: the Ansible task whose dest is this path;
+    # else an identical files/ copy; else a lone same-named candidate.
+    dests, names = sources
+    cands = names.get(script_stem(info["name"]), [])
+    full = hashlib.sha1(raw).hexdigest() if st.st_size <= len(raw) else None
+    exact = [c for c in cands if full and sha1_file(c) == full]
+    info["source"] = dests.get(path) or (exact[0] if exact else (cands[0] if len(cands) == 1 else None))
+    return info
+
+
+def script_stem(name):
+    return re.sub(r"(\.(py|sh))?(\.j2)?$", "", name)
+
+
+def is_script(p):
+    """Something cron runs, not a data file it reads or writes (tokens, .prom, logs)."""
+    if not os.path.isfile(p):
+        return False
+    return p.endswith((".sh", ".py")) or os.access(p, os.X_OK)
+
+
+def collect_scripts(out):
+    resolver = Resolver(out)
+    containers = {c["name"] for c in out["containers"]}
+    sources = repo_sources()
+    scripts, queue = {}, []
+    for j in out["jobs"]:
+        j["scripts"] = sorted({p for p in SCRIPT_RE.findall(j["command"]) if is_script(p)})
+        queue += [(p, 0) for p in j["scripts"]]
+    while queue:
+        p, depth = queue.pop(0)
+        if p in scripts:
+            continue
+        try:
+            info = analyze_script(p, resolver, containers, sources)
+        except OSError:
+            continue
+        if info["lang"] == "binary" and depth > 0:
+            continue  # a tool a script happens to call (claude, trivy), not part of the job
+        scripts[p] = info
+        if depth < 3:
+            queue += [(q, depth + 1) for q in scripts[p]["invokes"]]
+    if not scripts:
+        raise RuntimeError("implausible: cron runs no scripts we can read")
+    out["scripts"] = list(scripts.values())
+
+
+# ───────────────────────────── egress (outbound APIs) ─────────────────────────────
+def collect_egress(out):
+    """Who calls which outside API, from the Squid transparent proxy's log.
+
+    Covers traffic Squid intercepts (container egress on ports 80/443). Host
+    processes and anything routed around the proxy are not seen here; the
+    scripts source fills in host-side calls statically.
+    """
+    resolver = Resolver(out)
+    since = time.time() - WINDOW_DAYS * 86400
+
+    # Container IPs change on every redeploy and vanish while a container is
+    # stopped, but the log spans a week. Keep every ip -> owner seen by past
+    # runs and fall back to the most recent owner when the live map misses.
+    hist_path = os.path.join(out["_outdir"], "ip-history.json")
+    try:
+        with open(hist_path) as fh:
+            hist = json.load(fh)
+    except (OSError, ValueError):
+        hist = {}
+    now = time.time()
+    for ip, cands in resolver.by_ip.items():
+        who = (("Container", cands[0]["name"]) if len(cands) == 1 or not cands[0]["pod"]
+               else ("Pod", cands[0]["pod"]))
+        hist.setdefault(ip, {})["|".join(who)] = now
+    hist = {ip: {k: t for k, t in owners.items() if t > now - 30 * 86400} for ip, owners in hist.items()}
+    hist = {ip: o for ip, o in hist.items() if o}
+    with open(hist_path + ".tmp", "w") as fh:
+        json.dump(hist, fh)
+    os.replace(hist_path + ".tmp", hist_path)
+
+    def owner(ip):
+        o = hist.get(ip)
+        return tuple(max(o, key=o.get).split("|", 1)) if o else ("Unresolved", "unresolved")
+
+    agg, lines = {}, 0
+    for e in read_json_log(SQUID_LOGS, since - 86400):
+        try:
+            ep = float(e.get("epoch") or 0)
+        except ValueError:
+            continue
+        if ep < since:
+            continue
+        lines += 1
+        sni = e.get("sni") or ""
+        host = (sni if sni not in ("", "-") else e.get("domain") or "").split(":")[0].lower()
+        if not host or host.endswith(OWN_DOMAIN):
+            continue
+        try:
+            ipaddress.ip_address(host)
+            name, cat, host = "Unidentified (no SNI)", "unidentified", "(ip)"
+        except ValueError:
+            name, cat = api_of(host)
+        who = owner(e.get("src_ip") or "")
+        a = agg.setdefault((who, name), {"category": cat, "requests": 0, "bytes": 0, "denied": 0,
+                                         "hosts": set(), "last": 0})
+        a["requests"] += 1
+        a["bytes"] += int(e.get("bytes") or 0)
+        a["denied"] += "DENIED" in (e.get("hierarchy") or "")
+        a["hosts"].add(host)
+        a["last"] = max(a["last"], ep)
+    if not lines:
+        raise RuntimeError(f"implausible: no Squid log lines in the last {WINDOW_DAYS} days")
+    out["egress"] = [{"who_label": w[0], "who": w[1], "api": name, "category": a["category"],
+                      "hosts": sorted(a["hosts"]), "requests": a["requests"], "bytes": a["bytes"],
+                      "denied": a["denied"],
+                      "last_seen": datetime.fromtimestamp(a["last"], timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+                     for (w, name), a in sorted(agg.items(), key=lambda kv: -kv[1]["requests"])]
+
+
+# ───────────────────────────── ingress (internal API usage) ─────────────────────────────
+STATIC_EXT = re.compile(r"\.(js|mjs|css|map|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|html?|txt|xml|webmanifest)$", re.I)
+API_TOP_N = 50      # paths kept per router
+API_MIN_OK = 3      # successful hits needed to count as a real API (drops scanner 404 noise)
+
+
+def collect_ingress(out):
+    """Which API paths behind each Traefik router are actually used, from its access log."""
+    since = time.time() - WINDOW_DAYS * 86400
+    skip = {r["router"] for r in out["routes"]
+            if "honeypot" in r["router"] or any(b.get("to") == "honeypot" for b in r["backends"])}
+    agg, usage, lines = {}, {}, 0
+    for e in read_json_log(TRAEFIK_LOGS, since - 86400):
+        t = e.get("StartUTC") or e.get("time") or ""
+        try:
+            ts = calendar.timegm(time.strptime(t[:19], "%Y-%m-%dT%H:%M:%S"))
+        except ValueError:
+            continue
+        if ts < since:
+            continue
+        lines += 1
+        router = (e.get("RouterName") or "").split("@")[0]
+        if not router or router in skip:
+            continue
+        status = int(e.get("DownstreamStatus") or 0)
+        u = usage.setdefault(router, {"hits": 0, "e4": 0, "e5": 0})
+        u["hits"] += 1
+        u["e4"] += 400 <= status < 500
+        u["e5"] += status >= 500
+        path = norm_path(e.get("RequestPath"))
+        if STATIC_EXT.search(path):
+            continue
+        a = agg.setdefault((router, e.get("RequestMethod") or "?", path),
+                           {"hits": 0, "ok": 0, "e4": 0, "e5": 0, "durs": [], "last": 0})
+        a["hits"] += 1
+        a["ok"] += status < 400
+        a["e4"] += 400 <= status < 500
+        a["e5"] += status >= 500
+        a["last"] = max(a["last"], ts)
+        if len(a["durs"]) < 5000:
+            a["durs"].append((e.get("Duration") or 0) / 1e6)
+    if not lines:
+        raise RuntimeError(f"implausible: no Traefik access log lines in the last {WINDOW_DAYS} days")
+    per_router = {}
+    for (router, method, path), a in agg.items():
+        if a["ok"] >= API_MIN_OK:
+            per_router.setdefault(router, []).append((router, method, path, a))
+    paths = []
+    for rows in per_router.values():
+        for router, method, path, a in sorted(rows, key=lambda r: -r[3]["hits"])[:API_TOP_N]:
+            d = sorted(a["durs"])
+            paths.append({"key": f"{router} {method} {path}", "router": router, "method": method, "path": path,
+                          "hits": a["hits"], "errors_4xx": a["e4"], "errors_5xx": a["e5"],
+                          "p95_ms": round(d[int(len(d) * .95) - 1 if len(d) > 1 else 0], 1) if d else None,
+                          "last_seen": datetime.fromtimestamp(a["last"], timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")})
+    out["api_paths"] = paths
+    out["route_usage"] = [{"router": r, "hits": u["hits"], "errors_4xx": u["e4"], "errors_5xx": u["e5"]}
+                          for r, u in usage.items()]
+
+
+def merge_apis(out):
+    """One entry per outside API, from whichever of egress/scripts succeeded."""
+    apis = {}
+    if out["sources"].get("egress", {}).get("ok"):
+        for e in out.get("egress", []):
+            a = apis.setdefault(e["api"], {"name": e["api"], "category": e["category"], "hosts": set(),
+                                           "requests": 0, "src": "egress"})
+            a["hosts"] |= set(e["hosts"])
+            a["requests"] += e["requests"]
+    if out["sources"].get("scripts", {}).get("ok"):
+        for s in out.get("scripts", []):
+            for x in s["externals"]:
+                a = apis.setdefault(x["api"], {"name": x["api"], "category": x["category"], "hosts": set(),
+                                               "requests": 0, "src": "scripts"})
+                a["hosts"] |= set(x["hosts"])
+    out["apis"] = [dict(a, hosts=sorted(a["hosts"])) for a in apis.values()]
+
+
 # ───────────────────────────── inventory markdown ─────────────────────────────
 def fmt_bytes(b):
     if b is None:
@@ -655,6 +1118,29 @@ def write_inventory(out, path):
     for j in out.get("jobs", []):
         L.append(f'| {j["name"]} | `{j["schedule"]}` | {j["frequency"]} | {", ".join(j["runs_in"]) or "host"} | '
                  f'{"yes" if j["managed"] else "NO"} |')
+    L += ["", "## Scripts", "", "| Script | Lang | Run by | Execs into | Calls (internal) | Outside APIs | Repo source |",
+          "|---|---|---|---|---|---|---|"]
+    runby = {}
+    for j in out.get("jobs", []):
+        for p in j.get("scripts", []):
+            runby.setdefault(p, []).append(j["name"])
+    for s in out.get("scripts", []):
+        for q in s["invokes"]:
+            runby.setdefault(q, []).append(s["name"])
+    for s in sorted(out.get("scripts", []), key=lambda s: s["path"]):
+        L.append(f'| `{s["path"]}` | {s["lang"]} | {", ".join(runby.get(s["path"], [])) or "—"} | '
+                 f'{", ".join(s["execs"]) or "—"} | {", ".join(c["to"] for c in s["calls"]) or "—"} | '
+                 f'{", ".join(x["api"] for x in s["externals"]) or "—"} | '
+                 f'{(s["source"] or "").replace(REPO + "/", "") or "not found"} |')
+    L += ["", f"## Outside APIs (observed via Squid, last {WINDOW_DAYS} days)", "",
+          "| Caller | API | Category | Requests | Denied | Last seen |", "|---|---|---|---|---|---|"]
+    for e in out.get("egress", []):
+        L.append(f'| {e["who"]} | {e["api"]} | {e["category"]} | {e["requests"]:,} | {e["denied"]} | {e["last_seen"]} |')
+    L += ["", f"## Most-used internal API paths (Traefik, last {WINDOW_DAYS} days)", "",
+          "| Router | Method | Path | Hits | 4xx | 5xx | p95 ms |", "|---|---|---|---|---|---|---|"]
+    for a in sorted(out.get("api_paths", []), key=lambda a: -a["hits"])[:60]:
+        L.append(f'| {a["router"]} | {a["method"]} | `{a["path"]}` | {a["hits"]:,} | {a["errors_4xx"]} | '
+                 f'{a["errors_5xx"]} | {a["p95_ms"]} |')
     L += ["", "## Datastores and databases", "", "| Datastore | Engine | Container | Size | Databases |", "|---|---|---|---|---|"]
     for d in out.get("datastores", []):
         L.append(f'| {d["name"]} | {d["engine"]} | {d.get("container") or "—"} | {fmt_bytes(d["bytes"])} | '
@@ -688,19 +1174,26 @@ def write_inventory(out, path):
 def main():
     outdir = sys.argv[1] if len(sys.argv) > 1 else "/opt/compose/infra-graph"
     os.makedirs(outdir, exist_ok=True)
-    out = {"run": now_iso(), "host": HOST, "sources": {}}
-    steps = [("podman", collect_podman), ("db", collect_dbs), ("cron", collect_cron),
-             ("traefik", collect_traefik), ("grafana", collect_grafana), ("backup", collect_backup), ("mcp", collect_mcp)]
+    out = {"run": now_iso(), "host": HOST, "sources": {}, "_outdir": outdir}
+    steps = [("podman", collect_podman), ("db", collect_dbs), ("cron", collect_cron), ("scripts", collect_scripts),
+             ("traefik", collect_traefik), ("ingress", collect_ingress), ("egress", collect_egress),
+             ("grafana", collect_grafana), ("backup", collect_backup), ("mcp", collect_mcp)]
+    # A source is skipped (not run, not reconciled) when one it builds on failed.
+    needs = {"db": ["podman"], "traefik": ["podman"], "grafana": ["podman"], "backup": ["podman"],
+             "mcp": ["podman"], "scripts": ["podman", "cron"], "ingress": ["traefik"], "egress": ["podman"]}
     for name, fn in steps:
         t0 = time.time()
-        if name != "podman" and not out["sources"].get("podman", {}).get("ok") and name in ("db", "traefik", "grafana", "backup", "mcp"):
-            out["sources"][name] = {"ok": False, "error": "skipped: podman source failed", "secs": 0}
+        failed = [n for n in needs.get(name, []) if not out["sources"].get(n, {}).get("ok")]
+        if failed:
+            out["sources"][name] = {"ok": False, "error": f"skipped: {', '.join(failed)} source failed", "secs": 0}
             continue
         try:
             fn(out)
             out["sources"][name] = {"ok": True, "secs": round(time.time() - t0, 1)}
         except Exception as e:
             out["sources"][name] = {"ok": False, "error": str(e)[:300], "secs": round(time.time() - t0, 1)}
+    merge_apis(out)
+    out.pop("_outdir", None)
     for c in out.get("containers", []):  # never let raw env or argv leave this process
         c.pop("_env", None)
         c.pop("_cmd", None)
@@ -710,7 +1203,8 @@ def main():
     write_inventory(out, os.path.join(outdir, "INVENTORY.md"))
     print(json.dumps({"run": out["run"], "sources": out["sources"],
                       "counts": {k: len(out.get(k, [])) for k in
-                                 ("pods", "containers", "networks", "jobs", "datastores", "routes", "dashboards", "datasources", "mcp_servers")},
+                                 ("pods", "containers", "networks", "jobs", "datastores", "routes", "dashboards", "datasources",
+                                  "mcp_servers", "scripts", "apis", "egress", "api_paths")},
                       "db_warnings": out.get("db_warnings", [])}, indent=1))
     return 0 if all(s["ok"] for s in out["sources"].values()) else 2
 
