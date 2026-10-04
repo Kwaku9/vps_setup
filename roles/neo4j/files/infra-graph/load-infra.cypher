@@ -367,34 +367,57 @@ SET rt.hits_7d = u.hits, rt.errors_4xx_7d = u.errors_4xx, rt.errors_5xx_7d = u.e
 // Match an observed path to the code graph's Endpoint that handles it. Endpoint
 // paths are templates relative to their router mount ("/{approval_id}/decide"),
 // so the observed path must END with the template, placeholders as wildcards.
+// Only the run timestamp is carried past the first line: every row holding the
+// whole parsed infra.json blew the transaction memory limit.
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
 WITH d WHERE d.sources.ingress.ok
-MATCH (rt:Route)-[:SERVES]->(x:Api) WHERE x.seen = datetime(d.run)
+WITH datetime(d.run) AS run
+MATCH (rt:Route)-[:SERVES]->(x:Api) WHERE x.seen = run
 MATCH (rt)-[:ROUTES_TO]->(t)
-MATCH (c:Container) WHERE c = t OR (t:Pod AND (t)-[:CONTAINS]->(c))
+OPTIONAL MATCH (t)-[:CONTAINS]->(m:Container)
+WITH run, x, [c IN collect(DISTINCT m) + collect(DISTINCT t) WHERE c:Container] AS cs
+UNWIND cs AS c
 MATCH (p:CodeProject)-[:DEPLOYED_AS]->(c)
+WITH DISTINCT run, x, p
 MATCH (p)-[:EXPOSES]->(e:Endpoint {kind: 'http'})
 WHERE e.method = x.method AND e.path IS NOT NULL AND e.path <> ''
-WITH d, x, e,
+WITH DISTINCT run, x, e
+WITH run, x, e,
      apoc.text.regreplace(apoc.text.regreplace(e.path, '([.+*?^$()\\[\\]|\\\\])', '\\\\$1'),
                           '\\{[^}]+\\}', '[^/]+') AS tmpl
 WHERE x.path = e.path OR (size(e.path) > 1 AND x.path =~ ('.*' + tmpl))
-MERGE (x)-[r:HANDLED_BY]->(e)
-SET r.exact = (x.path = e.path), r.src = 'ingress', r.seen = datetime(d.run);
+// Keep the most specific template only: "/{service_name}/timeseries" beats the
+// catch-all "/{name}", and a bare one-placeholder template never wins on its own.
+WITH run, x, e, CASE WHEN x.path = e.path THEN 1000
+                     ELSE size(apoc.text.regreplace(e.path, '\\{[^}]+\\}', '')) END AS lit
+WHERE lit >= 2
+WITH run, x, collect({e: e, lit: lit}) AS ms
+WITH run, x, ms, reduce(b = 0, y IN ms | CASE WHEN y.lit > b THEN y.lit ELSE b END) AS best
+UNWIND [y IN ms WHERE y.lit = best] AS y
+WITH run, x, y.e AS e
+MERGE (x)-[r:IMPLEMENTED_BY]->(e)
+SET r.exact = (x.path = e.path), r.src = 'ingress', r.seen = run;
 
 // Same for scripts' internal calls (method unknown: match on path only).
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
 WITH d WHERE d.sources.scripts.ok
-MATCH (s:Script)-[k:CALLS]->(t) WHERE k.seen = datetime(d.run) AND (t:Container OR t:Pod)
-MATCH (c:Container) WHERE c = t OR (t:Pod AND (t)-[:CONTAINS]->(c))
+WITH datetime(d.run) AS run
+MATCH (s:Script)-[k:CALLS]->(t) WHERE k.seen = run AND (t:Container OR t:Pod)
+OPTIONAL MATCH (t)-[:CONTAINS]->(m:Container)
+WITH run, s, k, [c IN collect(DISTINCT m) + collect(DISTINCT t) WHERE c:Container] AS cs
+UNWIND cs AS c
 MATCH (p:CodeProject)-[:DEPLOYED_AS]->(c)
+WITH DISTINCT run, s, k, p
 MATCH (p)-[:EXPOSES]->(e:Endpoint {kind: 'http'})
 WHERE e.path IS NOT NULL AND size(e.path) > 1
-WITH d, s, e, k,
+WITH DISTINCT run, s, k, e
+WITH run, s, k, e,
      apoc.text.regreplace(apoc.text.regreplace(e.path, '([.+*?^$()\\[\\]|\\\\])', '\\\\$1'),
                           '\\{[^}]+\\}', '[^/]+') AS tmpl
 WHERE any(q IN k.paths WHERE q = e.path OR q =~ ('.*' + tmpl))
-MERGE (s)-[r:CALLS_API]->(e) SET r.src = 'scripts', r.seen = datetime(d.run);
+WITH run, s, e, size(apoc.text.regreplace(e.path, '\\{[^}]+\\}', '')) AS lit
+WHERE lit >= 2
+MERGE (s)-[r:CALLS_API]->(e) SET r.src = 'scripts', r.seen = run;
 
 // ---------- reconcile: delete what successful sources no longer see ----------
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
