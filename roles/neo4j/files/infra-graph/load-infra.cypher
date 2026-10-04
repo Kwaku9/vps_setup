@@ -9,8 +9,12 @@
 // source that failed (d.sources.<src>.ok = false) keeps its slice untouched.
 //
 // Owned labels (deleted when unseen): Host Network Pod Container Datastore
-// Database Table ScheduledJob Route Middleware Datasource Dashboard McpServer.
-// Not owned, never touched: Risk, External, Role and the whole sessions graph.
+// Database Table ScheduledJob Route Middleware Datasource Dashboard McpServer
+// Script Api.
+// External is shared: nodes this loader created (src set) are reconciled like
+// owned labels; hand-curated ones (no src) are enriched but never deleted.
+// Not owned, never touched: Risk, Role, the code graph (CodeFile, Endpoint, ...)
+// and the whole sessions graph. Edges INTO them carry src and are reconciled.
 // =============================================================================
 
 // ---------- constraints ----------
@@ -27,6 +31,9 @@ CREATE CONSTRAINT container_name IF NOT EXISTS FOR (n:Container)    REQUIRE n.na
 CREATE CONSTRAINT datastore_name IF NOT EXISTS FOR (n:Datastore)    REQUIRE n.name IS UNIQUE;
 CREATE CONSTRAINT database_name  IF NOT EXISTS FOR (n:Database)     REQUIRE n.name IS UNIQUE;
 CREATE CONSTRAINT mw_name        IF NOT EXISTS FOR (n:Middleware)   REQUIRE n.name IS UNIQUE;
+CREATE CONSTRAINT script_path    IF NOT EXISTS FOR (n:Script)       REQUIRE n.path IS UNIQUE;
+CREATE CONSTRAINT api_key        IF NOT EXISTS FOR (n:Api)          REQUIRE n.key  IS UNIQUE;
+CREATE CONSTRAINT external_name  IF NOT EXISTS FOR (n:External)     REQUIRE n.name IS UNIQUE;
 
 // ---------- podman: host, networks, pods, containers ----------
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
@@ -256,12 +263,153 @@ OPTIONAL MATCH (p:Pod {name: m.pod})
 WITH d, x, coalesce(c, p) AS t WHERE t IS NOT NULL
 MERGE (x)-[r:RUNS_IN]->(t) SET r.src = 'mcp', r.seen = datetime(d.run);
 
+// ---------- scripts: what cron runs, and what those scripts touch ----------
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.scripts.ok
+UNWIND d.scripts AS s
+MERGE (x:Script {path: s.path})
+SET x.name = s.name, x.lang = s.lang, x.bytes = s.bytes, x.sha = s.sha, x.mtime = s.mtime,
+    x.source = s.source, x.src = 'scripts', x.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.scripts.ok
+UNWIND d.jobs AS j
+UNWIND j.scripts AS p
+MATCH (x:ScheduledJob {name: j.name}), (s:Script {path: p})
+MERGE (x)-[r:RUNS]->(s) SET r.src = 'scripts', r.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.scripts.ok
+UNWIND d.scripts AS s
+UNWIND s.invokes AS p
+MATCH (a:Script {path: s.path}), (b:Script {path: p})
+MERGE (a)-[r:INVOKES]->(b) SET r.src = 'scripts', r.seen = datetime(d.run);
+
+// Link to the code graph's copy of the repo file that deploys it.
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.scripts.ok
+UNWIND d.scripts AS s
+WITH d, s WHERE s.source IS NOT NULL
+MATCH (a:Script {path: s.path}), (f:CodeFile {path: s.source})
+MERGE (a)-[r:DEFINED_IN]->(f) SET r.src = 'scripts', r.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.scripts.ok
+UNWIND d.scripts AS s
+UNWIND s.execs AS cn
+MATCH (a:Script {path: s.path}), (c:Container {name: cn})
+MERGE (a)-[r:EXECS_IN]->(c) SET r.src = 'scripts', r.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.scripts.ok
+UNWIND d.scripts AS s
+UNWIND s.calls AS cl
+MATCH (a:Script {path: s.path})
+OPTIONAL MATCH (c:Container {name: cl.to})
+OPTIONAL MATCH (p:Pod {name: cl.to})
+WITH d, a, cl, coalesce(c, p) AS t WHERE t IS NOT NULL
+MERGE (a)-[r:CALLS]->(t)
+SET r.port = cl.port, r.paths = cl.paths, r.src = 'scripts', r.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.scripts.ok AND d.sources.traefik.ok
+UNWIND d.scripts AS s
+UNWIND s.routes AS rc
+MATCH (a:Script {path: s.path}), (rt:Route {host: rc.host})
+WHERE rt.path IS NULL OR any(p IN rc.paths WHERE p STARTS WITH rt.path)
+MERGE (a)-[r:CALLS]->(rt) SET r.paths = rc.paths, r.src = 'scripts', r.seen = datetime(d.run);
+
+// ---------- outside APIs (egress observed + scripts declared) ----------
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+UNWIND d.apis AS a
+MERGE (x:External {name: a.name})
+ON CREATE SET x.src = a.src
+SET x.category = a.category, x.hosts = a.hosts, x.requests_7d = a.requests, x.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.egress.ok
+UNWIND d.egress AS e
+WITH d, e WHERE e.who_label IN ['Container', 'Pod']
+MATCH (x:External {name: e.api})
+OPTIONAL MATCH (c:Container {name: e.who}) WHERE e.who_label = 'Container'
+OPTIONAL MATCH (p:Pod {name: e.who}) WHERE e.who_label = 'Pod'
+WITH d, e, x, coalesce(c, p) AS a WHERE a IS NOT NULL
+MERGE (a)-[r:CALLS_EXTERNAL]->(x)
+SET r.requests_7d = e.requests, r.bytes_7d = e.bytes, r.denied_7d = e.denied, r.hosts = e.hosts,
+    r.last_seen = datetime(e.last_seen), r.observed = true, r.src = 'egress', r.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.scripts.ok
+UNWIND d.scripts AS s
+UNWIND s.externals AS e
+MATCH (a:Script {path: s.path}), (x:External {name: e.api})
+MERGE (a)-[r:CALLS_EXTERNAL]->(x)
+SET r.hosts = e.hosts, r.declared = true, r.src = 'scripts', r.seen = datetime(d.run);
+
+// ---------- internal API usage (Traefik access log) ----------
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.ingress.ok
+UNWIND d.api_paths AS a
+MERGE (x:Api {key: a.key})
+SET x.router = a.router, x.method = a.method, x.path = a.path, x.hits_7d = a.hits,
+    x.errors_4xx_7d = a.errors_4xx, x.errors_5xx_7d = a.errors_5xx, x.p95_ms = a.p95_ms,
+    x.last_seen = datetime(a.last_seen), x.src = 'ingress', x.seen = datetime(d.run)
+WITH d, a, x
+MATCH (rt:Route {router: a.router})
+MERGE (rt)-[r:SERVES]->(x) SET r.src = 'ingress', r.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.ingress.ok
+UNWIND d.route_usage AS u
+MATCH (rt:Route {router: u.router})
+SET rt.hits_7d = u.hits, rt.errors_4xx_7d = u.errors_4xx, rt.errors_5xx_7d = u.errors_5xx;
+
+// Match an observed path to the code graph's Endpoint that handles it. Endpoint
+// paths are templates relative to their router mount ("/{approval_id}/decide"),
+// so the observed path must END with the template, placeholders as wildcards.
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.ingress.ok
+MATCH (rt:Route)-[:SERVES]->(x:Api) WHERE x.seen = datetime(d.run)
+MATCH (rt)-[:ROUTES_TO]->(t)
+MATCH (c:Container) WHERE c = t OR (t:Pod AND (t)-[:CONTAINS]->(c))
+MATCH (p:CodeProject)-[:DEPLOYED_AS]->(c)
+MATCH (p)-[:EXPOSES]->(e:Endpoint {kind: 'http'})
+WHERE e.method = x.method AND e.path IS NOT NULL AND e.path <> ''
+WITH d, x, e,
+     apoc.text.regreplace(apoc.text.regreplace(e.path, '([.+*?^$()\\[\\]|\\\\])', '\\\\$1'),
+                          '\\{[^}]+\\}', '[^/]+') AS tmpl
+WHERE x.path = e.path OR (size(e.path) > 1 AND x.path =~ ('.*' + tmpl))
+MERGE (x)-[r:HANDLED_BY]->(e)
+SET r.exact = (x.path = e.path), r.src = 'ingress', r.seen = datetime(d.run);
+
+// Same for scripts' internal calls (method unknown: match on path only).
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.scripts.ok
+MATCH (s:Script)-[k:CALLS]->(t) WHERE k.seen = datetime(d.run) AND (t:Container OR t:Pod)
+MATCH (c:Container) WHERE c = t OR (t:Pod AND (t)-[:CONTAINS]->(c))
+MATCH (p:CodeProject)-[:DEPLOYED_AS]->(c)
+MATCH (p)-[:EXPOSES]->(e:Endpoint {kind: 'http'})
+WHERE e.path IS NOT NULL AND size(e.path) > 1
+WITH d, s, e, k,
+     apoc.text.regreplace(apoc.text.regreplace(e.path, '([.+*?^$()\\[\\]|\\\\])', '\\\\$1'),
+                          '\\{[^}]+\\}', '[^/]+') AS tmpl
+WHERE any(q IN k.paths WHERE q = e.path OR q =~ ('.*' + tmpl))
+MERGE (s)-[r:CALLS_API]->(e) SET r.src = 'scripts', r.seen = datetime(d.run);
+
 // ---------- reconcile: delete what successful sources no longer see ----------
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d, datetime(d.run) AS run
+MATCH (n:External) WHERE n.src IS NOT NULL AND n.seen < run AND d.sources[n.src].ok
+WITH collect(n) AS stale
+FOREACH (n IN stale | DETACH DELETE n)
+RETURN 'External' AS deleted_label, size(stale) AS deleted;
+
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
 WITH d, datetime(d.run) AS run,
      {Host:'podman', Network:'podman', Pod:'podman', Container:'podman',
       Datastore:'db', Database:'db', Table:'db', ScheduledJob:'cron',
-      Route:'traefik', Middleware:'traefik', Datasource:'grafana', Dashboard:'grafana', McpServer:'mcp'} AS owner
+      Route:'traefik', Middleware:'traefik', Datasource:'grafana', Dashboard:'grafana', McpServer:'mcp',
+      Script:'scripts', Api:'ingress'} AS owner
 UNWIND keys(owner) AS label
 WITH run, label, owner[label] AS src, d WHERE d.sources[owner[label]].ok
 MATCH (n) WHERE label IN labels(n) AND (n.seen IS NULL OR n.seen < run)
