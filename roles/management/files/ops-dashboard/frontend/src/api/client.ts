@@ -11,6 +11,12 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       ...options?.headers,
     },
   });
+  if (res.status === 401) {
+    // Session missing or expired: sign in again and come back to this page.
+    const here = window.location.pathname + window.location.search;
+    window.location.assign(`/auth/login?next=${encodeURIComponent(here)}`);
+    throw new Error('Signing in again…');
+  }
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(error.detail || `HTTP ${res.status}`);
@@ -68,3 +74,11 @@ export const sessionTranscriptExcerpt = (uuid: string, maxChars = 8000) =>
 export const fileSessions = (path: string, k = 25) =>
   api.get<{ path: string; sessions: { session_uuid: string; title: string; date: string | null; project: string | null; touches: number }[] }>(
     `/api/timeline/file?path=${encodeURIComponent(path)}&k=${k}`);
+
+// Signed-in user
+export interface Me { username: string; email: string | null; role: 'viewer' | 'operator' | 'admin'; via: string }
+export const fetchMe = () => api.get<Me>('/api/me');
+export const logout = async () => {
+  const r = await api.post<{ ok: boolean; end_session_url: string | null }>('/auth/logout');
+  window.location.assign(r.end_session_url || '/auth/login');
+};

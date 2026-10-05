@@ -1,11 +1,21 @@
-"""Start/stop service action endpoints."""
+"""Start/stop service action endpoints.
 
-from fastapi import APIRouter, Depends, HTTPException
+Every action is role-checked, audited with the exact host command, and sent to
+Telegram. An action that could not be audited (no DB pool) is refused.
+"""
+from html import escape
 
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from .. import audit
+from ..auth import require_role
 from ..dependencies import DashboardState, get_state
 from ..schemas import ActionResponse
+from ...providers.vps import VpsProvider
 
 router = APIRouter(prefix="/api/actions", tags=["actions"])
+
+COMMANDS = {"start": VpsProvider.START_CMD, "stop": VpsProvider.STOP_CMD}
 
 
 async def _run_action(
@@ -38,11 +48,35 @@ async def _run_action(
     return ActionResponse(service=service_name, action=action, success=ok, message=msg)
 
 
+async def _audited(request: Request, user: dict, action: str, service_name: str,
+                   state: DashboardState) -> ActionResponse:
+    if not audit.audit_ready(request.app):
+        raise HTTPException(503, "The audit log is unavailable, so actions are paused.")
+    command = COMMANDS[action].format(name=service_name)
+    try:
+        result = await _run_action(action, service_name, state)
+    except HTTPException as exc:
+        await audit.record(request.scope, user, action=action, target=service_name, outcome="refused",
+                           status=exc.status_code, detail={"reason": exc.detail})
+        raise
+    await audit.record(request.scope, user, action=action, target=service_name,
+                       outcome="ok" if result.success else "failed", status=200,
+                       detail={"command": command, "message": result.message})
+    audit.notify(state.vps_provider,
+                 f"🔧 <b>ops</b> {escape(user['username'])} ran <code>{escape(command)}</code> → "
+                 f"{'ok' if result.success else 'FAILED: ' + escape(result.message)} ({escape(user.get('via', '?'))})")
+    return result
+
+
 @router.post("/start/{service_name}", response_model=ActionResponse)
-async def start_service(service_name: str, state: DashboardState = Depends(get_state)):
-    return await _run_action("start", service_name, state)
+async def start_service(service_name: str, request: Request, state: DashboardState = Depends(get_state),
+                        user: dict = Depends(require_role("operator"))):
+    return await _audited(request, user, "start", service_name, state)
 
 
+# Stopping is admin-only until destructive actions go through Telegram approval
+# (phase 4 of docs/superpowers/specs/2026-06-29-ops-dashboard-hardening-design.md).
 @router.post("/stop/{service_name}", response_model=ActionResponse)
-async def stop_service(service_name: str, state: DashboardState = Depends(get_state)):
-    return await _run_action("stop", service_name, state)
+async def stop_service(service_name: str, request: Request, state: DashboardState = Depends(get_state),
+                       user: dict = Depends(require_role("admin"))):
+    return await _audited(request, user, "stop", service_name, state)

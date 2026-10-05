@@ -1,8 +1,10 @@
 """Approval queue: list pending gateway approvals and record decisions."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from .. import audit
+from ..auth import require_role
 from ..routers.ingest import ws_manager
 
 router = APIRouter(prefix="/api/approvals", tags=["approvals"])
@@ -11,14 +13,14 @@ router = APIRouter(prefix="/api/approvals", tags=["approvals"])
 _DECISIONS = {"approve": "approved", "deny": "denied"}
 
 
-async def apply_decision(conn, approval_id: int, decision: str) -> bool:
+async def apply_decision(conn, approval_id: int, decision: str, username: str) -> bool:
     """Race-safe status flip. Returns True iff exactly one pending row was updated."""
     status = _DECISIONS[decision]
     res = await conn.execute(
         """UPDATE gateway.approvals
-              SET status = $2, decided_at = now(), decided_by_username = 'dashboard'
+              SET status = $2, decided_at = now(), decided_by_username = $3
             WHERE id = $1 AND status = 'pending'""",
-        approval_id, status,
+        approval_id, status, f"dashboard:{username}",
     )
     return str(res).strip().endswith("1")
 
@@ -39,7 +41,7 @@ async def pending(request: Request):
 
 
 @router.post("/{approval_id}/decide")
-async def decide(approval_id: int, request: Request):
+async def decide(approval_id: int, request: Request, user: dict = Depends(require_role("admin"))):
     body = await request.json()
     decision = body.get("decision")
     if decision not in _DECISIONS:
@@ -48,7 +50,9 @@ async def decide(approval_id: int, request: Request):
     if pool is None:
         raise HTTPException(status_code=503, detail="database unavailable")
     async with pool.acquire() as conn:
-        ok = await apply_decision(conn, approval_id, decision)
+        ok = await apply_decision(conn, approval_id, decision, user["username"])
+    await audit.record(request.scope, user, action=decision, target=f"approval:{approval_id}",
+                       outcome="ok" if ok else "conflict", status=200 if ok else 409)
     if not ok:
         raise HTTPException(status_code=409, detail="approval already decided, expired, or not found")
     await ws_manager.broadcast({
