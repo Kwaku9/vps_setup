@@ -2,9 +2,13 @@
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from html import escape
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ...config import resolve_profile_stacks
+from .. import audit
+from ..auth import require_role
 from ..dependencies import DashboardState, get_state
 from ..schemas import SetTierRequest, StackSchema, StackTierSchema
 
@@ -39,7 +43,11 @@ async def list_stacks(state: DashboardState = Depends(get_state)):
 
 
 @router.post("/{stack_name}/tier")
-async def set_tier(stack_name: str, req: SetTierRequest, state: DashboardState = Depends(get_state)):
+async def set_tier(stack_name: str, req: SetTierRequest, request: Request,
+                   state: DashboardState = Depends(get_state),
+                   user: dict = Depends(require_role("admin"))):
+    if not audit.audit_ready(request.app):
+        raise HTTPException(503, "The audit log is unavailable, so actions are paused.")
     stack = state.stacks.get(stack_name)
     if not stack:
         raise HTTPException(404, f"Stack '{stack_name}' not found")
@@ -86,6 +94,14 @@ async def set_tier(stack_name: str, req: SetTierRequest, state: DashboardState =
         message += f" — stopped {', '.join(sorted(to_stop))}"
     if errors:
         message += f" (errors: {', '.join(errors)})"
+    await audit.record(request.scope, user, action="stack-tier", target=f"{stack_name}={req.tier}",
+                       outcome="failed" if errors else "ok", status=200,
+                       detail={"from": old_tier, "started": sorted(to_start), "stopped": sorted(to_stop),
+                               "errors": errors})
+    if to_start or to_stop:
+        audit.notify(state.vps_provider,
+                     f"🔧 <b>ops</b> {escape(user['username'])} set {escape(stack_name)} to {escape(req.tier)}: "
+                     f"stopped {len(to_stop)}, started {len(to_start)}" + (f", {len(errors)} errors" if errors else ""))
 
     return {
         "stack": stack_name,

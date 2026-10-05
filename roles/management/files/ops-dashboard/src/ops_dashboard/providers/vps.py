@@ -71,9 +71,13 @@ class VpsProvider(Provider):
         # podman values: "no" | "on-failure" | "always"
         return out.strip() in {"always", "on-failure"}
 
+    # The exact host commands, shared with the audit log so it records what ran.
+    START_CMD = "podman start {name}"
+    STOP_CMD = "podman stop -t 2 {name}"
+
     async def start_service(self, service: Service) -> tuple[bool, str]:
         logger.info(f"Starting service: {service.name}")
-        _, rc = await self._ssh_command(f"podman start {service.name}", timeout=10)
+        _, rc = await self._ssh_command(self.START_CMD.format(name=service.name), timeout=10)
         if rc != 0:
             return False, "podman start failed"
         if await self._poll_until(service, ServiceStatus.RUNNING):
@@ -84,7 +88,7 @@ class VpsProvider(Provider):
         logger.info(f"Stopping service: {service.name}")
         pod_restart = await self._pod_has_restart_policy(service.pod) if service.pod else False
 
-        _, rc = await self._ssh_command(f"podman stop -t 2 {service.name}", timeout=10)
+        _, rc = await self._ssh_command(self.STOP_CMD.format(name=service.name), timeout=10)
         if rc != 0:
             return False, "podman stop failed"
 

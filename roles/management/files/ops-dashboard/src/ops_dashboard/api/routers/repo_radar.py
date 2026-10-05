@@ -21,9 +21,11 @@ import logging
 import os
 import time
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from ...providers.vps import VpsProvider
+from .. import audit
+from ..auth import require_role
 
 logger = logging.getLogger(__name__)
 
@@ -163,8 +165,10 @@ async def vps_scan_loop(app) -> None:
 
 
 @router.post("/rescan")
-async def rescan(request: Request):
+async def rescan(request: Request, user: dict = Depends(require_role("operator"))):
     if not VPS_ROOT:
         raise HTTPException(status_code=404, detail="VPS self-scan disabled")
     ok = await scan_vps_once(request.app.state.db_pool)
+    await audit.record(request.scope, user, action="repo-rescan", target="vps", outcome="ok" if ok else "failed",
+                       status=200, detail={"command": f"node {VPS_SCANNER} --json {VPS_ROOT}"})
     return {"ok": ok, "host": "vps"}
