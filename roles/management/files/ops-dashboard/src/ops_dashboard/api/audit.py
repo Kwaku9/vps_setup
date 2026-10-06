@@ -13,6 +13,14 @@ import logging
 import shlex
 
 logger = logging.getLogger("ops_audit")
+# Uvicorn leaves the root logger at WARNING, which would drop these INFO lines
+# before they reach stdout (and so Loki). Give the audit logger its own handler.
+if not logger.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(_h)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 _INSERT = """INSERT INTO sessions.ops_audit
     (username, role, action, target, via, outcome, method, route, status, client_ip, user_agent, detail)

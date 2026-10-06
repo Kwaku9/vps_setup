@@ -79,3 +79,11 @@ def test_unknown_service_is_audited_as_refused(monkeypatch):
     c, events, alerts = make("admin", monkeypatch=monkeypatch)
     assert c.post("/api/actions/start/nope").status_code == 404
     assert events[-1]["outcome"] == "refused"
+
+
+def test_audit_logger_emits_info_on_its_own():
+    import logging
+    lg = logging.getLogger("ops_audit")
+    assert lg.isEnabledFor(logging.INFO)          # not filtered by uvicorn's WARNING root
+    assert lg.propagate is False
+    assert any(isinstance(h, logging.StreamHandler) for h in lg.handlers)
