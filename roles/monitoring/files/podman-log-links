@@ -1,0 +1,24 @@
+#!/bin/sh
+# Keep /var/log/containers/<name>.log pointing at each container's podman
+# k8s-file log (overlay-containers/<id>/userdata/ctr.log), the layout
+# Kubernetes uses. Alloy tails these files read-only, so log collection needs
+# neither the podman API socket (root-equivalent on this rootful host) nor a
+# writable mount. Container ids change on every recreate, hence every minute.
+set -eu
+DIR=/var/log/containers
+STORE=/var/lib/containers/storage/overlay-containers
+mkdir -p "$DIR"
+
+podman ps -a --no-trunc --format '{{.ID}} {{.Names}}' | while read -r id name; do
+    case "$name" in *-infra) continue ;; esac
+    log="$STORE/$id/userdata/ctr.log"
+    [ -f "$log" ] || continue
+    link="$DIR/$name.log"
+    [ "$(readlink "$link" 2>/dev/null)" = "$log" ] || ln -sfn "$log" "$link"
+done
+
+# Drop links whose container is gone (target no longer exists).
+for link in "$DIR"/*.log; do
+    [ -L "$link" ] && [ ! -e "$link" ] && rm -f "$link"
+done
+exit 0
