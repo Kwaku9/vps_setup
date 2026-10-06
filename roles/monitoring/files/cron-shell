@@ -10,6 +10,8 @@
 #   cron_job_last_run_timestamp_seconds{cron_job} when it last finished
 #   cron_job_last_duration_seconds{cron_job}      how long it took
 #   cron_job_last_success_timestamp_seconds{...}  last run that exited 0
+#   cron_job_last_cpu_seconds{cron_job}           user+system CPU of the last run
+#   cron_job_last_max_rss_bytes{cron_job}         peak memory of the last run
 # The job's own exit status is returned unchanged, and a failure to write the
 # metrics never affects the job. The label is cron_job, not job: node-exporter
 # scrapes already carry job="node-exporter".
@@ -17,8 +19,17 @@
 [ "$1" = "-c" ] || exec /bin/sh "$@"
 cmd=$2
 start=$(date +%s)
-/bin/sh -c "$cmd"
-rc=$?
+# BusyBox `time -v -o FILE` measures CPU and peak memory, writes its report to
+# FILE only, and returns the job's own exit status; the job's stdout/stderr are
+# untouched. Without it (or a temp file), run the job plainly.
+tf=$(mktemp /tmp/.cron-time.XXXXXX 2>/dev/null) || tf=
+if [ -n "$tf" ] && busybox time -v -o /dev/null true >/dev/null 2>&1; then
+    busybox time -v -o "$tf" /bin/sh -c "$cmd"
+    rc=$?
+else
+    /bin/sh -c "$cmd"
+    rc=$?
+fi
 end=$(date +%s)
 
 {
@@ -33,6 +44,11 @@ end=$(date +%s)
     label=$(printf '%s' "$name" | sed 's/\\/\\\\/g; s/"/\\"/g')
     file="$dir/cron_$slug.prom"
     last_ok=$(awk '/^cron_job_last_success_timestamp_seconds/ {print $NF}' "$file" 2>/dev/null)
+    cpu= rss=
+    if [ -n "$tf" ] && [ -s "$tf" ]; then
+        cpu=$(awk -F': ' '/User time|System time/ {s += $2} END {if (NR) printf "%.2f", s}' "$tf")
+        rss=$(awk -F': ' '/Maximum resident set size/ {print $2 * 1024}' "$tf")
+    fi
     [ "$rc" -eq 0 ] && last_ok=$end
     if tmp=$(mktemp "$dir/.cron_$slug.XXXXXX"); then
         {
@@ -40,10 +56,13 @@ end=$(date +%s)
             echo "cron_job_last_run_timestamp_seconds{cron_job=\"$label\"} $end"
             echo "cron_job_last_duration_seconds{cron_job=\"$label\"} $((end - start))"
             [ -n "$last_ok" ] && echo "cron_job_last_success_timestamp_seconds{cron_job=\"$label\"} $last_ok"
+            [ -n "$cpu" ] && echo "cron_job_last_cpu_seconds{cron_job=\"$label\"} $cpu"
+            [ -n "$rss" ] && echo "cron_job_last_max_rss_bytes{cron_job=\"$label\"} $rss"
         } > "$tmp"
         # 0644: node-exporter is not root; a 0600 .prom drops every series in it.
         chmod 0644 "$tmp" && mv -f "$tmp" "$file"
     fi
 } 2>/dev/null || true
+[ -n "$tf" ] && rm -f "$tf"
 
 exit "$rc"
