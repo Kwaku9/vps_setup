@@ -103,6 +103,7 @@ WITH d WHERE d.sources.db.ok
 UNWIND d.datastores AS s
 MERGE (x:Datastore {name: s.name})
 SET x.engine = s.engine, x.bytes = s.bytes, x.state = s.state, x.roles = s.roles, x.mtime = s.mtime,
+    x.retention = s.retention,
     x.src = 'db', x.seen = datetime(d.run)
 WITH d, s, x WHERE s.container IS NOT NULL
 MATCH (c:Container {name: s.container})
@@ -160,7 +161,16 @@ WITH d WHERE d.sources.cron.ok
 UNWIND d.jobs AS j
 MERGE (x:ScheduledJob {name: j.name})
 SET x.schedule = j.schedule, x.frequency = j.frequency, x.command = j.command,
-    x.ansible_managed = j.managed, x.log = j.log, x.src = 'cron', x.seen = datetime(d.run);
+    x.ansible_managed = j.managed, x.log = j.log, x.purpose = j.purpose, x.missing = false,
+    x.src = 'cron', x.seen = datetime(d.run);
+
+// Defined in Ansible but not in the live crontab (scripts source computes it).
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.cron.ok AND d.sources.scripts.ok
+UNWIND coalesce(d.cron_missing, []) AS m
+MERGE (x:ScheduledJob {name: m.name})
+SET x.missing = true, x.ansible_managed = true, x.role = m.role, x.purpose = m.purpose,
+    x.conditional = m.conditional, x.src = 'cron', x.seen = datetime(d.run);
 
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
 WITH d WHERE d.sources.cron.ok
@@ -273,7 +283,7 @@ WITH d WHERE d.sources.scripts.ok
 UNWIND d.scripts AS s
 MERGE (x:Script {path: s.path})
 SET x.name = s.name, x.lang = s.lang, x.bytes = s.bytes, x.sha = s.sha, x.mtime = s.mtime,
-    x.source = s.source, x.src = 'scripts', x.seen = datetime(d.run);
+    x.source = s.source, x.summary = s.summary, x.src = 'scripts', x.seen = datetime(d.run);
 
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
 WITH d WHERE d.sources.scripts.ok
