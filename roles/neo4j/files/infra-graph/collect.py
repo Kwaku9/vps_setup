@@ -1840,6 +1840,197 @@ def collect_pipelines(out):
     out["pipelines_note"] = status_note
 
 
+# ───────────────────────────── alert rules ─────────────────────────────
+# What each vmalert / Grafana rule watches and where it pages, so anything
+# nobody is alerted about stands out. Rules are written against METRICS, so a
+# rule's targets are worked out from the metric families in its expression;
+# `up{job=...}` goes through VictoriaMetrics' scrape config to containers.
+VMALERT_CONTAINER = "vmalert"
+VM_CONTAINER = "victoriametrics"
+# metric-name pattern -> (label, target). Target "*" = every container.
+METRIC_TARGETS = [
+    (r"^(podman_container_|container:)", "Container", "*"),
+    (r"^pg_", "Container", ["postgres", "ai-stack-postgres", "authentik-postgres"]),
+    (r"^neo4j_collector_", "ScheduledJob", "neo4j metrics"),
+    (r"^neo4j_", "Container", "neo4j-db"),
+    (r"^redis_", "Container", "redis"),
+    (r"litellm", "Container", "litellm"),
+    (r"^cloudflared_", "Container", "cloudflared"),
+    (r"^traefik", "Container", "traefik"),
+    (r"^webui_", "Container", "open-webui"),
+    (r"^otelcol_", "Container", "alloy"),
+    (r"^squid_", "Host", None),
+    (r"^vps_backup_", "ScheduledJob", "vps-daily-backup"),
+    (r"^trivy_", "ScheduledJob", "trivy-scan-metrics"),
+    (r"^honeypot_evidence", "ScheduledJob", "honeypot evidence export"),
+    (r"^honeypot_", "Container", "honeypot"),
+    (r"^catalog_api_", "Container", "catalog-api"),
+    (r"^crowdsec_cloudflare_", "ScheduledJob", "crowdsec-cloudflare-sync"),
+    (r"^crowdsec_|^cs_", "Container", "crowdsec"),
+    (r"^(instance:node_|node_)", "Host", None),
+    (r"^authentik_", "Container", "authentik-server"),
+    (r"^infra_graph_", "ScheduledJob", "infra-graph-sync"),
+]
+PROMQL_WORDS = {"sum", "rate", "increase", "absent", "avg_over_time", "max_over_time", "min_over_time", "count", "by",
+                "on", "and", "or", "unless", "without", "clamp_min", "clamp_max", "histogram_quantile", "time", "max",
+                "min", "avg", "topk", "bottomk", "irate", "delta", "deriv", "label_replace", "abs", "ignoring",
+                "group_left", "group_right", "bool", "offset", "count_over_time", "sum_over_time", "vector", "scalar",
+                "le", "le_", "inf"}
+
+
+def _expr_metrics(expr):
+    """Metric names used in a PromQL/MetricsQL expression, with their {...} selectors."""
+    out = []
+    for m in re.finditer(r"([a-zA-Z_:][a-zA-Z0-9_:]*)\s*(\{[^}]*\})?", expr or ""):
+        name, sel = m[1], m[2] or ""
+        start = m.start()
+        if name.lower() in PROMQL_WORDS or (start > 0 and expr[start - 1] in "\"'=~!"):
+            continue
+        nxt = expr[m.end():m.end() + 1]
+        if nxt == "(" and not sel:   # a function call, not a metric
+            continue
+        if re.fullmatch(r"\d.*", name):
+            continue
+        out.append((name, sel))
+    return out
+
+
+def _scrape_jobs(out, resolver):
+    """job -> containers (or the host) from VictoriaMetrics' scrape config."""
+    vm = next((c for c in out["containers"] if c["name"] == VM_CONTAINER), None)
+    src = next((m["source"] for m in (vm or {}).get("mounts", []) if m.get("dest") == "/etc/victoriametrics"), None)
+    jobs = {}
+    if not src:
+        return jobs
+    with open(os.path.join(src, "scrape.yml")) as fh:
+        cfg = yaml.safe_load(fh) or {}
+    for j in cfg.get("scrape_configs", []):
+        tgts = []
+        for sc in j.get("static_configs", []):
+            for t in sc.get("targets", []):
+                host, _, port = t.partition(":")
+                if host in ("host.containers.internal", "host-gateway"):
+                    tgts.append(("Host", out["host"]))
+                    continue
+                r = resolver.resolve(host, port, VM_CONTAINER)
+                if r:
+                    tgts.append(("Container", r) if r in resolver.by_name else ("Pod", r))
+                    continue
+                # A pod address (or localhost inside one) whose listener the
+                # resolver cannot pin down: the job name usually names the
+                # container (job litellm -> litellm); else credit the pod.
+                pod = host if host in resolver.pod_members else \
+                    (vm["pod"] if host in ("localhost", "127.0.0.1") and vm and vm["pod"] else None)
+                if pod:
+                    members = [c["name"] for c in resolver.pod_members.get(pod, [])]
+                    jn = j["job_name"]
+                    hit = next((m for m in members if m == jn), None) or \
+                        next((m for m in members if m == jn + "-server"), None) or \
+                        next((m for m in members if m.startswith(jn + "-")), None)
+                    tgts.append(("Container", hit) if hit else ("Pod", pod))
+        jobs[j["job_name"]] = tgts
+    return jobs
+
+
+def _watches(expr, jobs, host):
+    """(targets, covers_all_containers) for one rule expression."""
+    targets, all_containers = set(), False
+    for name, sel in _expr_metrics(expr):
+        if name == "up":
+            pos = re.findall(r'job\s*=\s*"([^"]+)"', sel)
+            neg = re.findall(r'job\s*!=\s*"([^"]+)"', sel)
+            rx = re.findall(r'job\s*=~\s*"([^"]+)"', sel)
+            chosen = [j for j in jobs if (not pos and not rx or j in pos or any(re.fullmatch(r, j) for r in rx))
+                      and j not in neg]
+            for j in chosen:
+                targets |= set(jobs[j])
+            continue
+        for pat, label, target in METRIC_TARGETS:
+            if re.search(pat, name):
+                if target == "*":
+                    all_containers = True
+                elif label == "Host":
+                    targets.add(("Host", host))
+                else:
+                    for t in (target if isinstance(target, list) else [target]):
+                        targets.add((label, t))
+                break
+    return sorted(targets), all_containers
+
+
+def collect_alerts(out):
+    resolver = Resolver(out)
+    jobs = _scrape_jobs(out, resolver)
+    host = out["host"]
+    rules, notes = [], []
+
+    # vmalert: definitions from its mounted rule files, live state from its API.
+    vma = next((c for c in out["containers"] if c["name"] == VMALERT_CONTAINER), None)
+    rules_dir = next((m["source"] for m in (vma or {}).get("mounts", []) if m.get("dest") == "/etc/vmalert/rules"), None)
+    notifier = next((a.split("=", 1)[1] for a in (vma or {}).get("_cmd", []) if a.startswith("-notifier.url=")), None)
+    notifies = resolver.resolve(*(URL_RE.match(notifier)["host"], URL_RE.match(notifier)["port"])) if notifier and URL_RE.match(notifier) else None
+    live = {}
+    if vma and vma["state"] == "running":
+        ip = next((v for v in (resolver.by_name[vma["name"]]["networks"] or {}).values() if v), None)
+        try:
+            with urllib.request.urlopen(f"http://{ip}:8880/api/v1/rules", timeout=10) as r:
+                for g in json.load(r)["data"]["groups"]:
+                    for x in g["rules"]:
+                        live[(g["name"], x["name"])] = x
+        except Exception as exc:
+            notes.append(f"vmalert API unavailable: {exc}"[:120])
+    else:
+        notes.append("vmalert not running: definitions only, no live state")
+    for f in sorted(glob.glob(os.path.join(rules_dir or "/nonexistent", "*.yml"))):
+        with open(f) as fh:
+            doc = yaml.safe_load(fh) or {}
+        for g in doc.get("groups", []):
+            for x in g.get("rules", []):
+                if "alert" not in x:
+                    continue
+                expr = " ".join(str(x.get("expr", "")).split())
+                tg, allc = _watches(expr, jobs, host)
+                lv = live.get((g["name"], x["alert"]), {})
+                rules.append({"key": f'vmalert/{g["name"]}/{x["alert"]}', "source": "vmalert", "group": g["name"],
+                              "name": x["alert"], "severity": (x.get("labels") or {}).get("severity"),
+                              "expr": expr[:500], "for": x.get("for"), "watches": [{"label": l, "name": n} for l, n in tg],
+                              "covers_all_containers": allc, "state": lv.get("state"), "health": lv.get("health"),
+                              "last_error": (lv.get("lastError") or "")[:200] or None,
+                              "notifies": notifies, "file": f})
+
+    # Grafana unified alerting (same admin login the grafana source uses).
+    try:
+        env = env_of(next(c for c in out["containers"] if c["name"] == "grafana"))
+        tok = base64.b64encode(f'{env["GF_SECURITY_ADMIN_USER"]}:{env["GF_SECURITY_ADMIN_PASSWORD"]}'.encode()).decode()
+        req = urllib.request.Request("http://127.0.0.1:3000/api/v1/provisioning/alert-rules",
+                                     headers={"Authorization": "Basic " + tok})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            for x in json.load(r):
+                expr = " ".join(str((q.get("model") or {}).get("expr", "")) for q in x.get("data", []))
+                tg, allc = _watches(expr, jobs, host)
+                rules.append({"key": f'grafana/{x["uid"]}', "source": "grafana", "group": x.get("ruleGroup"),
+                              "name": x.get("title"), "severity": (x.get("labels") or {}).get("severity"),
+                              "expr": expr[:500], "for": x.get("for"), "watches": [{"label": l, "name": n} for l, n in tg],
+                              "covers_all_containers": allc, "state": None, "health": None,
+                              "last_error": None, "notifies": "grafana-contact-points", "file": None,
+                              "paused": x.get("isPaused", False)})
+    except Exception as exc:
+        notes.append(f"Grafana rules unavailable: {exc}"[:120])
+    if not rules:
+        raise RuntimeError("implausible: no alert rules found")
+
+    # Coverage: what has a rule about it specifically.
+    watched = {(w["label"], w["name"]) for r in rules for w in r["watches"]}
+    out["alert_rules"] = rules
+    out["alert_coverage"] = {
+        "containers_unwatched": sorted(c["name"] for c in out["containers"] if ("Container", c["name"]) not in watched
+                                       and ("Pod", c["pod"]) not in watched),
+        "jobs_unwatched": sorted(j["name"] for j in out.get("jobs", []) if ("ScheduledJob", j["name"]) not in watched),
+        "no_container_down_rule": not any("state" in r["expr"] and "podman_container" in r["expr"] for r in rules),
+    }
+    out["alerts_note"] = "; ".join(notes) or None
+
+
 # ───────────────────────────── inventory markdown ─────────────────────────────
 def fmt_bytes(b):
     if b is None:
@@ -1886,6 +2077,19 @@ def write_inventory(out, path):
     for a in sorted(out.get("api_paths", []), key=lambda a: -a["hits"])[:60]:
         L.append(f'| {a["router"]} | {a["method"]} | `{a["path"]}` | {a["hits"]:,} | {a["errors_4xx"]} | '
                  f'{a["errors_5xx"]} | {a["p95_ms"]} |')
+    ars = out.get("alert_rules", [])
+    if ars:
+        cov = out.get("alert_coverage", {})
+        L += ["", "## Alert rules and coverage", "", out.get("alerts_note") or "",
+              f'Containers with no rule about them specifically ({len(cov.get("containers_unwatched", []))}): '
+              + ", ".join(cov.get("containers_unwatched", [])), "",
+              f'Scheduled jobs with no rule ({len(cov.get("jobs_unwatched", []))}): ' + ", ".join(cov.get("jobs_unwatched", [])), "",
+              ("No rule fires when a container stops." if cov.get("no_container_down_rule") else ""), "",
+              "| Rule | Source | Severity | Watches | State | Notifies |", "|---|---|---|---|---|---|"]
+        for r in sorted(ars, key=lambda r: (r["source"], r.get("group") or "", r["name"] or "")):
+            w = ", ".join(x["name"] for x in r["watches"]) + (" (+ every container)" if r["covers_all_containers"] else "")
+            L.append(f'| {r["name"]} | {r["source"]} | {r.get("severity") or "—"} | {w or "—"} | '
+                     f'{r.get("state") or "—"}{" ⚠ " + r["last_error"] if r.get("last_error") else ""} | {r.get("notifies") or "—"} |')
     pipes = out.get("pipelines", [])
     if pipes:
         L += ["", "## CI/CD pipelines", "", out.get("pipelines_note") or "",
@@ -1958,11 +2162,12 @@ def main():
     steps = [("podman", collect_podman), ("db", collect_dbs), ("cron", collect_cron), ("scripts", collect_scripts),
              ("traefik", collect_traefik), ("ingress", collect_ingress), ("egress", collect_egress),
              ("creds", collect_creds), ("exposure", collect_exposure), ("pipelines", collect_pipelines),
+             ("alerts", collect_alerts),
              ("grafana", collect_grafana), ("backup", collect_backup), ("mcp", collect_mcp)]
     # A source is skipped (not run, not reconciled) when one it builds on failed.
     needs = {"db": ["podman"], "traefik": ["podman"], "grafana": ["podman"], "backup": ["podman"],
              "mcp": ["podman"], "scripts": ["podman", "cron"], "ingress": ["traefik"], "egress": ["podman"],
-             "creds": ["podman"], "exposure": ["traefik"]}
+             "creds": ["podman"], "exposure": ["traefik"], "alerts": ["podman", "cron"]}
     for name, fn in steps:
         t0 = time.time()
         failed = [n for n in needs.get(name, []) if not out["sources"].get(n, {}).get("ok")]
@@ -1987,7 +2192,7 @@ def main():
                       "counts": {k: len(out.get(k, [])) for k in
                                  ("pods", "containers", "networks", "jobs", "datastores", "routes", "dashboards", "datasources",
                                   "mcp_servers", "scripts", "apis", "egress", "api_paths", "credentials",
-                                  "unmanaged_secrets", "public_endpoints", "pipelines")},
+                                  "unmanaged_secrets", "public_endpoints", "pipelines", "alert_rules")},
                       "db_warnings": out.get("db_warnings", [])}, indent=1))
     return 0 if all(s["ok"] for s in out["sources"].values()) else 2
 
