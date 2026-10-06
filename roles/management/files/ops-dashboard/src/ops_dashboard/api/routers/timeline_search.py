@@ -334,6 +334,7 @@ async def transcript(request: Request, uuid: str, max_chars: int = Query(6000, g
         rows = await conn.fetch(
             """SELECT m.type, m.content_text FROM sessions.messages m
                WHERE m.session_id = $1 AND m.type IN ('user','assistant')
+                 AND NOT coalesce(m.is_sidechain, false)
                  AND m.content_text IS NOT NULL AND m.content_text ~ '[^[:space:]]'
                ORDER BY m.sequence_num""", meta["id"])
     turns, used = [], 0

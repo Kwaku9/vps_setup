@@ -42,6 +42,7 @@ WITH ev AS (
            timestamp,
            LAG(timestamp) OVER (PARTITION BY session_id ORDER BY timestamp) AS prev
     FROM sessions.messages
+    WHERE NOT coalesce(is_sidechain, false)
 ),
 active AS (
     SELECT session_id,
