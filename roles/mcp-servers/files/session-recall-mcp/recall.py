@@ -115,6 +115,7 @@ def get_session(conn, session_uuid, max_chars=8000):
            JOIN sessions.sessions s ON s.id = m.session_id
            WHERE s.session_uuid = %s
              AND m.type IN ('user','assistant')
+             AND NOT coalesce(m.is_sidechain, false)
              AND m.content_text IS NOT NULL
              AND length(trim(m.content_text)) > 0
            ORDER BY m.sequence_num""",

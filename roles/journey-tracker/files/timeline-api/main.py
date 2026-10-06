@@ -369,6 +369,7 @@ def transcript(uuid: str, max_chars: int = Query(6000, ge=500, le=20000)):
                FROM sessions.messages m
                WHERE m.session_id = %s
                  AND m.type IN ('user','assistant')
+                 AND NOT coalesce(m.is_sidechain, false)
                  AND m.content_text IS NOT NULL
                  AND m.content_text ~ '[^[:space:]]'
                ORDER BY m.sequence_num""",

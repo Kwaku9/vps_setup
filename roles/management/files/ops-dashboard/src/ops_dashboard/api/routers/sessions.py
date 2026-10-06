@@ -48,6 +48,7 @@ async def transcript(session_uuid: str, since: int = 0, request: Request = None)
                  FROM sessions.messages m
                  JOIN sessions.sessions s ON s.id = m.session_id
                 WHERE s.session_uuid = $1 AND m.sequence_num > $2
+                  AND NOT coalesce(m.is_sidechain, false)
                 ORDER BY m.sequence_num ASC LIMIT 500""",
             session_uuid, since,
         )
