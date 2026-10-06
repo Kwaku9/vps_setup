@@ -762,6 +762,7 @@ def read_json_log(pattern, since):
 
 
 # ───────────────────────────── scripts ─────────────────────────────
+FILE_REF_RE = re.compile(r"(?<![\w.-])(/(?:opt/compose|etc|root/\.config|usr/local/etc)/[\w./+-]+)")
 SCRIPT_RE = re.compile(r"(?<![\w.-])(/(?:usr/local/s?bin|opt/compose|opt/scripts|root/bin)/[\w./+-]+)")
 REL_SCRIPT_RE = re.compile(r"\$\{?(?:HERE|DIR|SCRIPT_DIR|BASEDIR)\}?/([\w./+-]+)")
 TEXT_URL_RE = re.compile(r"\b(https?)://([A-Za-z0-9._-]+)(?::(\d+))?(/[^\s\"'`<>)\]}]*)?")
@@ -857,7 +858,7 @@ def analyze_script(path, resolver, containers, sources):
     st = os.stat(path)
     info = {"path": path, "name": os.path.basename(path), "bytes": st.st_size, "mtime": int(st.st_mtime),
             "sha": hashlib.sha1(raw).hexdigest()[:12], "lang": None, "source": None,
-            "invokes": [], "execs": [], "calls": [], "routes": [], "externals": []}
+            "invokes": [], "execs": [], "calls": [], "routes": [], "externals": [], "reads": []}
     if b"\0" in raw[:4096]:
         info["lang"] = "binary"
         return info
@@ -899,6 +900,10 @@ def analyze_script(path, resolver, containers, sources):
     inv = set(SCRIPT_RE.findall(body))
     inv |= {os.path.normpath(os.path.join(os.path.dirname(path), r)) for r in REL_SCRIPT_RE.findall(body)}
     info["invokes"] = sorted(p for p in inv if p != path and is_script(p))
+    # Data files it reads (token files, config files); the credentials source
+    # links a script to the secrets rendered into these.
+    info["reads"] = sorted({p for p in FILE_REF_RE.findall(code)
+                            if p != path and os.path.isfile(p) and not is_script(p)})
 
     # Which repo file deployed it: the Ansible task whose dest is this path;
     # else an identical files/ copy; else a lone same-named candidate.
@@ -1095,6 +1100,252 @@ def merge_apis(out):
     out["apis"] = [dict(a, hosts=sorted(a["hosts"])) for a in apis.values()]
 
 
+# ───────────────────────────── credentials ─────────────────────────────
+# Which secret is used where, what it unlocks, and whether it is healthy.
+# Inputs: vault-index.json (written at deploy time: key names + keyed
+# fingerprints, never values), the roles' code (declared use), and live
+# container env (observed use, fingerprinted here with the same key). The
+# fingerprint key and history stay on this host; the graph only ever gets
+# names, places, dates and flags.
+HERE = os.environ.get("INFRA_GRAPH_DIR") or os.path.dirname(os.path.abspath(__file__))
+VAULT_INDEX = os.path.join(HERE, "vault-index.json")
+FP_KEY = os.path.join(HERE, ".fp-key")
+
+# Vault keys that hold a secret (vs ids, urls, emails, coordinates...).
+SECRET_NAME_RE = re.compile(r"(?i)(key|token|secret|passw|pass$|salt|auth|_pat$|license|dsn|credential|sid$)")
+NOT_SECRET_RE = re.compile(r"(?i)(_ids?$|url$|uri$|email$|_lat$|_lon$|name$|domain|bucket|subnet|dns$|^ansible_user$"
+                           r"|user(name)?$|zone_id|host$|port$|from$|voice_id|avatar_id|look_id|project$|chat_id"
+                           r"|phone|fingerprint$|key_id$|key_type$|key_email$|key_name$|account_id$)")
+ENV_SECRET_RE = re.compile(r"(?i)(token|secret|passw|api_?key|auth_?key|private_key|credential|_dsn$|_pat$)")
+URL_PASSWORD_RE = re.compile(r"^[a-z][a-z0-9+.-]*://[^:/@\s]+:([^@\s]+)@", re.I)
+
+# What a key unlocks: (name pattern, graph label, node name). First match wins.
+GRANTS = [
+    (r"^cloudflare_tunnel_token$", "External", "Cloudflare Edge"),
+    (r"^cloudflare_|^crowdsec_cloudflare_token$", "External", "Cloudflare API"),
+    (r"^r2_|^cf_s3", "External", "Cloudflare R2"),
+    (r"^telegram_bot2?_token$|^telegram_webhook_secret$", "External", "api.telegram.org"),
+    (r"^openai_api_key$", "External", "OpenAI"), (r"^anthropic_api_key$", "External", "Anthropic"),
+    (r"gemini_api_key$", "External", "Google Gemini API"), (r"^openrouter_api_key$", "External", "OpenRouter"),
+    (r"^groq_api_key$", "External", "Groq"), (r"^cohere_api_key$", "External", "Cohere"),
+    (r"^xai_api_key$", "External", "xAI"), (r"^deepseek_api_key$", "External", "DeepSeek"),
+    (r"^resend_api_key$|^authentik_smtp_password$", "External", "Resend SMTP"),
+    (r"^maxmind_", "External", "MaxMind"), (r"abuseipdb", "External", "abuseipdb.com"),
+    (r"^a?i?s{1,2}tream_api_key$|^aistream_api_key$", "External", "aisstream.io"),
+    (r"wigle", "External", "WiGLE API"), (r"^vault_larouge_look_reader_", "External", "AWS dynamodb"),
+    (r"^ibkr_", "External", "IBKR"), (r"^twillio_", "External", "Twilio"),
+    (r"^heygen_", "External", "HeyGen"), (r"^elevenlabs_", "External", "ElevenLabs"),
+    (r"^livekit_|^liveavatar_", "External", "LiveKit"), (r"^runpod_", "External", "RunPod"),
+    (r"^vast_", "External", "Vast.ai"), (r"^serper_", "External", "Serper"), (r"^brave_", "External", "Brave Search"),
+    (r"stripe", "External", "Stripe"), (r"posthog", "External", "PostHog"),
+    (r"^github_runner_", "External", "GitHub"), (r"tailscale_authkey$", "External", "Tailscale"),
+    (r"^gdrive_", "External", "Google Docs/Drive API"), (r"^alpha_vantage", "External", "Alpha Vantage"),
+    (r"^google_maps|maps_api_key$", "External", "Google Maps"), (r"cesium_ion", "External", "Cesium ion"),
+    (r"^acled|_acled_", "External", "ACLED"), (r"firms_map|^firma_map", "External", "NASA FIRMS"),
+    (r"^nuitee", "External", "Nuitee"),
+    # Internal services: the container whose access the secret controls.
+    (r"^ai_stack_postgres_password$", "Container", "ai-stack-postgres"),
+    (r"^pg_\w+_password$|^postgres_password$", "Container", "postgres"),
+    (r"^neo4j_password$", "Container", "neo4j-db"), (r"^redis_password$", "Container", "redis"),
+    (r"^authentik_", "Container", "authentik-server"),
+    (r"^litellm_|^openwebui_openai_api_keys?$", "Container", "litellm"),
+    (r"^openwebui_|^searxng_secret_key$", "Container", "open-webui"),
+    (r"^grafana_reports_auth_token$", "Container", "grafana-reports"),
+    (r"^grafana_|^image_renderer_token$", "Container", "grafana"),
+    (r"^telegram_gateway_auth_token$", "Container", "telegram-gateway"),
+    (r"^session_ingest_token$|^ops_session_secret$", "Container", "ops-dashboard"),
+    (r"^ib_mcp_auth_token$", "Container", "ib-mcp-server"),
+    (r"^session_recall_mcp_auth_token$", "Container", "session-recall-mcp"),
+    (r"^timeline_context_api_key$", "Container", "timeline-context-api"),
+    (r"^timeline_api_key$", "Container", "timeline-api"),
+    (r"^crowdsec_bouncer|^threat_map_crowdsec_key$", "Container", "crowdsec"),
+    (r"^otel_ingest_token$", "Container", "alloy"),
+    (r"^pg_catalog_api_password$|^marketplace_", "Container", "catalog-api"),
+    (r"^portainer_password$", "Container", "portainer"),
+]
+
+
+def is_secret_name(name):
+    return bool(SECRET_NAME_RE.search(name)) and not NOT_SECRET_RE.search(name)
+
+
+def grant_of(name):
+    for pat, label, target in GRANTS:
+        if re.search(pat, name, re.I):
+            return label, target
+    return None, None
+
+
+def _fp(value, key):
+    return hashlib.sha256((value + key).encode()).hexdigest()[:16]
+
+
+JINJA_EXPR_RE = re.compile(r"\{\{(.*?)\}\}", re.S)
+IDENT_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\b")
+
+
+def vault_refs(text, names):
+    """Vault key names used inside {{ ... }} expressions in text."""
+    refs = set()
+    for expr in JINJA_EXPR_RE.findall(text or ""):
+        refs |= {i for i in IDENT_RE.findall(expr) if i in names}
+    return refs
+
+
+def declared_uses(names):
+    """(env injections, rendered files, files referencing each key) from the roles' code."""
+    env_uses, renders, mentions = [], {}, {}
+    dests, _ = repo_sources()
+    src_to_dest = {}
+    for dest, src in dests.items():
+        src_to_dest.setdefault(src, []).append(dest)
+    roles = os.path.join(REPO, "roles")
+    if not os.path.isdir(roles):
+        return env_uses, renders, mentions
+    word = re.compile(r"\b(" + "|".join(sorted(map(re.escape, names), key=len, reverse=True)) + r")\b") if names else None
+    for dirpath, dirs, files in os.walk(roles):
+        dirs[:] = [d for d in dirs if d not in ("node_modules", ".git", "__pycache__")]
+        for f in files:
+            p = os.path.join(dirpath, f)
+            if not re.search(r"\.(ya?ml|j2|sh|py|conf|cfg|ini|json|alloy|toml)$", f):
+                continue
+            try:
+                with open(p, errors="replace") as fh:
+                    text = fh.read(2_000_000)
+            except OSError:
+                continue
+            rel = p.replace(REPO + "/", "")
+            if word:
+                for n in set(word.findall(text)):
+                    mentions.setdefault(n, set()).add(rel)
+            if "/templates/" in p:
+                for n in vault_refs(text, names):
+                    for dest in src_to_dest.get(p, []):
+                        renders.setdefault(n, set()).add(dest)
+            if "/tasks/" in p and f.endswith((".yml", ".yaml")):
+                try:
+                    doc = yaml.safe_load(text)
+                except Exception:
+                    continue
+                for t in _tasks(doc):
+                    pc = t.get("containers.podman.podman_container") or t.get("podman_container")
+                    if isinstance(pc, dict) and isinstance(pc.get("name"), str) and "{{" not in pc["name"] \
+                            and isinstance(pc.get("env"), dict):
+                        for env_key, v in pc["env"].items():
+                            for n in vault_refs(str(v), names):
+                                env_uses.append({"container": pc["name"], "env": str(env_key), "name": n})
+                    for mod in ("copy", "ansible.builtin.copy"):
+                        a = t.get(mod)
+                        if isinstance(a, dict) and isinstance(a.get("content"), str) \
+                                and isinstance(a.get("dest"), str) and "{{" not in a["dest"]:
+                            for n in vault_refs(a["content"], names):
+                                renders.setdefault(n, set()).add(a["dest"])
+    return env_uses, renders, mentions
+
+
+def collect_creds(out):
+    with open(VAULT_INDEX) as fh:
+        index = json.load(fh)
+    with open(FP_KEY) as fh:
+        key = fh.read().strip()
+    if not index or not key:
+        raise RuntimeError("implausible: empty vault index or fingerprint key")
+
+    by_name = {}
+    for e in index:
+        by_name.setdefault(e["name"], []).append(e)
+    secrets = {n for n in by_name if is_secret_name(n)}
+    fp_owner = {}
+    for n in secrets:
+        for e in by_name[n]:
+            if not e["empty"]:
+                fp_owner.setdefault(e["fp"], set()).add(n)
+
+    # Observed: fingerprint every live env value (and passwords inside URLs).
+    observed = []      # {container, env, fp, names}
+    unmanaged = []     # secret-looking env values that match no vault key
+    for c in out["containers"]:
+        for k, v in env_of(c).items():
+            cands = [v] + URL_PASSWORD_RE.findall(v)
+            hits = set()
+            for val in cands:
+                if val:
+                    hits |= fp_owner.get(_fp(val, key), set())
+            if hits:
+                observed.append({"container": c["name"], "env": k, "fp": _fp(v, key), "names": sorted(hits)})
+            elif ENV_SECRET_RE.search(k) and v and not v.startswith(("/", "http://", "https://")) and len(v) >= 12:
+                unmanaged.append({"container": c["name"], "env": k})
+
+    env_decl, renders, mentions = declared_uses(set(by_name))
+    scripts = out.get("scripts", [])
+
+    # Rotation history: when did each key's current fingerprint first appear?
+    hist_path = os.path.join(out["_outdir"], "creds-state.json")
+    try:
+        with open(hist_path) as fh:
+            hist = json.load(fh)
+    except (OSError, ValueError):
+        hist = {}
+    run = out["run"]
+
+    creds = []
+    for n in sorted(secrets):
+        entries = by_name[n]
+        main = next((e for e in entries if e["file"] == "vault.yml"), entries[0])  # root vault wins in site.yml
+        fps = {e["fp"] for e in entries if not e["empty"]}
+        h = hist.setdefault(n, {})
+        if not main["empty"]:
+            h.setdefault(main["fp"], run)
+        containers = {}
+        for o in observed:
+            if n in o["names"]:
+                containers.setdefault(o["container"], {"env": o["env"], "observed": True, "matches_vault": True})
+        for d in env_decl:
+            if d["name"] == n:
+                live = next((o for o in observed if o["container"] == d["container"] and o["env"] == d["env"]), None)
+                slot = containers.setdefault(d["container"], {"env": d["env"], "observed": False})
+                slot["declared"] = True
+                if live is None:
+                    live_val = next((env_of(c).get(d["env"]) for c in out["containers"] if c["name"] == d["container"]), None)
+                    # Declared from this key but the running value matches nothing in the vault.
+                    slot["matches_vault"] = False if live_val else None
+        files = sorted(renders.get(n, []))
+        users = sorted({s["path"] for s in scripts
+                        if s["path"] in files or set(s.get("reads", [])) & set(files)})
+        label, target = grant_of(n)
+        others = sorted(set().union(*(fp_owner.get(f, set()) for f in fps)) - {n}) if fps else []
+        mentioned = sorted(m for m in mentions.get(n, []) if "vault" not in m)
+        creds.append({
+            "name": n,
+            "vault_files": sorted({e["file"] for e in entries}),
+            "duplicate_in_file": any(e["occurrences"] > 1 for e in entries),
+            "conflict": len(fps) > 1,                 # same key, different values in the two vault files
+            "empty": all(e["empty"] for e in entries),
+            "reused_as": others,                      # the same secret under other names
+            "rotated_at": h.get(main["fp"]) if not main["empty"] else None,
+            "tracking_since": min(h.values()) if h else run,
+            "containers": [{"container": c, **v} for c, v in sorted(containers.items())],
+            "drift": any(v.get("matches_vault") is False for v in containers.values()),
+            "files": files,
+            "scripts": users,
+            "grants_label": label, "grants": target,
+            "referenced_in": mentioned[:20],
+            # Nothing in this repo or on this host uses it. It may still be used
+            # off-box (the laptop, another project), so this is a prompt to
+            # check, not proof it is dead.
+            "unreferenced": not containers and not files and not mentioned,
+        })
+    tmp = hist_path + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(hist, fh)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, hist_path)
+
+    out["credentials"] = creds
+    out["unmanaged_secrets"] = unmanaged
+    out["vault_other_keys"] = sorted(set(by_name) - secrets)
+
+
 # ───────────────────────────── inventory markdown ─────────────────────────────
 def fmt_bytes(b):
     if b is None:
@@ -1141,6 +1392,23 @@ def write_inventory(out, path):
     for a in sorted(out.get("api_paths", []), key=lambda a: -a["hits"])[:60]:
         L.append(f'| {a["router"]} | {a["method"]} | `{a["path"]}` | {a["hits"]:,} | {a["errors_4xx"]} | '
                  f'{a["errors_5xx"]} | {a["p95_ms"]} |')
+    creds = out.get("credentials", [])
+    if creds:
+        L += ["", "## Credentials (names only; values never leave the vault)", "",
+              "| Key | Unlocks | Used by | Rotated (fingerprint since) | Flags |", "|---|---|---|---|---|"]
+        for c in creds:
+            used = [x["container"] for x in c["containers"]] + [os.path.basename(p) for p in c["scripts"]]
+            flags = [f for f, on in (("live value differs from vault", c["drift"]),
+                                     ("different values in the two vault files", c["conflict"]),
+                                     ("listed twice in one vault file", c["duplicate_in_file"]),
+                                     ("same value as " + ", ".join(c["reused_as"]), bool(c["reused_as"])),
+                                     ("unreferenced here", c["unreferenced"]), ("empty", c["empty"])) if on]
+            L.append(f'| {c["name"]} | {c["grants"] or "—"} | {", ".join(used) or "—"} | '
+                     f'{(c["rotated_at"] or "—")[:10]} | {"; ".join(flags) or "ok"} |')
+        um = out.get("unmanaged_secrets", [])
+        if um:
+            L += ["", "### Secret-looking container settings that match no vault key", ""]
+            L += [f'- {u["container"]}: `{u["env"]}`' for u in um]
     L += ["", "## Datastores and databases", "", "| Datastore | Engine | Container | Size | Databases |", "|---|---|---|---|---|"]
     for d in out.get("datastores", []):
         L.append(f'| {d["name"]} | {d["engine"]} | {d.get("container") or "—"} | {fmt_bytes(d["bytes"])} | '
@@ -1177,10 +1445,12 @@ def main():
     out = {"run": now_iso(), "host": HOST, "sources": {}, "_outdir": outdir}
     steps = [("podman", collect_podman), ("db", collect_dbs), ("cron", collect_cron), ("scripts", collect_scripts),
              ("traefik", collect_traefik), ("ingress", collect_ingress), ("egress", collect_egress),
+             ("creds", collect_creds),
              ("grafana", collect_grafana), ("backup", collect_backup), ("mcp", collect_mcp)]
     # A source is skipped (not run, not reconciled) when one it builds on failed.
     needs = {"db": ["podman"], "traefik": ["podman"], "grafana": ["podman"], "backup": ["podman"],
-             "mcp": ["podman"], "scripts": ["podman", "cron"], "ingress": ["traefik"], "egress": ["podman"]}
+             "mcp": ["podman"], "scripts": ["podman", "cron"], "ingress": ["traefik"], "egress": ["podman"],
+             "creds": ["podman"]}
     for name, fn in steps:
         t0 = time.time()
         failed = [n for n in needs.get(name, []) if not out["sources"].get(n, {}).get("ok")]
@@ -1204,7 +1474,8 @@ def main():
     print(json.dumps({"run": out["run"], "sources": out["sources"],
                       "counts": {k: len(out.get(k, [])) for k in
                                  ("pods", "containers", "networks", "jobs", "datastores", "routes", "dashboards", "datasources",
-                                  "mcp_servers", "scripts", "apis", "egress", "api_paths")},
+                                  "mcp_servers", "scripts", "apis", "egress", "api_paths", "credentials",
+                                  "unmanaged_secrets")},
                       "db_warnings": out.get("db_warnings", [])}, indent=1))
     return 0 if all(s["ok"] for s in out["sources"].values()) else 2
 
