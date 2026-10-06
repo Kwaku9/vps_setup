@@ -566,6 +566,45 @@ OPTIONAL MATCH (r:AlertRule)-[:WATCHES]->(j)
 WITH j, count(r) AS n
 SET j.alert_rules = n;
 
+// ---------- remote hosts: snapshots pushed by machines we cannot reach ----------
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.remote.ok
+UNWIND d.remote_hosts AS rh
+MERGE (h:Host {name: rh.name})
+SET h.hostname = rh.hostname, h.os = rh.os, h.snapshot_at = datetime(rh.received_at), h.stale = rh.stale,
+    h.repos = rh.repos, h.repos_dirty = rh.repos_dirty, h.repos_unpushed = rh.repos_unpushed, h.remote = true,
+    h.src = 'remote', h.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.remote.ok
+UNWIND d.remote_pipelines AS p
+MATCH (h:Host {name: p.host})
+MERGE (x:Pipeline {file: p.file})
+SET x.name = p.name, x.system = p.system, x.repo = p.repo, x.origin = p.origin, x.own = p.own, x.state = p.state,
+    x.runnable = p.state STARTS WITH 'runnable', x.triggers = [t IN coalesce(p.triggers, []) | toString(t)],
+    x.runner = p.runner, x.deploys = p.deploys, x.secret_names = p.secrets, x.host = p.host,
+    x.src = 'remote', x.seen = datetime(d.run)
+MERGE (x)-[r:ON_HOST]->(h) SET r.src = 'remote', r.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.remote.ok
+UNWIND d.remote_jobs AS j
+MATCH (h:Host {name: j.host})
+MERGE (x:ScheduledJob {name: j.name})
+SET x.schedule = j.schedule, x.kind = j.kind, x.command = j.command, x.last_result = j.last_result,
+    x.exit_status = j.exit_status, x.failing = j.failing, x.host = j.host, x.src = 'remote', x.seen = datetime(d.run)
+MERGE (x)-[r:RUNS_IN]->(h) SET r.src = 'remote', r.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.remote.ok
+UNWIND d.remote_endpoints AS e
+MATCH (h:Host {name: e.host_name})
+MERGE (x:PublicEndpoint {key: e.key})
+SET x.name = e.name, x.kind = e.kind, x.proto = e.proto, x.port = e.port, x.process = e.process,
+    x.reachable = e.reachable, x.via = e.via, x.flags = e.flags, x.flagged = size(e.flags) > 0,
+    x.host = e.host_name, x.src = 'remote', x.seen = datetime(d.run)
+MERGE (x)-[r:ON_HOST]->(h) SET r.src = 'remote', r.seen = datetime(d.run);
+
 // ---------- reconcile: delete what successful sources no longer see ----------
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
 WITH d, datetime(d.run) AS run
@@ -582,10 +621,23 @@ WITH d, datetime(d.run) AS run,
       Script:'scripts', Api:'ingress', Credential:'creds', PublicEndpoint:'exposure', Pipeline:'pipelines', AlertRule:'alerts'} AS owner
 UNWIND keys(owner) AS label
 WITH run, label, owner[label] AS src, d WHERE d.sources[owner[label]].ok
-MATCH (n) WHERE label IN labels(n) AND (n.seen IS NULL OR n.seen < run)
+// Only nodes this source owns: the same label can be fed by another source
+// (e.g. Pipeline / ScheduledJob / PublicEndpoint from the Fedora inventory,
+// src 'remote'), and a healthy VPS source must not delete those.
+MATCH (n) WHERE label IN labels(n) AND (n.seen IS NULL OR n.seen < run) AND coalesce(n.src, src) = src
 WITH label, collect(n) AS stale
 FOREACH (n IN stale | DETACH DELETE n)
 RETURN label AS deleted_label, size(stale) AS deleted;
+
+// Remote-host nodes share labels with VPS sources, so they are reconciled by
+// their own src: a host that stops pushing keeps its nodes (flagged stale)
+// until its snapshot file is removed.
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d, datetime(d.run) AS run WHERE d.sources.remote.ok
+MATCH (n) WHERE n.src = 'remote' AND n.seen < run
+WITH collect(n) AS stale
+FOREACH (n IN stale | DETACH DELETE n)
+RETURN 'remote' AS deleted_label, size(stale) AS deleted;
 
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
 WITH d, datetime(d.run) AS run

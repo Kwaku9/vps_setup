@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily workstation inventory push (before the VPS collector's 04:40 run)
+
+[Timer]
+OnCalendar=*-*-* 04:10
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
