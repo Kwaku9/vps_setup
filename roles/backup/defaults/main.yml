@@ -103,6 +103,12 @@ backup:
     # Cost: peak disk during a run rises from ~6G to ~16G — min_free_gb below
     # was raised to match. Run to verify: `vps-backup` then check the log.
     - /opt/podman-data/victoriametrics     # 5.5G  metrics + OHLC TSDB — ADDED 2026-09-15
+    # ADDED 2026-10-05 (115M). Append-only archive of the VPS's OWN raw Claude Code
+    # transcripts (roles/monitoring/files/archive-sessions.sh). Postgres holds only a
+    # REDACTED copy, so this is the sole unredacted source of record for VPS
+    # sessions; it was the one session store missing from the backup. Laptop
+    # sessions are covered via /opt/compose (session-ingestion/staging).
+    - /opt/session-archive
     # Added 2026-08-21. Honeypot hits live in Loki, and loki-data is
     # (correctly) dropped below as a transient log TSDB. But attacker telemetry
     # is not operational noise — it is EVIDENCE, and the only record of who
