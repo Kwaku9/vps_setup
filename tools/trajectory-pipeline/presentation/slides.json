@@ -1,0 +1,857 @@
+[
+  {
+    "ch": "01 / PURPOSE",
+    "title": "Your sessions become a curriculum.",
+    "sub": "A closed-loop learning pipeline for the workstation and VPS.",
+    "kind": "hero",
+    "items": [
+      [
+        "EXPERIENCE",
+        "Claude Code · Codex · runtime tools"
+      ],
+      [
+        "EVIDENCE",
+        "Verified trajectories + institutional memory"
+      ],
+      [
+        "CAPABILITY",
+        "Gemma locally · Qwen in the cloud"
+      ]
+    ],
+    "notes": "The purpose is to turn operational experience into repeatable model behavior. Real sessions show how work was attempted, which tools were available, what the environment returned, and whether the task succeeded. The pipeline preserves that evidence, curates training examples, and prepares separate local and cloud candidates. The software has been implemented and tested, but no student model has yet been trained or deployed. This deck describes the implementation committed as 74e0d75, validated on October 2, 2026.",
+    "source": "README.md · VALIDATION.md",
+    "theme": "dark"
+  },
+  {
+    "ch": "01 / PURPOSE",
+    "title": "Operational knowledge should survive the session.",
+    "sub": "Today’s troubleshooting can become tomorrow’s reliable procedure.",
+    "kind": "cards",
+    "items": [
+      [
+        "The experience",
+        "Working commands, failure signals, recovery steps, and user corrections accumulate across sessions."
+      ],
+      [
+        "The gap",
+        "Stored conversations help recall, but a smaller model still needs to learn how to use that evidence."
+      ],
+      [
+        "The opportunity",
+        "Build a repeatable path from an observed task to a verified example and a tested model candidate."
+      ]
+    ],
+    "notes": "The project connects two complementary mechanisms. Retrieval provides relevant facts and prior evidence at inference time. Fine-tuning changes the student model’s habits: selecting tools, respecting schemas, interpreting results, and completing operational tasks. A transcript is not automatically a good lesson. The curation pipeline must separate useful behavior from failed actions, sensitive material, and unsupported claims. The goal is continuity across sessions without manually re-teaching every workflow.",
+    "source": "README.md: purpose and architecture",
+    "theme": "light"
+  },
+  {
+    "ch": "01 / PURPOSE",
+    "title": "The goal is a more capable systems operator.",
+    "sub": "These are intended benefits; improvement has not yet been measured.",
+    "kind": "cards",
+    "items": [
+      [
+        "Support the workstation",
+        "Investigate processes, services, local tooling, and configuration with grounded tool use."
+      ],
+      [
+        "Administer the VPS",
+        "Use retrieved system context to diagnose and maintain services within granted permissions."
+      ],
+      [
+        "Learn your working style",
+        "Reuse verified procedures and lessons while reducing repeated explanations and interventions."
+      ]
+    ],
+    "notes": "A useful student model should know when to inspect before acting, select the right tool schema, connect results to the original request, and recognize uncertainty or failed execution. These benefits remain goals until a trained checkpoint is compared against a baseline on representative tasks. This pipeline does not itself grant administrative permissions or define the inference-layer authorization policy. Those remain responsibilities of the surrounding runtime.",
+    "source": "README.md · INFERENCE-HANDOFF.md",
+    "theme": "light"
+  },
+  {
+    "ch": "01 / PURPOSE",
+    "title": "Memory, learned behavior, and tools have different jobs.",
+    "sub": "Teach stable procedures. Retrieve changing facts. Observe the live system.",
+    "kind": "layers",
+    "items": [
+      [
+        "MEMORY",
+        "PostgreSQL + Neo4j",
+        "Current facts, session evidence, relationships, and dated lessons."
+      ],
+      [
+        "MODEL",
+        "Gemma + Qwen",
+        "Tool selection, response structure, and verified operational procedures."
+      ],
+      [
+        "RUNTIME",
+        "Tools + permissions",
+        "Live inspection, execution, feedback, and the next captured session."
+      ]
+    ],
+    "notes": "It is unrealistic to expect a fine-tuned checkpoint to know everything about systems that keep changing. Credentials, current ports, installed versions, and service state belong in current context and authorized tools, not in model weights. Existing session-recall and neo4j-sessions MCP servers continue to expose institutional knowledge. The pipeline adds evidence-linked learning records and supports recall; production connectivity to the existing memory environment has not been exercised.",
+    "source": "integrations.py · README.md",
+    "theme": "dark"
+  },
+  {
+    "ch": "01 / PURPOSE",
+    "title": "Two student models share evidence, not release decisions.",
+    "sub": "The local and cloud targets have independent job histories and gates.",
+    "kind": "compare",
+    "items": [
+      [
+        "LOCAL / GEMMA",
+        "Gemma 4 E4B IT",
+        "google/gemma-4-E4B-it",
+        "Selected engine: Ollama. LM Studio remains an optional interface or comparison path."
+      ],
+      [
+        "CLOUD / QWEN",
+        "Qwen 3.8 27B",
+        "Qwen/Qwen3.8-27B",
+        "Cloud GPU host and deployment provider are still to be selected."
+      ]
+    ],
+    "notes": "Both configured targets consume curated trajectories, but each reserves its own training hashes, trains its own adapter, and must pass its own evaluation gate. Model revisions are pinned in config.toml, making the exact base reproducible. Gemma is the requested small local target; Qwen is the larger cloud target. Ollama is the selected local engine. The inference layer being developed in the separate nucybersec mailkit session is an integration boundary, not something this project replaces.",
+    "source": "config.toml · jobs.py · INFERENCE-HANDOFF.md",
+    "theme": "light"
+  },
+  {
+    "ch": "02 / CAPTURE",
+    "title": "The loop closes only after a candidate proves itself.",
+    "sub": "Every deployed improvement must produce new observable evidence.",
+    "kind": "flow",
+    "items": [
+      [
+        "01",
+        "Capture",
+        "Session events + tool results"
+      ],
+      [
+        "02",
+        "Curate",
+        "Validate, sanitize, verify"
+      ],
+      [
+        "03",
+        "Train",
+        "Versioned data → adapter"
+      ],
+      [
+        "04",
+        "Evaluate",
+        "Candidate vs. baseline"
+      ],
+      [
+        "05",
+        "Release",
+        "Candidate → active → observe"
+      ]
+    ],
+    "notes": "The full intended loop is capture, curation, training, evaluation, controlled release, and renewed capture. Failed or incomplete records are retained outside the training set. A model candidate does not become active just because training succeeded. It must be served as a candidate and evaluated first. At present the code paths exist, but production connections, training, and auto-promotion are disabled. This is a built pipeline awaiting live integration and model validation.",
+    "source": "README.md · config.toml",
+    "theme": "dark"
+  },
+  {
+    "ch": "02 / CAPTURE",
+    "title": "Three input paths become one trace format.",
+    "sub": "New runtime capture can preserve evidence that old logs never recorded.",
+    "kind": "cards",
+    "items": [
+      [
+        "Claude Code sessions",
+        "Import conversation and tool events from settled local JSONL logs."
+      ],
+      [
+        "Codex sessions",
+        "Normalize public messages, tool calls, and their matching results."
+      ],
+      [
+        "Canonical runtime",
+        "Capture actual system context and tool schemas directly through the interceptor."
+      ]
+    ],
+    "notes": "The importer supports Claude, Codex, and canonical runtime traces. It waits for settled files before ingestion and fingerprints source content to avoid repeatedly processing unchanged data. Historical logs often lack tool schemas or complete terminal outcomes. The normalizer flags these deficiencies rather than inventing missing evidence. Internal analysis and private thinking records are excluded from training. If synthesized tools change, start a new trace segment linked to the same session group.",
+    "source": "capture.py · normalize.py · store.py",
+    "theme": "light"
+  },
+  {
+    "ch": "02 / CAPTURE",
+    "title": "A trajectory connects an action to its observed result.",
+    "sub": "Illustrative example: identify the process listening on port 8080.",
+    "kind": "trace",
+    "items": [
+      [
+        "USER",
+        "What is listening on port 8080?"
+      ],
+      [
+        "ASSISTANT → TOOL",
+        "execute_bash({\"command\": \"ss -tulpn\"})"
+      ],
+      [
+        "TOOL RESULT",
+        "Observed listener: node, PID 4812, :8080"
+      ],
+      [
+        "ASSISTANT",
+        "Report the observed process and its binding."
+      ]
+    ],
+    "notes": "This is a synthetic teaching example, not a copied private session. The canonical record links a tool call to its result with a call ID and preserves the tool schema, arguments, execution feedback, and final answer. A successful exit code is useful evidence but does not establish that the response answered the user’s request. Independent verification is still required. Source metadata and hashes let a future training example be traced back to its evidence.",
+    "source": "capture.py · normalize.py",
+    "theme": "light"
+  },
+  {
+    "ch": "02 / CAPTURE",
+    "title": "Preserve raw evidence before transforming it.",
+    "sub": "Capture failures too; curation decides what can teach the student.",
+    "kind": "compare",
+    "items": [
+      [
+        "PRIVATE RAW ARCHIVE",
+        "Exact source snapshots",
+        "Content-addressed · immutable",
+        "Whole source files survive malformed or partial input. Live event writes are locked and fsynced."
+      ],
+      [
+        "CURATED RECORDS",
+        "Normalized and sanitized",
+        "Trace identity · provenance",
+        "SQLite tracks local work. Only sanitized payloads enter learning integrations and training export."
+      ]
+    ],
+    "notes": "Two storage paths preserve provenance. The runtime interceptor writes append-only events with locking and fsync. Historical ingestion stores immutable whole-file snapshots before parsing, including malformed or incomplete bytes. Raw session archives can contain sensitive information and remain private. They are not included in this presentation or automatically exported for training. The local SQLite queue uses WAL and immutable trace and decision records. Latest source snapshots are selected for dataset construction.",
+    "source": "capture.py · store.py",
+    "theme": "light"
+  },
+  {
+    "ch": "03 / CURATION",
+    "title": "A useful trace must pass more than a success flag.",
+    "sub": "Deterministic checks remove unreliable or unsafe training material.",
+    "kind": "grid",
+    "items": [
+      [
+        "Structure",
+        "Complete turns and matched call/result IDs."
+      ],
+      [
+        "Tool contracts",
+        "Arguments validate against the recorded schema."
+      ],
+      [
+        "Execution",
+        "Failures, timeouts, and repeated actions are detected."
+      ],
+      [
+        "Sensitive content",
+        "Credential-like content triggers sanitization and review."
+      ]
+    ],
+    "notes": "The implementation is conservative: a failed tool call can quarantine a trace even if its overall error ratio is below the configured 0.25 threshold. Schema repairs are not silently accepted as good tool behavior. Credential redaction is not a license to train on altered commands; such records require review. Quarantine is an auditable disposition, not deletion. Source outcomes and model self-reports alone are insufficient to accept a training example.",
+    "source": "curate.py · config.toml",
+    "theme": "light"
+  },
+  {
+    "ch": "03 / CURATION",
+    "title": "Independent evidence decides whether the task was solved.",
+    "sub": "An exit code of zero does not prove task completion.",
+    "kind": "compare",
+    "items": [
+      [
+        "CONFIGURABLE CRITIC",
+        "Grounded, successful, safe",
+        "Minimum confidence: 0.95",
+        "A stronger model reviews a sanitized public trace. Errors leave verification pending."
+      ],
+      [
+        "TRUSTED VERIFICATION",
+        "Human review or sandbox tests",
+        "Bound to the exact trace hash",
+        "Evidence records the decision and its source. Referenced evidence URIs are not executed."
+      ]
+    ],
+    "notes": "The judge can call an OpenAI-compatible endpoint when configured. Its output must meet all required quality conditions and the confidence threshold. The alternative verify command accepts trusted human-review or sandbox-test evidence tied to the exact trace and record hash, preventing a review for one record from approving a different record. The credibility of manually supplied evidence remains a trust boundary; the pipeline does not independently execute the referenced URI. The critic is disabled by default.",
+    "source": "judge.py · cli.py",
+    "theme": "light"
+  },
+  {
+    "ch": "03 / CURATION",
+    "title": "The first audit found zero training-ready sessions.",
+    "sub": "Ten real local logs: five Claude sessions and five Codex sessions.",
+    "kind": "stats",
+    "items": [
+      [
+        "9",
+        "Quarantined",
+        "Missing schemas, failures, incomplete traces, cycles, or credential-like content."
+      ],
+      [
+        "1",
+        "Pending",
+        "Still needed independent verification."
+      ],
+      [
+        "0",
+        "Accepted",
+        "No sampled record was used to train a model."
+      ]
+    ],
+    "notes": "These results are an audit of a ten-session sample, not a representative estimate of every session’s quality. They show why copying historical logs directly into SFT would be risky. The pipeline preserved the source evidence while withholding records that failed its requirements. The practical next step is richer runtime instrumentation and explicit outcome verification, not relaxing quality controls to reach the training threshold. Audit data remains in private ignored state.",
+    "source": "VALIDATION.md: real local-session sample",
+    "theme": "dark"
+  },
+  {
+    "ch": "03 / CURATION",
+    "title": "Failures remain evidence, not automatic training pairs.",
+    "sub": "A clean continuation must still be supported by the same task context.",
+    "kind": "cards",
+    "items": [
+      [
+        "Keep the failure",
+        "Preserve observed errors and their provenance for analysis."
+      ],
+      [
+        "Create a verified example",
+        "Use a fresh successful capture or independently validated correction."
+      ],
+      [
+        "Add preferences carefully",
+        "A DPO pair needs comparable alternatives from the same decision context."
+      ]
+    ],
+    "notes": "The initial project proposal included pruning dead ends and automatically creating DPO pairs. The implemented pipeline does not automatically rewrite, replay, or generate preference pairs. Removing failed steps can remove information that made a later action valid. Likewise, a failed and successful command from different system states is not necessarily a valid chosen/rejected pair. These are extension points that require stronger evidence and an authorized sandbox. Current training work is centered on verified SFT.",
+    "source": "README.md: limitations · curate.py",
+    "theme": "light"
+  },
+  {
+    "ch": "04 / MEMORY",
+    "title": "Each store has a distinct responsibility.",
+    "sub": "The new learning records complement your existing institutional memory.",
+    "kind": "grid",
+    "items": [
+      [
+        "Raw files",
+        "Immutable evidence archive; private session content."
+      ],
+      [
+        "SQLite",
+        "Local queue, decisions, snapshots, datasets, and job coordination."
+      ],
+      [
+        "PostgreSQL",
+        "Additive learning schema: sanitized traces, lessons, jobs, and graph outbox."
+      ],
+      [
+        "Neo4j",
+        "LearningTrace and LearningDecision provenance linked to existing Session nodes."
+      ]
+    ],
+    "notes": "PostgreSQL and Neo4j are not interchangeable replicas of every byte. PostgreSQL provides transactional learning metadata and an outbox; Neo4j provides traversable relationships into existing session knowledge. The local SQLite queue allows capture and dataset work to progress separately from remote integration. Migrations add a learning schema rather than replacing existing recall data. These integrations passed disposable-database tests, but production VPS migration and connection remain untested.",
+    "source": "schema.sql · integrations.py · store.py",
+    "theme": "light"
+  },
+  {
+    "ch": "04 / MEMORY",
+    "title": "An outbox bridges PostgreSQL and the graph.",
+    "sub": "A retryable handoff keeps graph delivery separate from capture.",
+    "kind": "flow",
+    "items": [
+      [
+        "01",
+        "Commit",
+        "Write learning record + outbox item together"
+      ],
+      [
+        "02",
+        "Deliver",
+        "Read pending graph work"
+      ],
+      [
+        "03",
+        "Merge",
+        "Write stable identities to Neo4j"
+      ],
+      [
+        "04",
+        "Acknowledge",
+        "Mark delivery complete after success"
+      ]
+    ],
+    "notes": "The transactional outbox avoids trying to coordinate a single cross-database transaction. Learning data and the delivery request are committed in PostgreSQL together. A synchronizer writes the graph using stable identities and MERGE, then marks delivery successful. If the process stops after the graph write but before acknowledgement, retrying should not duplicate the graph entities. Repeat-safe writes, migration behavior, and provenance links were exercised against PostgreSQL 16 and Neo4j 5 in disposable containers.",
+    "source": "integrations.py · tests/integration_databases.py",
+    "theme": "light"
+  },
+  {
+    "ch": "04 / MEMORY",
+    "title": "A lesson needs evidence, scope, and an expiry policy.",
+    "sub": "Retrieve current knowledge instead of freezing every fact into weights.",
+    "kind": "layers",
+    "items": [
+      [
+        "EVIDENCE",
+        "Accepted trace",
+        "The lesson points back to a verified source."
+      ],
+      [
+        "CONTEXT",
+        "Scope + timestamps",
+        "State which system or workflow it applies to."
+      ],
+      [
+        "LIFECYCLE",
+        "Expiry + supersession",
+        "Retire stale advice and retain the reason it changed."
+      ]
+    ],
+    "notes": "The lesson command records evidence-linked operational knowledge with scope, time, expiration, and supersession. Recall can combine existing recall.chunks embeddings, graph topics, and nonexpired verified lessons. The existing embeddinggemma path expects 768-dimensional vectors. Inference-time consumers must still retrieve and use this context. The model should learn the habit of checking current facts rather than treating a remembered service location or configuration as timeless truth. Live recall-vector retrieval has not yet been exercised against the VPS.",
+    "source": "integrations.py · cli.py",
+    "theme": "light"
+  },
+  {
+    "ch": "05 / TRAINING DATA",
+    "title": "Versioned datasets preserve diversity and lineage.",
+    "sub": "The split happens by session group, not by individual message.",
+    "kind": "cards",
+    "items": [
+      [
+        "Deduplicate",
+        "Exact prompt dedup is active. Optional semantic similarity can use an embedding endpoint."
+      ],
+      [
+        "Keep groups together",
+        "Related sessions and subagents remain on one side of the train/validation split."
+      ],
+      [
+        "Freeze the release",
+        "Export train/validation JSONL with content hashes and a provenance manifest."
+      ]
+    ],
+    "notes": "The default validation fraction is 10 percent. Grouping helps prevent related trajectories from appearing in both training and validation. Optional semantic deduplication uses cosine similarity with a default threshold of 0.96; it is disabled until an endpoint is set. This is not a guarantee against every form of data leakage. The benchmark contamination guard checks exact prompt prefixes, so semantic leakage still requires dataset review and benchmark discipline.",
+    "source": "dataset.py · config.toml",
+    "theme": "light"
+  },
+  {
+    "ch": "05 / TRAINING DATA",
+    "title": "Only assistant output contributes to training loss.",
+    "sub": "Inspect the difference between the model’s inputs and its learning targets.",
+    "kind": "mask",
+    "items": [
+      [
+        "SYSTEM",
+        "Available tools and operating instructions.",
+        "MASKED"
+      ],
+      [
+        "USER",
+        "Find the service listening on port 8080.",
+        "MASKED"
+      ],
+      [
+        "ASSISTANT",
+        "A valid tool call, then a grounded answer.",
+        "TRAIN"
+      ],
+      [
+        "TOOL",
+        "Observed stdout, stderr, and execution status.",
+        "MASKED"
+      ]
+    ],
+    "notes": "The model receives the conversation as context, but labels for system text, user text, tool results, and padding are set to -100. Assistant tool-call syntax, arguments, and final public responses contribute to loss. Private reasoning is excluded. The on-slide control highlights which role is supervised; it is an explanatory visualization, not a live tokenizer. The actual preprocessor uses the native model template and rejects unsupported or unsafe masking conditions. It does not silently truncate long samples.",
+    "source": "masking.py · templates.py",
+    "theme": "dark"
+  },
+  {
+    "ch": "05 / TRAINING DATA",
+    "title": "Native templates prevent subtle tool-output leakage.",
+    "sub": "Gemma and Qwen do not share one generic ChatML formatter.",
+    "kind": "compare",
+    "items": [
+      [
+        "GEMMA TOKENIZER TEST",
+        "103 fixture tokens",
+        "25 supervised tokens",
+        "Gemma’s tool outputs required precise mask annotations inside its native rendering."
+      ],
+      [
+        "QWEN TOKENIZER TEST",
+        "340 fixture tokens",
+        "50 supervised tokens",
+        "The same masking invariants passed with Qwen’s native tool conversation format."
+      ]
+    ],
+    "notes": "These token counts belong to controlled fixtures, not the training dataset. Both official tokenizers were tested at the pinned revisions with Transformers 5.18.0 and TRL 1.14.1. Native rendered bytes were preserved while annotating supervised regions. Additional checks covered Unicode, parallel tool outputs, and multi-turn continuations. Gemma’s template can render tool output inside an assistant branch, so masking entire assistant-formatted blocks would incorrectly supervise environment text. No model weights were downloaded for these checks.",
+    "source": "VALIDATION.md · tests/native_tokenizers.py",
+    "theme": "light"
+  },
+  {
+    "ch": "05 / TRAINING DATA",
+    "title": "QLoRA adapts the model with a small trainable layer.",
+    "sub": "The recipe is configured; GPU training has not yet run.",
+    "kind": "grid",
+    "items": [
+      [
+        "4-bit base",
+        "NF4 with double quantization reduces base-weight memory."
+      ],
+      [
+        "LoRA adapter",
+        "Rank 16 · alpha 32 · dropout 0.05; language projections are targeted."
+      ],
+      [
+        "Conservative start",
+        "1 epoch · learning rate 2 × 10⁻⁵ · batch 1 · accumulation 16."
+      ],
+      [
+        "Context discipline",
+        "8,192-token limit · checkpointing · no silent truncation or sample packing."
+      ]
+    ],
+    "notes": "QLoRA keeps quantized base weights while learning low-rank adapter parameters. This makes adaptation more practical than updating every parameter, but actual VRAM needs depend on architecture, optimizer state, sequence length, and hardware. The training implementation uses the multimodal model class for the selected bases while training text/tool trajectories and targeting language projections. No training time, memory requirement, or quality improvement is claimed: the available environment did not expose a working NVIDIA device.",
+    "source": "train.py · config.toml",
+    "theme": "light"
+  },
+  {
+    "ch": "06 / AUTOMATION",
+    "title": "Training starts from enough new, verified work.",
+    "sub": "Each model gets its own queue and data reservation.",
+    "kind": "threshold",
+    "items": [
+      [
+        "500",
+        "New training tasks",
+        "Unique accepted records, beyond already reserved work."
+      ],
+      [
+        "20",
+        "Validation records",
+        "A separate minimum before a job can start."
+      ],
+      [
+        "1",
+        "Pinned base revision",
+        "Plus a sufficiently large regression suite."
+      ]
+    ],
+    "notes": "The worker creates work only when prerequisites are satisfied for that target. Running and successful jobs reserve training hashes to avoid repeatedly consuming the same examples as new work. Separate targets can learn from the same curriculum independently. Process locks prevent competing workers from duplicating active work. A process crash can leave a job marked running; operator recovery is currently required. Supplied user-systemd units poll capture every minute and the worker every five minutes, but are not installed.",
+    "source": "jobs.py · config.toml · deploy/",
+    "theme": "light"
+  },
+  {
+    "ch": "06 / AUTOMATION",
+    "title": "Release gates compare the candidate with its baseline.",
+    "sub": "Training success alone never proves operational improvement.",
+    "kind": "gate",
+    "items": [
+      [
+        "50+",
+        "Benchmark cases"
+      ],
+      [
+        "5+",
+        "Cases in each category"
+      ],
+      [
+        "90%",
+        "Minimum category score"
+      ],
+      [
+        "≤ 2 pp",
+        "Maximum regression"
+      ],
+      [
+        "0",
+        "Safety failures"
+      ]
+    ],
+    "notes": "The same benchmark runs against baseline and candidate endpoints. Reports are bound to the job, artifact, suite, and case identities. Required categories are tool use, operations, instruction following, and safety. Every category needs at least five cases, and the entire suite needs at least fifty. Category scores must meet 90 percent, regressions cannot exceed two percentage points, and safety failures must be zero. The bundled eight-case example is intentionally insufficient and blocks the default gate. These settings are release criteria, not observed model scores.",
+    "source": "evaluate.py · config.toml",
+    "theme": "dark"
+  },
+  {
+    "ch": "06 / AUTOMATION",
+    "title": "Ollama receives a candidate before the active model changes.",
+    "sub": "The local release path carries artifact identity and rollback state.",
+    "kind": "flow",
+    "items": [
+      [
+        "01",
+        "Export",
+        "Merge adapter → GGUF → Q4_K_M"
+      ],
+      [
+        "02",
+        "Stage",
+        "Import exact bytes under a unique candidate tag"
+      ],
+      [
+        "03",
+        "Compare",
+        "Evaluate the served candidate"
+      ],
+      [
+        "04",
+        "Promote",
+        "Back up active tag; copy candidate"
+      ],
+      [
+        "05",
+        "Check",
+        "Verify digest + READY; roll back on failure"
+      ]
+    ],
+    "notes": "The export helper uses a configured llama.cpp installation for conversion and quantization. Real architecture support, conversion, and memory requirements still need validation. The Ollama client uploads the artifact, records the resulting engine digest, and uses dedicated candidate, active, and previous tags. Promotion is followed by identity and generation health checks, with rollback on failure. The lifecycle was tested against a simulated API, not a live daemon. The Qwen cloud release transport remains an integration task.",
+    "source": "export_gguf.py · ollama.py · INFERENCE-HANDOFF.md",
+    "theme": "light"
+  },
+  {
+    "ch": "06 / AUTOMATION",
+    "title": "One verified fix can improve both memory and training.",
+    "sub": "Illustrative future run: a service is not listening on its expected port.",
+    "kind": "flow",
+    "items": [
+      [
+        "01",
+        "Observe",
+        "Retrieve current service context; inspect the host"
+      ],
+      [
+        "02",
+        "Resolve",
+        "Perform authorized steps and verify the result"
+      ],
+      [
+        "03",
+        "Capture",
+        "Preserve tools, observations, and outcome evidence"
+      ],
+      [
+        "04",
+        "Learn",
+        "Add a scoped lesson and an accepted example"
+      ],
+      [
+        "05",
+        "Validate",
+        "Train later; release only after regression checks"
+      ]
+    ],
+    "notes": "This is a hypothetical completed loop, not a live incident the pipeline has handled. The runtime should first obtain current system context, inspect the state, carry out only authorized actions, and verify the outcome. The learning pipeline then captures and curates that session. A scoped lesson can become retrievable earlier than a new model release; training waits for the batch threshold. This separates immediate institutional memory from slower model adaptation while using the same underlying evidence.",
+    "source": "README.md · integrations.py · jobs.py",
+    "theme": "light"
+  },
+  {
+    "ch": "07 / DELIVERY STATUS",
+    "title": "The foundation has passed meaningful implementation checks.",
+    "sub": "Evidence as recorded on October 2, 2026.",
+    "kind": "grid",
+    "items": [
+      [
+        "36 tests passed",
+        "Queue behavior, lineage, masking, redaction, release rejection, and rollback."
+      ],
+      [
+        "Real database tests",
+        "PostgreSQL 16 + Neo4j 5 in disposable containers."
+      ],
+      [
+        "Native tokenizer tests",
+        "Both pinned models; Unicode, multi-turn, and parallel outputs."
+      ],
+      [
+        "Real log audit",
+        "Ten local sessions preserved and classified; none admitted to training."
+      ]
+    ],
+    "notes": "The behavioral tests also used real subprocess fixtures for training-stage orchestration, not a real GPU training run. Database tests covered repeated migrations, repeat-safe writes, immutable evidence, lessons, and the graph outbox. Tokenizer checks established masking behavior without downloading model weights. Ollama tag lifecycle tests used a simulated API. This evidence supports the implementation’s mechanics, but does not establish a better model, a working production deployment, or the reliability of remote integration.",
+    "source": "VALIDATION.md",
+    "theme": "dark"
+  },
+  {
+    "ch": "07 / DELIVERY STATUS",
+    "title": "Live operation needs integration and model validation.",
+    "sub": "The remaining work is concrete and intentionally gated.",
+    "kind": "grid",
+    "items": [
+      [
+        "Connect the runtime",
+        "Wire synthesized-tool capture and production memory endpoints."
+      ],
+      [
+        "Prepare training",
+        "Choose cloud GPU transport and validate real hardware requirements."
+      ],
+      [
+        "Build the benchmark",
+        "Expand the eight examples to a representative, uncontaminated suite."
+      ],
+      [
+        "Validate serving",
+        "Exercise real conversion, Ollama import, health checks, and rollback."
+      ]
+    ],
+    "notes": "Training, external critic use, database integration, and auto-promotion are disabled in checked-in configuration. Additional operational work includes archive retention planning, crash recovery for stale running jobs, and installing capture/worker timers when ready. LM Studio can be added by the inference-layer project if useful, but it has not been integrated or tested here. The next milestone should be a controlled end-to-end run with a small approved dataset and a candidate endpoint, followed by evaluation rather than immediate promotion.",
+    "source": "VALIDATION.md · config.toml · INFERENCE-HANDOFF.md",
+    "theme": "light"
+  },
+  {
+    "ch": "07 / DELIVERY STATUS",
+    "title": "Measure better work, not just a lower training loss.",
+    "sub": "Proposed scorecard for the first trained candidates.",
+    "kind": "cards",
+    "items": [
+      [
+        "Data quality",
+        "Acceptance rate, quarantine reasons, duplication, and evidence coverage."
+      ],
+      [
+        "Task performance",
+        "Completion rate, tool/schema accuracy, regression scores, and interventions."
+      ],
+      [
+        "Operational value",
+        "Latency, inference cost, recovery behavior, and freshness of retrieved facts."
+      ]
+    ],
+    "notes": "These are proposed metrics, not measurements already produced by a trained system. Compare the same tasks and context against the selected baseline. Track local and cloud targets separately because latency, cost, and capacity differ. Model-quality gains should be accompanied by operational checks: does the model retrieve current facts, avoid unsupported claims, and stop or recover appropriately when tools fail? Lower loss can coexist with worse operational behavior, which is why the release benchmark and live feedback loop are necessary.",
+    "source": "Proposed measurement plan · evaluate.py",
+    "theme": "light"
+  },
+  {
+    "ch": "07 / DELIVERY STATUS",
+    "title": "The product is a repeatable learning process.",
+    "sub": "Verified experience becomes durable operational capability.",
+    "kind": "hero",
+    "items": [
+      [
+        "REMEMBER",
+        "Keep facts and evidence available."
+      ],
+      [
+        "LEARN",
+        "Teach verified tool behavior."
+      ],
+      [
+        "PROVE",
+        "Compare before every release."
+      ]
+    ],
+    "notes": "The lasting value is the process, not one adapter. Capture creates evidence; institutional memory keeps knowledge accessible; curation selects trustworthy examples; fine-tuning adapts behavior; and evaluation controls release. The two student models can evolve independently while sharing the same evidence discipline. The code is committed locally as 74e0d75. No GPU-trained checkpoint or production promotion has occurred. The following appendix slides map the components, operating commands, default gates, and inference-layer contract.",
+    "source": "README.md · VALIDATION.md",
+    "theme": "dark"
+  },
+  {
+    "ch": "APPENDIX / MODULES",
+    "title": "The code follows the lifecycle of the evidence.",
+    "sub": "Use these entry points to inspect or extend the implementation.",
+    "kind": "rows",
+    "items": [
+      [
+        "Capture + normalize",
+        "capture.py · normalize.py · store.py"
+      ],
+      [
+        "Curate + verify",
+        "curate.py · judge.py"
+      ],
+      [
+        "Build + train",
+        "dataset.py · templates.py · masking.py · train.py"
+      ],
+      [
+        "Operate + release",
+        "jobs.py · evaluate.py · export_gguf.py · ollama.py"
+      ],
+      [
+        "Institutional memory",
+        "integrations.py · schema.sql · cli.py"
+      ]
+    ],
+    "notes": "All source paths are relative to tools/trajectory-pipeline/trajectory_pipeline unless otherwise specified. capture.py provides the runtime interception API. store.py provides durable local tracking and raw snapshots. integrations.py connects sanitized learning records to external memory. Configuration lives in config.toml, operator documentation in README.md, and current verification evidence in VALIDATION.md. The provided deployment units live under deploy and are not installed.",
+    "source": "trajectory_pipeline/ · deploy/",
+    "theme": "light"
+  },
+  {
+    "ch": "APPENDIX / OPERATIONS",
+    "title": "The CLI exposes each stage for inspection and control.",
+    "sub": "Command groups make the automated loop observable.",
+    "kind": "rows",
+    "items": [
+      [
+        "Collect",
+        "ingest · inspect · status"
+      ],
+      [
+        "Review",
+        "curate · verify"
+      ],
+      [
+        "Prepare and run",
+        "export · cycle · watch · worker"
+      ],
+      [
+        "Connect memory",
+        "migrate · sync · recall · lesson"
+      ]
+    ],
+    "notes": "These are subcommand names, not a blind execution script. Read the README for the configured CLI invocation and required arguments. ingest records sources, curate evaluates them, verify attaches independent evidence, and export writes a versioned dataset. cycle and watch support recurring capture/curation; worker advances eligible training jobs. migrate and sync manage the additive learning integrations. recall reads institutional context; lesson records scoped evidence-backed knowledge. Configure endpoints and credentials through the documented environment-variable contract.",
+    "source": "cli.py · README.md",
+    "theme": "light"
+  },
+  {
+    "ch": "APPENDIX / DEFAULTS",
+    "title": "Defaults favor evidence before automation.",
+    "sub": "Thresholds are configurable; these are the committed starting values.",
+    "kind": "rows",
+    "items": [
+      [
+        "Capture / datasets",
+        "60-second settling · 10% validation split"
+      ],
+      [
+        "Dedup / critic",
+        "Cosine 0.96 if enabled · critic confidence ≥ 0.95"
+      ],
+      [
+        "Training entry",
+        "500 new tasks · 20 validation records"
+      ],
+      [
+        "Release gate",
+        "50 total / 5 per category · score ≥ 90% · regression ≤ 2 pp"
+      ],
+      [
+        "Activation",
+        "Integrations, training, critic, and auto-promotion disabled"
+      ]
+    ],
+    "notes": "Defaults should be reviewed against the actual workload and benchmark. The error-ratio threshold does not mean every trace below 25 percent errors is accepted: failed calls are conservatively quarantined. Semantic embeddings require an endpoint before they are active. A queue threshold is based on new unique accepted work for each model, not raw log count. The intentionally undersized example suite prevents an accidental default release before representative evaluations exist.",
+    "source": "config.toml · curate.py · jobs.py",
+    "theme": "light"
+  },
+  {
+    "ch": "APPENDIX / INFERENCE",
+    "title": "The inference layer consumes tested artifacts and current context.",
+    "sub": "A clean boundary with the parallel nucybersec mailkit work.",
+    "kind": "compare",
+    "items": [
+      [
+        "PIPELINE RESPONSIBILITY",
+        "Evidence → candidate",
+        "Dataset and artifact lineage",
+        "Produce an adapter or exported model, evaluation evidence, and an engine-specific release receipt."
+      ],
+      [
+        "INFERENCE RESPONSIBILITY",
+        "Serve → observe",
+        "Runtime tools and retrieval",
+        "Expose candidate/baseline endpoints, enforce tool permissions, retrieve memory, and return session telemetry."
+      ]
+    ],
+    "notes": "The local adapter contract uses dedicated tags under trajectory-gemma-admin: candidate-JOBPREFIX, active, and previous-JOBPREFIX. The normal local endpoint is the configured Ollama service; no deployment target is assumed for the Qwen cloud model. LM Studio could participate as an optional consumer or comparison endpoint after its actual model and tool-call behavior are validated. The pipeline does not replace inference routing, current-context assembly, or tool authorization. Those remain part of the parallel inference stack.",
+    "source": "INFERENCE-HANDOFF.md",
+    "theme": "light"
+  }
+]
