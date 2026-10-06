@@ -31,6 +31,11 @@ workstation:
     - { src: bin/piper-say.sh,                dest_dir: bin }
     # Admission control in front of Ollama, sharing ARCHIVIST's GPU lease.
     - { src: bin/gpu-lease-gate.py,           dest_dir: bin }
+    # Pre-warm / release the socket-activated reranker around a batch job.
+    - { src: bin/rerank-ensure,               dest_dir: bin }
+    # Daily recycle for llama-embed-gpu's per-request memory leak (~85KB per
+    # embedding, no plateau). Invoked by llama-embed-recycle.service.
+    - { src: bin/llama-embed-recycle,         dest_dir: bin }
     - { src: scripts/neo4j-sync.sh,           dest_dir: scripts }
     - { src: scripts/pg-sync.sh,              dest_dir: scripts }
 
@@ -44,6 +49,29 @@ workstation:
     # it through the existing `tailscale serve` mapping, which is host
     # config and NOT managed here — see the role README.
     - ollama.container
+    # Reranker. Deliberately has NO [Install] section: it is started on demand by
+    # rerank-proxy.socket and stopped again by StopWhenUnneeded. Measured zero
+    # requests 2026-09-09 -> 2026-10-05 while holding 1.35GB RAM + 1184MiB VRAM.
+    - rerank-gpu.container
+
+  # Drop-ins applied on top of units we do not own outright, including
+  # quadlet-GENERATED units which cannot be edited directly.
+  dropins:
+    - unit: rerank-gpu.service
+      name: on-demand.conf
+
+  # Plain config files that are not systemd and not scripts.
+  dotfiles:
+    # btop: `only_physical: False` is load-bearing. With the default True, btop
+    # HIDES tmpfs, and /tmp on this laptop is RAM-backed, so gigabytes of RAM
+    # become invisible in the one tool you would reach for. Layout is capped to
+    # fit a 144x28 terminal: cpu + a separate gpu0 box needs 36 rows and btop
+    # REFUSES to start below that rather than degrading.
+    - { src: dotfiles/btop.conf, dest: .config/btop/btop.conf }
+
+  # Claude Code skills that are part of the machine's toolkit, not a project.
+  claude_skills:
+    - memwatch
 
   # systemd --user units.
   #   enabled: true|false   -> `systemctl --user enable/disable`
@@ -67,6 +95,31 @@ workstation:
     - name: gpu-lease-gate.service
       enabled: true
       state: started
+
+    # --- On-demand reranker ------------------------------------------------
+    # The socket owns 18092 (loopback + tailnet) and starts rerank-gpu on the
+    # first connection; StopWhenUnneeded in the drop-in stops it when the proxy
+    # idles out after 15min. Callers are unchanged: the container moved to
+    # loopback 18093 behind the proxy. Cold start to answer measured 14-16s.
+    - name: rerank-proxy.socket
+      enabled: true
+      state: started
+    # static (no [Install]): started BY the socket, never enabled directly.
+    - name: rerank-proxy.service
+      manage: false
+
+    # --- llama-embed-gpu leak recycle ---------------------------------------
+    # Measured 2026-10-05: ~85KB leaked per embedding, linear, no plateau, on a
+    # ~890MB warm baseline. Daily 06:00, after the 05:30 neo4j-sync, the last
+    # nightly consumer. Guards: skips while archivist-sync / embed-recall /
+    # neo4j-sync run, skips while /run/user/1000/llama-embed-busy.lock is flock'd
+    # by ad-hoc work, and skips below a 1500MB threshold.
+    - name: llama-embed-recycle.timer
+      enabled: true
+      state: started
+    # static (no [Install]): triggered by the timer only.
+    - name: llama-embed-recycle.service
+      manage: false
 
     # --- VPS -> laptop data sync -------------------------------------------
     - name: vps-backup-pull.timer
