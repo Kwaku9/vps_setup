@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import logging.handlers
+import os
 import shlex
 
 logger = logging.getLogger("ops_audit")
@@ -21,6 +23,17 @@ if not logger.handlers:
     logger.addHandler(_h)
     logger.setLevel(logging.INFO)
     logger.propagate = False
+    # Container stdout is not shipped anywhere; Alloy tails this host-mounted
+    # file into Loki (job="ops_audit"). WatchedFileHandler reopens the file
+    # after logrotate moves it.
+    _path = os.environ.get("OPS_AUDIT_LOG")
+    if _path:
+        try:
+            _f = logging.handlers.WatchedFileHandler(_path)
+            _f.setFormatter(logging.Formatter("%(message)s"))
+            logger.addHandler(_f)
+        except OSError as exc:
+            logger.warning("audit file %s not writable: %s", _path, exc)
 
 _INSERT = """INSERT INTO sessions.ops_audit
     (username, role, action, target, via, outcome, method, route, status, client_ip, user_agent, detail)
