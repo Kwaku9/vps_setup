@@ -11,6 +11,9 @@ CREATE ROLE learning_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICAT
   CONNECTION LIMIT 4 PASSWORD :'verifier';
 ALTER ROLE learning_reader SET default_transaction_read_only = on;
 ALTER ROLE learning_reader SET statement_timeout = '10min';
+-- Added 2026-10-05: a pull holding one transaction blocked a migration's ALTER
+-- TABLE, and every session query queued behind it. Never hold locks idle.
+ALTER ROLE learning_reader SET idle_in_transaction_session_timeout = '60s';
 GRANT CONNECT ON DATABASE enterprise TO learning_reader;
 GRANT USAGE ON SCHEMA sessions TO learning_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA sessions TO learning_reader;

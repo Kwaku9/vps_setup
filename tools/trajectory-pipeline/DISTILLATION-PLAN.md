@@ -89,7 +89,41 @@ Two more knowledge sources already exist:
   as `output_text` blocks, which the panel did not render, so only the user side
   showed. All 4,490 Codex assistant messages were in Postgres throughout.
 - **Not done yet:** the Codex adapter (Codex tool calls live in `tool_calls`
-  with freeform inputs), moved to Phase 1.
+  with freeform inputs), moved to Phase 1. Done in Phase 1, see 0.2.
+
+## 0.2 Phase 1 results (2026-10-05)
+
+- **Corpus reconstructed:** 1,318 sessions (1,188 Claude, 130 Codex) pulled as
+  `learning_reader` and split into **13,619 episodes** (p50 2 per session, p90
+  29). 13,514 start at a real request, 100 after a compaction (harness-written
+  summary, never a training prompt), 5 after an interrupt. 13,415 end in a final
+  answer; 9,021 use tools.
+- **Structural gate:** 13,369 pass (98%). The 250 rejections are real breaks
+  (177 missing tool results, 124 interrupted tool sequences, 78 orphaned
+  results). Failures and retries are now outcome signals, not rejections.
+- **Student action space (D2, built by a parallel session in `actions.py`):**
+  5,896 of 9,021 tool-using episodes (65%) map fully. Blockers: no student
+  equivalent 1,183 episodes (Playwright, Google Docs, web), delegation 776,
+  interaction 619, malformed arguments 1,147 (to inspect in Phase 2).
+- **Harness removed:** 9,449 harness tool calls and 4,052 harness user turns
+  (reminders, notifications, Codex preamble, local-command output).
+  6,445 long tool outputs were shaped with an explicit elision marker by the
+  shared `observation.py`. 281 secret placeholders in commands became `${LABEL}`
+  environment references (train only, excluded from eval).
+- **Length:** p50 about 2k tokens, p90 about 12.9k; 2,605 episodes exceed 8k and
+  275 exceed 32k, so Gemma's 8k window needs tighter shaping or splitting.
+- **Codex ingest fixed:** tool calls and outputs are now transcript rows in
+  their real order (11,271 call rows = 11,271 `tool_calls`); all 130 sessions
+  re-ingested; the Grafana replay shows Codex tool activity.
+- **Incident and fix:** the first full pull held one read transaction for 18
+  minutes; a migration's `ALTER TABLE sessions.sessions` queued behind it and
+  ingest, the ops dashboard and Grafana queued behind the ALTER. It cleared when
+  the pull finished. The pull now uses autocommit, and `learning_reader` has
+  `idle_in_transaction_session_timeout = 60s`.
+- **Next:** subagent ingestion (1,277 subagents registered, 0 messages stored;
+  only about 660 raw files survive; 873 of 1,465 delegation calls carry an
+  `agentId` link), then wire `stitch.py` (built in parallel, unit-tested, not
+  yet wired) before `episodes()`.
 
 ## 1. Verdict
 
@@ -573,12 +607,21 @@ building. Every phase ends with an explicit exit check.
 
 - **D1 - Primary corpus:** resolved. Postgres `enterprise.sessions`, ChatGPT
   conversations excluded.
-- **D2 - Student action space:** recommended minimal set: `shell` (allowlisted),
-  `read_file`, `edit_file`, `recall_search`, the `knowledge-mcp` tools
-  (`search`, `describe`, `impact`), and `lessons`. Claude
-  `Agent` subagent calls get inlined as nested steps; harness tools are removed.
-  Alternative: mirror Claude Code's tool names exactly (simpler mapping, worse
-  fit for Qwen's runtime).
+- **D2 - Student action space:** resolved 2026-10-05. Eight tools: `shell`,
+  `read_file`, `edit_file` (replace / multi-replace / write / patch modes),
+  `recall_search`, the knowledge-mcp `search`, `describe`, `impact`, and
+  `lessons`. Implemented in `trajectory_pipeline/actions.py` as a pure
+  `map_episode(episode) -> (episode, report)` that runs after `episodes()` and
+  before the structural gate. Claude Bash/Read/Edit/Write/MultiEdit and Codex
+  exec_command/shell/apply_patch map exactly; Grep and Glob become `rg` commands
+  marked `rewritten` (excluded from eval); single-command Codex code-mode `exec`
+  scripts are unwrapped. Anything else is left in place and flags the episode
+  (`student_compatible = false`, flag delegation / interaction / no_equivalent /
+  malformed) instead of being deleted. Measured on 184 archive sessions: 1,132 of
+  1,648 tool-using episodes (69%) are fully compatible and 85% of calls map. The
+  remainder is mostly Playwright and Google Docs work (out of scope for a
+  sysadmin student) and 191 episodes blocked by subagent delegation, which
+  stitching should recover.
 - **D3 - Cloud GPU for Qwen 27B QLoRA:** provider and budget. Still open from the
   original session.
 - **D4 - Human review budget:** about 60 episodes for calibration plus disagreement
