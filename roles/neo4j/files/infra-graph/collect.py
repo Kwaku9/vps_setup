@@ -314,6 +314,36 @@ def collect_postgres(c, ds, resolver, warnings):
         ds["databases"].append(db)
 
 
+RETENTION_KEYS = {"loki": ("retention_period",), "tempo": ("block_retention",)}
+
+
+def _retention(c, engine):
+    """How long the store keeps data, read from its real configuration."""
+    cmd = c.get("_cmd") or []
+    if engine == "victoriametrics":
+        v = next((a.split("=", 1)[1] for a in cmd if a.startswith("-retentionPeriod=")), None)
+        return v or "1 month (VictoriaMetrics default)"
+    if engine in RETENTION_KEYS:
+        cfg = next((a.split("=", 1)[1] for a in cmd if a.startswith("-config.file=")), None)
+        src = next((m["source"] for m in c["mounts"] if cfg and m.get("dest") == cfg), None)
+        try:
+            with open(src) as fh:
+                text = fh.read()
+        except (OSError, TypeError):
+            return None
+        for key in RETENTION_KEYS[engine]:
+            m = re.search(rf"(?m)^\s*{key}:\s*([^\s#]+)", text)
+            if m:
+                return m[1]
+        return None
+    if engine == "neo4j":
+        env = env_of(c)
+        return env.get("NEO4J_db_tx__log_rotation_retention__policy") or "graph: kept; tx logs: Neo4j default"
+    if engine == "postgres":
+        return "none (rows kept until deleted)"
+    return None
+
+
 def collect_dbs(out):
     resolver = Resolver(out)
     warnings = []
@@ -323,7 +353,7 @@ def collect_dbs(out):
         if not eng:
             continue
         ds = {"name": c["name"], "engine": eng, "container": c["name"], "state": c["state"],
-              "bytes": None, "databases": [], "roles": []}
+              "bytes": None, "databases": [], "roles": [], "retention": _retention(c, eng)}
         binds = [m["source"] for m in c["mounts"] if m["type"] == "bind" and m["source"].startswith("/opt/")]
         if binds:
             ds["bytes"] = sum(b for b in (du_bytes(p) for p in binds) if b)
@@ -890,6 +920,7 @@ def analyze_script(path, resolver, containers, sources):
         ext.setdefault("Cloudflare R2", {"api": "Cloudflare R2", "category": "storage", "hosts": set()})
     info["externals"] = [dict(v, hosts=sorted(v["hosts"])) for v in ext.values()]
     info["execs"] = sorted({c for c in exec_targets(code) if c in containers})
+    info["summary"] = _script_summary(text)
 
     # A Python file naming a path is usually reading it, not running it; only
     # count paths on lines that start a process.
@@ -913,6 +944,24 @@ def analyze_script(path, resolver, containers, sources):
     exact = [c for c in cands if full and sha1_file(c) == full]
     info["source"] = dests.get(path) or (exact[0] if exact else (cands[0] if len(cands) == 1 else None))
     return info
+
+
+SUMMARY_SKIP = re.compile(r"(?i)ansible|managed by|^!|^-\*-|coding[:=]|^usage|^\s*$|^[=#-]{3,}|^set -|copyright")
+
+
+def _script_summary(text):
+    """First real sentence of a script's header comment or docstring: what the job does."""
+    lines = text.splitlines()[:40]
+    doc = re.search(r'^\s*(?:"""|\'\'\')(.+?)(?:"""|\'\'\'|$)', "\n".join(lines), re.S | re.M)
+    candidates = []
+    if doc:
+        candidates += doc[1].splitlines()
+    candidates += [l.lstrip("#").strip() for l in lines if l.lstrip().startswith("#")]
+    for l in candidates:
+        l = l.strip().strip('"').strip()
+        if len(l) > 12 and not SUMMARY_SKIP.search(l):
+            return re.split(r"(?<=[.!?])\s", l)[0][:200]
+    return None
 
 
 def script_stem(name):
@@ -950,6 +999,43 @@ def collect_scripts(out):
     if not scripts:
         raise RuntimeError("implausible: cron runs no scripts we can read")
     out["scripts"] = list(scripts.values())
+    titles, defined = _ansible_cron_tasks()
+    for j in out["jobs"]:
+        s0 = next((scripts[p] for p in j.get("scripts", []) if p in scripts and scripts[p].get("summary")), None)
+        j["purpose"] = (s0 or {}).get("summary") or titles.get(j["name"])
+    live = {j["name"] for j in out["jobs"]}
+    # Defined in Ansible but absent from the live crontab: lost by an
+    # out-of-band crontab edit, or switched off by a `when:` (conditional).
+    out["cron_missing"] = [{"name": n, "role": d["role"], "purpose": titles.get(n), "conditional": d["conditional"]}
+                           for n, d in sorted(defined.items()) if n not in live]
+
+
+def _ansible_cron_tasks():
+    """({cron name: task title}, {cron name: {role, conditional}}) for cron jobs Ansible keeps present."""
+    titles, defined = {}, {}
+    for tf in glob.glob(os.path.join(REPO, "roles", "*", "tasks", "*.yml")):
+        role = tf.split("/roles/")[1].split("/")[0]
+        try:
+            with open(tf) as fh:
+                doc = yaml.safe_load(fh)
+        except Exception:
+            continue
+        for t in _tasks(doc):
+            cr = t.get("cron") or t.get("ansible.builtin.cron")
+            if not isinstance(cr, dict) or cr.get("env") in (True, "yes", "true") or not isinstance(cr.get("name"), str):
+                continue
+            items = t.get("loop") or t.get("with_items")
+            names = [cr["name"]]
+            if "{{" in cr["name"] and isinstance(items, list):
+                names = [re.sub(r"\{\{\s*item\.(\w+)\s*\}\}", lambda m, it=it: str(it.get(m[1], m[0])), cr["name"])
+                         for it in items if isinstance(it, dict)]
+            for n in names:
+                if "{{" in n:
+                    continue
+                titles.setdefault(n, t.get("name"))
+                if str(cr.get("state", "present")) == "present":
+                    defined.setdefault(n, {"role": role, "conditional": bool(t.get("when"))})
+    return titles, defined
 
 
 # ───────────────────────────── egress (outbound APIs) ─────────────────────────────

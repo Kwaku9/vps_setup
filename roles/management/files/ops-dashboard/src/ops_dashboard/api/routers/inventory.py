@@ -94,7 +94,7 @@ async def jobs() -> list[dict]:
         OPTIONAL MATCH (s)-[:USES]->(c:Credential)
         OPTIONAL MATCH (s)-[:CALLS_EXTERNAL]->(x:External)
         RETURN j {.name, .schedule, .frequency, .command, .ansible_managed, .host, .kind, .log,
-                  .last_result, .exit_status, .failing, .purpose, .cpu_seconds, .max_rss_kb} AS job,
+                  .last_result, .exit_status, .failing, .purpose, .missing, .conditional, .role} AS job,
                collect(DISTINCT w.name) AS where, collect(DISTINCT s {.path, .source}) AS scripts,
                collect(DISTINCT r.name) AS alert_rules, collect(DISTINCT c.name) AS credentials,
                collect(DISTINCT x.name) AS apis
@@ -109,18 +109,20 @@ async def jobs() -> list[dict]:
     for r in rows:
         j = r["job"]
         name = j["name"]
-        role = next((m[1] for s in r["scripts"] if s.get("source") and (m := ROLE_RE.search(s["source"]))), None)
+        role = j.get("role") or next((m[1] for s in r["scripts"]
+                                      if s.get("source") and (m := ROLE_RE.search(s["source"]))), None)
         code = exit_code.get(name)
         if code is None and j.get("exit_status") not in (None, ""):
             try:
                 code = float(j["exit_status"])
             except ValueError:
                 code = None
-        status = job_status(code, j.get("failing"), remote=bool(j.get("host")))
+        status = "drift" if j.get("missing") else job_status(code, j.get("failing"), remote=bool(j.get("host")))
         out.append({
             **j,
             "where": [w for w in r["where"] if w] or ([j["host"]] if j.get("host") else []),
-            "group": "remote" if j.get("host") else ("in-ansible" if j.get("ansible_managed") else "unmanaged"),
+            "group": ("remote" if j.get("host") else "missing-live" if j.get("missing")
+                      else "in-ansible" if j.get("ansible_managed") else "unmanaged"),
             "role": role,
             "scripts": [s["path"] for s in r["scripts"]],
             "alert_rules": r["alert_rules"], "credentials": r["credentials"], "apis": r["apis"],
@@ -341,6 +343,11 @@ async def findings() -> list[dict]:
     """What needs attention, generated from the graph's flags (most severe first)."""
     out = []
     for j in await jobs():
+        if j["status"] == "drift":
+            out.append({"severity": "info" if j.get("conditional") else "warn", "kind": "job",
+                        "title": f"{j['name']} is defined in Ansible but not in the crontab",
+                        "detail": f"role {j.get('role') or '?'}" + (" (switched off by a when: condition?)" if j.get("conditional") else
+                                                                    ": rerun that role's cron tags")})
         if j["status"] == "fail":
             out.append({"severity": "bad", "kind": "job", "title": f"{j['name']} is failing",
                         "detail": f"last exit {j['last_exit_code']}" + (f" ({j['last_result']})" if j.get('last_result') else "")})
