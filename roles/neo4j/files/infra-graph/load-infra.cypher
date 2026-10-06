@@ -10,7 +10,7 @@
 //
 // Owned labels (deleted when unseen): Host Network Pod Container Datastore
 // Database Table ScheduledJob Route Middleware Datasource Dashboard McpServer
-// Script Api.
+// Script Api Credential.
 // External is shared: nodes this loader created (src set) are reconciled like
 // owned labels; hand-curated ones (no src) are enriched but never deleted.
 // Not owned, never touched: Risk, Role, the code graph (CodeFile, Endpoint, ...)
@@ -34,6 +34,7 @@ CREATE CONSTRAINT mw_name        IF NOT EXISTS FOR (n:Middleware)   REQUIRE n.na
 CREATE CONSTRAINT script_path    IF NOT EXISTS FOR (n:Script)       REQUIRE n.path IS UNIQUE;
 CREATE CONSTRAINT api_key        IF NOT EXISTS FOR (n:Api)          REQUIRE n.key  IS UNIQUE;
 CREATE CONSTRAINT external_name  IF NOT EXISTS FOR (n:External)     REQUIRE n.name IS UNIQUE;
+CREATE CONSTRAINT credential_name IF NOT EXISTS FOR (n:Credential)  REQUIRE n.name IS UNIQUE;
 
 // ---------- podman: host, networks, pods, containers ----------
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
@@ -419,6 +420,68 @@ WITH run, s, e, size(apoc.text.regreplace(e.path, '\\{[^}]+\\}', '')) AS lit
 WHERE lit >= 2
 MERGE (s)-[r:CALLS_API]->(e) SET r.src = 'scripts', r.seen = run;
 
+// ---------- credentials: which secret is used where (names only, never values) ----------
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.creds.ok
+UNWIND d.credentials AS c
+MERGE (x:Credential {name: c.name})
+SET x.vault_files = c.vault_files, x.duplicate_in_file = c.duplicate_in_file, x.conflict = c.conflict,
+    x.empty = c.empty, x.reused_as = c.reused_as, x.drift = c.drift, x.files = c.files,
+    x.unreferenced = c.unreferenced, x.referenced_in = c.referenced_in, x.unmanaged = false,
+    x.rotated_at = CASE WHEN c.rotated_at IS NULL THEN null ELSE datetime(c.rotated_at) END,
+    x.tracking_since = datetime(c.tracking_since), x.src = 'creds', x.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.creds.ok
+UNWIND d.credentials AS c
+UNWIND c.containers AS u
+MATCH (x:Credential {name: c.name}), (ct:Container {name: u.container})
+MERGE (x)-[r:INJECTED_INTO]->(ct)
+SET r.env = u.env, r.observed = coalesce(u.observed, false), r.declared = coalesce(u.declared, false),
+    r.matches_vault = u.matches_vault, r.src = 'creds', r.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.creds.ok AND d.sources.scripts.ok
+UNWIND d.credentials AS c
+UNWIND c.scripts AS p
+MATCH (x:Credential {name: c.name}), (s:Script {path: p})
+MERGE (s)-[r:USES]->(x) SET r.src = 'creds', r.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.creds.ok
+UNWIND d.credentials AS c
+WITH d, c WHERE c.grants_label = 'External'
+MATCH (x:Credential {name: c.name})
+MERGE (e:External {name: c.grants})
+ON CREATE SET e.src = 'creds', e.category = 'credential-only'
+SET e.seen = datetime(d.run)
+MERGE (x)-[r:GRANTS]->(e) SET r.src = 'creds', r.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.creds.ok
+UNWIND d.credentials AS c
+WITH d, c WHERE c.grants_label = 'Container'
+MATCH (x:Credential {name: c.name}), (ct:Container {name: c.grants})
+MERGE (x)-[r:GRANTS]->(ct) SET r.src = 'creds', r.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.creds.ok
+UNWIND d.credentials AS c
+UNWIND c.reused_as AS other
+WITH d, c, other WHERE c.name < other
+MATCH (a:Credential {name: c.name}), (b:Credential {name: other})
+MERGE (a)-[r:SAME_VALUE_AS]->(b) SET r.src = 'creds', r.seen = datetime(d.run);
+
+// Secret-looking container settings that match no vault key: managed by hand.
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.creds.ok
+UNWIND d.unmanaged_secrets AS u
+MATCH (ct:Container {name: u.container})
+MERGE (x:Credential {name: u.container + ':' + u.env})
+SET x.unmanaged = true, x.vault_files = [], x.src = 'creds', x.seen = datetime(d.run)
+MERGE (x)-[r:INJECTED_INTO]->(ct)
+SET r.env = u.env, r.observed = true, r.declared = false, r.src = 'creds', r.seen = datetime(d.run);
+
 // ---------- reconcile: delete what successful sources no longer see ----------
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
 WITH d, datetime(d.run) AS run
@@ -432,7 +495,7 @@ WITH d, datetime(d.run) AS run,
      {Host:'podman', Network:'podman', Pod:'podman', Container:'podman',
       Datastore:'db', Database:'db', Table:'db', ScheduledJob:'cron',
       Route:'traefik', Middleware:'traefik', Datasource:'grafana', Dashboard:'grafana', McpServer:'mcp',
-      Script:'scripts', Api:'ingress'} AS owner
+      Script:'scripts', Api:'ingress', Credential:'creds'} AS owner
 UNWIND keys(owner) AS label
 WITH run, label, owner[label] AS src, d WHERE d.sources[owner[label]].ok
 MATCH (n) WHERE label IN labels(n) AND (n.seen IS NULL OR n.seen < run)

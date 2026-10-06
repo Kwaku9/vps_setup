@@ -40,8 +40,16 @@ for k, v in d["sources"].items():
     print(f'infra_graph_source_ok{{source="{k}"}} {1 if v["ok"] else 0}')
 print("# HELP infra_graph_objects Objects discovered this run.")
 print("# TYPE infra_graph_objects gauge")
-for k in ("pods", "containers", "jobs", "datastores", "routes", "dashboards", "scripts", "apis", "api_paths"):
+for k in ("pods", "containers", "jobs", "datastores", "routes", "dashboards", "scripts", "apis", "api_paths", "credentials"):
     print(f'infra_graph_objects{{kind="{k}"}} {len(d.get(k, []))}')
+creds = d.get("credentials", [])
+if creds:
+    print("# HELP infra_graph_credentials Vault secrets by problem flag (names only; see INVENTORY.md).")
+    print("# TYPE infra_graph_credentials gauge")
+    for flag in ("drift", "conflict", "duplicate_in_file", "unreferenced", "empty"):
+        print(f'infra_graph_credentials{{flag="{flag}"}} {sum(1 for c in creds if c.get(flag))}')
+    print(f'infra_graph_credentials{{flag="reused"}} {sum(1 for c in creds if c.get("reused_as"))}')
+    print(f'infra_graph_credentials{{flag="unmanaged"}} {len(d.get("unmanaged_secrets", []))}')
 PY
 chmod 0644 "$OUT/infra_graph.prom.tmp"
 mv "$OUT/infra_graph.prom.tmp" "$PROM_DIR/infra_graph.prom"
