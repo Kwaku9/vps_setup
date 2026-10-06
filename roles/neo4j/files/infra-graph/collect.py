@@ -2031,6 +2031,109 @@ def collect_alerts(out):
     out["alerts_note"] = "; ".join(notes) or None
 
 
+# ───────────────────────────── remote hosts (pushed snapshots) ─────────────────────────────
+# Machines this host cannot reach (the Fedora laptop) push a snapshot over SSH
+# to inventory-ingest, which stores inventory/<host>.json. Each becomes a Host
+# with its pipelines, timers/cron and listening ports.
+INVENTORY_DIR = os.path.join(HERE, "inventory")
+REMOTE_STALE_SECS = 3 * 86400
+
+
+def _remote_port_reach(p, zones):
+    """Who can reach a listening port on a firewalld machine: (reach, notes)."""
+    try:
+        ip = ipaddress.ip_address(p["addr"]) if p["addr"] not in ("*", "0.0.0.0", "::", "") else None
+    except ValueError:
+        ip = None
+    if ip is not None and ip.is_loopback:
+        return [], []
+    def port_open(entries):
+        # firewalld entries: "22/tcp" or ranges "1025-65535/tcp" (Fedora
+        # Workstation's default zone opens that whole range).
+        for e in entries or []:
+            rng, _, proto = e.partition("/")
+            lo, _, hi = rng.partition("-")
+            if proto == p["proto"].rstrip("6") and lo.isdigit() and int(lo) <= p["port"] <= int(hi or lo):
+                return True
+        return False
+    reach = set()
+    for z, info in (zones or {}).items():
+        ifaces = info.get("interfaces") or []
+        opened = info.get("target") in ("ACCEPT", "default+accept") or port_open(info.get("ports"))
+        if not opened:
+            continue
+        if any(i.startswith("tailscale") for i in ifaces):
+            reach.add("tailnet")
+        if any(not i.startswith(("tailscale", "lo", "podman", "docker", "virbr")) for i in ifaces) or info.get("sources"):
+            reach.add("lan")
+    if ip is not None and ip in TAILNET_V4 or (ip is not None and ip.version == 6 and ip in TAILNET_V6):
+        reach &= {"tailnet"}
+    return sorted(reach), ([] if zones else ["no firewalld data: exposure unknown"])
+
+
+def collect_remote(out):
+    files = sorted(glob.glob(os.path.join(INVENTORY_DIR, "*.json")))
+    hosts, pipes, jobs, eps = [], [], [], []
+    now = time.time()
+    for f in files:
+        with open(f) as fh:
+            d = json.load(fh)
+        h = d["host"]
+        try:
+            age = now - calendar.timegm(time.strptime(d.get("received_at", "")[:19], "%Y-%m-%dT%H:%M:%S"))
+        except ValueError:
+            age = None
+        repos = d.get("repos", [])
+        hosts.append({"name": h, "hostname": d.get("hostname"), "os": d.get("os"), "received_at": d.get("received_at"),
+                      "stale": age is None or age > REMOTE_STALE_SECS, "repos": len(repos),
+                      "repos_dirty": sum(1 for r in repos if r.get("dirty")),
+                      "repos_unpushed": sum(1 for r in repos if r.get("unpushed"))})
+        for p in d.get("pipelines", []):
+            origin = p.get("origin")
+            own = bool(origin) and str(origin).split("/")[0].lower() == GITHUB_OWNER.lower()
+            if p.get("system") == "git-hook":
+                state = "runnable"
+            elif p.get("system") == "github-actions" and not (origin and "/" in str(origin) and "://" not in str(origin)):
+                state = "inert: repo has no GitHub remote"
+            elif p.get("system") == "github-actions" and not own:
+                state = "upstream repo (not yours)"
+            else:
+                state = "runnable"
+            pipes.append(dict(p, file=f'{h}:{p["file"]}', host=h, own=own or not origin, state=state))
+        for t in d.get("timers", []):
+            failing = t.get("result") not in (None, "", "success") or (t.get("exit_status") not in (None, "", "0"))
+            jobs.append({"name": f'{h}: {t.get("unit")}', "host": h, "schedule": t.get("next"), "kind": f'systemd-{t.get("scope")}',
+                         "command": t.get("command"), "last_result": t.get("result"), "exit_status": t.get("exit_status"),
+                         "failing": bool(failing)})
+        for i, c in enumerate(d.get("cron", [])):
+            parts = c["line"].split(None, 5)
+            jobs.append({"name": f'{h}: cron {i + 1}', "host": h, "schedule": " ".join(parts[:5]), "kind": "cron",
+                         "command": parts[5] if len(parts) > 5 else c["line"], "last_result": None, "exit_status": None,
+                         "failing": False})
+        zones = d.get("firewall_zones") or {}
+        seen = set()
+        for p in d.get("ports", []):
+            if p.get("port") is None:
+                continue
+            reach, notes = _remote_port_reach(p, zones)
+            k = (p["proto"], p["port"], p.get("process"))
+            if k in seen or (not reach and not notes):
+                continue
+            seen.add(k)
+            eps.append({"key": f'{h}:{p["proto"]}/{p["port"]}/{p.get("process") or "?"}', "kind": "port", "host_name": h,
+                        "name": f'{h} {p.get("process") or "?"} {p["proto"]}/{p["port"]}', "proto": p["proto"],
+                        "port": p["port"], "process": p.get("process"), "reachable": reach, "via": "direct",
+                        "flags": notes + (["reachable from the LAN"] if "lan" in reach else [])})
+        funnel = (d.get("exposure") or {}).get("tailscale_funnel") or {}
+        for hostport, on in (funnel.get("AllowFunnel") or {}).items():
+            if on:
+                eps.append({"key": f"{h}:funnel/{hostport}", "kind": "funnel", "host_name": h,
+                            "name": f"{h} tailscale funnel {hostport}", "proto": "https", "port": None, "process": "tailscaled",
+                            "reachable": ["internet"], "via": "tailscale-funnel",
+                            "flags": ["PUBLIC INTERNET via Tailscale Funnel"]})
+    out["remote_hosts"], out["remote_pipelines"], out["remote_jobs"], out["remote_endpoints"] = hosts, pipes, jobs, eps
+
+
 # ───────────────────────────── inventory markdown ─────────────────────────────
 def fmt_bytes(b):
     if b is None:
@@ -2077,6 +2180,16 @@ def write_inventory(out, path):
     for a in sorted(out.get("api_paths", []), key=lambda a: -a["hits"])[:60]:
         L.append(f'| {a["router"]} | {a["method"]} | `{a["path"]}` | {a["hits"]:,} | {a["errors_4xx"]} | '
                  f'{a["errors_5xx"]} | {a["p95_ms"]} |')
+    for rh in out.get("remote_hosts", []):
+        L += ["", f'## Remote host: {rh["name"]} ({rh.get("os") or "?"}, snapshot {rh.get("received_at")}'
+                  + (", STALE" if rh["stale"] else "") + ")", "",
+              f'{rh["repos"]} repos ({rh["repos_dirty"]} with uncommitted changes, {rh["repos_unpushed"]} with unpushed commits)', ""]
+        rp = [p for p in out.get("remote_pipelines", []) if p["host"] == rh["name"] and p.get("own")]
+        L += [f'- pipeline: {p["name"]} ({p["system"]}, {p["state"]}) {p.get("origin") or ""}' for p in rp]
+        L += [f'- job: {j["name"]} [{j["kind"]}] {"FAILING (" + str(j.get("last_result")) + ")" if j["failing"] else ""}'
+              for j in out.get("remote_jobs", []) if j["host"] == rh["name"]]
+        L += [f'- endpoint: {e["name"]} reachable from {", ".join(e["reachable"]) or "?"} {"; ".join(e["flags"])}'
+              for e in out.get("remote_endpoints", []) if e["host_name"] == rh["name"]]
     ars = out.get("alert_rules", [])
     if ars:
         cov = out.get("alert_coverage", {})
@@ -2162,7 +2275,7 @@ def main():
     steps = [("podman", collect_podman), ("db", collect_dbs), ("cron", collect_cron), ("scripts", collect_scripts),
              ("traefik", collect_traefik), ("ingress", collect_ingress), ("egress", collect_egress),
              ("creds", collect_creds), ("exposure", collect_exposure), ("pipelines", collect_pipelines),
-             ("alerts", collect_alerts),
+             ("alerts", collect_alerts), ("remote", collect_remote),
              ("grafana", collect_grafana), ("backup", collect_backup), ("mcp", collect_mcp)]
     # A source is skipped (not run, not reconciled) when one it builds on failed.
     needs = {"db": ["podman"], "traefik": ["podman"], "grafana": ["podman"], "backup": ["podman"],
@@ -2192,7 +2305,8 @@ def main():
                       "counts": {k: len(out.get(k, [])) for k in
                                  ("pods", "containers", "networks", "jobs", "datastores", "routes", "dashboards", "datasources",
                                   "mcp_servers", "scripts", "apis", "egress", "api_paths", "credentials",
-                                  "unmanaged_secrets", "public_endpoints", "pipelines", "alert_rules")},
+                                  "unmanaged_secrets", "public_endpoints", "pipelines", "alert_rules",
+                                  "remote_hosts", "remote_pipelines", "remote_jobs", "remote_endpoints")},
                       "db_warnings": out.get("db_warnings", [])}, indent=1))
     return 0 if all(s["ok"] for s in out["sources"].values()) else 2
 
