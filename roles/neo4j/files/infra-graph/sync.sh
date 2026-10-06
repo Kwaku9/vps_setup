@@ -40,7 +40,7 @@ for k, v in d["sources"].items():
     print(f'infra_graph_source_ok{{source="{k}"}} {1 if v["ok"] else 0}')
 print("# HELP infra_graph_objects Objects discovered this run.")
 print("# TYPE infra_graph_objects gauge")
-for k in ("pods", "containers", "jobs", "datastores", "routes", "dashboards", "scripts", "apis", "api_paths", "credentials"):
+for k in ("pods", "containers", "jobs", "datastores", "routes", "dashboards", "scripts", "apis", "api_paths", "credentials", "public_endpoints"):
     print(f'infra_graph_objects{{kind="{k}"}} {len(d.get(k, []))}')
 creds = d.get("credentials", [])
 if creds:
@@ -50,6 +50,14 @@ if creds:
         print(f'infra_graph_credentials{{flag="{flag}"}} {sum(1 for c in creds if c.get(flag))}')
     print(f'infra_graph_credentials{{flag="reused"}} {sum(1 for c in creds if c.get("reused_as"))}')
     print(f'infra_graph_credentials{{flag="unmanaged"}} {len(d.get("unmanaged_secrets", []))}')
+eps = d.get("public_endpoints", [])
+if eps:
+    print("# HELP infra_graph_public_endpoints Externally reachable endpoints (see INVENTORY.md).")
+    print("# TYPE infra_graph_public_endpoints gauge")
+    for kind in ("hostname", "port", "worker"):
+        print(f'infra_graph_public_endpoints{{kind="{kind}",set="all"}} {sum(1 for e in eps if e["kind"] == kind)}')
+        print(f'infra_graph_public_endpoints{{kind="{kind}",set="flagged"}} {sum(1 for e in eps if e["kind"] == kind and e["flags"])}')
+    print(f'infra_graph_public_endpoints{{kind="port",set="internet"}} {sum(1 for e in eps if e["kind"] == "port" and "internet" in e["reachable"])}')
 PY
 chmod 0644 "$OUT/infra_graph.prom.tmp"
 mv "$OUT/infra_graph.prom.tmp" "$PROM_DIR/infra_graph.prom"

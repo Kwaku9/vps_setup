@@ -1413,6 +1413,273 @@ def collect_creds(out):
     out["vault_other_keys"] = sorted(set(by_name) - secrets)
 
 
+# ───────────────────────────── exposure (public endpoints) ─────────────────────────────
+# Everything reachable from outside this box, and what guards it:
+#   ports      host listeners, judged against the real iptables/ip6tables INPUT
+#              rules for a NEW connection from the internet, the tailnet and
+#              the container network;
+#   hostnames  Traefik routes, joined with Cloudflare DNS/tunnel and the
+#              Cloudflare Access app that covers them (cf-exposure.json,
+#              exported at deploy time: no secrets, no addresses);
+#   workers    Cloudflare Workers and their routes.
+CF_EXPOSURE = os.path.join(HERE, "cf-exposure.json")
+TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")
+TAILNET_V6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")
+# Who is knocking, for each audience: (iface, source address).
+AUDIENCES = {
+    "internet": ("eth0", {"4": "203.0.113.5", "6": "2001:db8::5"}),
+    "tailnet": ("tailscale0", {"4": "100.100.100.100", "6": "fd7a:115c:a1e0::1"}),
+    "containers": ("podman1", {"4": "10.89.0.250", "6": "fd00::250"}),
+}
+AUTH_MW_RE = re.compile(r"(?i)auth|bearer|basic|forward|token|oidc|access")
+
+
+def _listeners():
+    rows = []
+    for proto, flag in (("tcp", "-tlnp"), ("udp", "-ulnp")):
+        for line in run(["netstat", flag]).splitlines():
+            parts = line.split()
+            if len(parts) < 4 or not parts[0].startswith(proto):
+                continue
+            addr, _, port = parts[3].rpartition(":")
+            prog = next((p for p in parts[4:] if re.match(r"^\d+/", p)), "")
+            rows.append({"proto": proto, "addr": addr.strip("[]"), "port": int(port),
+                         "process": prog.split("/", 1)[-1].rstrip(":") if prog else ""})
+    seen, uniq = set(), []
+    for r in rows:
+        k = (r["proto"], r["addr"], r["port"])
+        if k not in seen:
+            seen.add(k)
+            uniq.append(r)
+    return uniq
+
+
+def _bind_scope(addr):
+    a = addr.split("%")[0]
+    if a in ("0.0.0.0", "::", "*", ""):
+        return "all"
+    try:
+        ip = ipaddress.ip_address(a)
+    except ValueError:
+        return "unknown"
+    if ip.is_loopback:
+        return "loopback"
+    if ip in (TAILNET_V4 if ip.version == 4 else TAILNET_V6):
+        return "tailnet"
+    return "private" if ip.is_private else "public"
+
+
+def _fw(cmd):
+    """INPUT and every chain it jumps into. `iptables -S` over ALL chains fails
+    here (a netavark nftables rule iptables cannot print), so read chain by
+    chain and skip any single unreadable one."""
+    policies, chains, todo = {}, {}, ["INPUT"]
+    builtin = {"ACCEPT", "DROP", "REJECT", "RETURN", "LOG", "MARK", "CONNMARK", "MASQUERADE", "DNAT", "SNAT"}
+    while todo:
+        name = todo.pop()
+        if name in chains:
+            continue
+        chains[name] = []
+        try:
+            text = run([cmd, "-S", name])
+        except RuntimeError:
+            if name == "INPUT":
+                raise
+            continue
+        for line in text.splitlines():
+            t = line.split()
+            if len(t) >= 3 and t[0] == "-P":
+                policies[t[1]] = t[2]
+            elif len(t) >= 2 and t[0] == "-A":
+                chains[name].append(t[2:])
+                tgt, _ = _opt(t, "-j")
+                if tgt and tgt not in builtin and tgt not in chains:
+                    todo.append(tgt)
+    return policies, chains
+
+
+def _opt(tokens, name):
+    """(value, negated) of an iptables option in a rule's token list."""
+    for i, tok in enumerate(tokens):
+        if tok == name and i + 1 < len(tokens):
+            return tokens[i + 1], i > 0 and tokens[i - 1] == "!"
+    return None, False
+
+
+def _fw_verdict(fw, proto, port, iface, src, chain="INPUT", depth=0):
+    """'accept' / 'drop' for a NEW connection, following jumps into custom chains."""
+    policies, chains = fw
+    if depth > 8:
+        return None
+    for r in chains.get(chain, []):
+        if "--ctstate" in r or "--state" in r:
+            continue  # established/related only: not a new inbound connection
+        p, pneg = _opt(r, "-p")
+        if p and ((p == proto) == pneg):
+            continue
+        dport, _ = _opt(r, "--dport") if "--dport" in r else _opt(r, "--dports")
+        if dport:
+            ports = set()
+            for part in dport.split(","):
+                lo, _, hi = part.partition(":")
+                ports |= set(range(int(lo), int(hi or lo) + 1)) if lo.isdigit() else set()
+            if port not in ports:
+                continue
+        i, ineg = _opt(r, "-i")
+        if i:
+            hit = iface.startswith(i[:-1]) if i.endswith("+") else iface == i
+            if hit == ineg:
+                continue
+        s, sneg = _opt(r, "-s")
+        if s:
+            try:
+                hit = ipaddress.ip_address(src) in ipaddress.ip_network(s, strict=False)
+            except ValueError:
+                hit = False
+            if hit == sneg:
+                continue
+        target, _ = _opt(r, "-j")
+        if target == "ACCEPT":
+            return "accept"
+        if target in ("DROP", "REJECT"):
+            return "drop"
+        if target == "RETURN":
+            return None
+        if target in chains:
+            v = _fw_verdict(fw, proto, port, iface, src, target, depth + 1)
+            if v:
+                return v
+    return policies.get("INPUT", "ACCEPT").lower() if chain == "INPUT" else None
+
+
+def _access_for(host, path, apps):
+    """Most specific Cloudflare Access app covering host/path, and its verdict."""
+    best, rank = None, -1
+    for a in apps:
+        dom_host, _, dom_path = (a.get("domain") or "").partition("/")
+        if dom_host == host:
+            r = 2
+        elif dom_host.startswith("*.") and host.endswith(dom_host[1:]):
+            r = 1
+        else:
+            continue
+        if dom_path:
+            if not (path or "/").lstrip("/").startswith(dom_path):
+                continue
+            r += 2
+        if r > rank:
+            best, rank = a, r
+    if not best:
+        return "none", None
+    pol = set(best.get("policies") or [])
+    verdict = ("bypass" if "bypass" in pol else "identity" if "allow" in pol
+               else "service-token" if "non_identity" in pol else "deny" if pol == {"deny"} else "unknown")
+    return verdict, best.get("domain")
+
+
+def collect_exposure(out):
+    with open(CF_EXPOSURE) as fh:
+        cf = json.load(fh)
+    fw4, fw6 = _fw("iptables"), _fw("ip6tables")
+    eps = []
+
+    # Ports on the host: one row per (proto, port, process, bind scope, IP
+    # version); a resolver bound on several bridge addresses is one service.
+    grouped = {}
+    for l in _listeners():
+        scope = _bind_scope(l["addr"])
+        if scope == "loopback":
+            continue
+        k = (l["proto"], l["port"], l["process"], scope, ":" in l["addr"])
+        grouped.setdefault(k, dict(l, addresses=0))["addresses"] += 1
+    for l in grouped.values():
+        scope = _bind_scope(l["addr"])
+        v6 = ":" in l["addr"]
+        fam = "6" if v6 else "4"
+        fw = fw6 if v6 else fw4
+        reach = []
+        for aud, (iface, srcs) in AUDIENCES.items():
+            src = srcs[fam]
+            if scope == "tailnet" and aud != "tailnet":
+                continue
+            if scope == "private" and aud == "internet":
+                continue
+            if _fw_verdict(fw, l["proto"], l["port"], iface, src) == "accept":
+                reach.append(aud)
+        flags = []
+        if "internet" in reach and l["process"] not in ("sshd", "tailscaled"):
+            flags.append("reachable from the internet")
+        eps.append({"key": f'{l["proto"]}/{l["port"]}@{"v6" if v6 else "v4"}:{scope}', "kind": "port",
+                    "name": f'{l["process"] or "?"} {l["proto"]}/{l["port"]} (IPv{fam}, {scope}' + (f', {l["addresses"]} addresses' if l["addresses"] > 1 else "") + ")",
+                    "proto": l["proto"], "port": l["port"],
+                    "process": l["process"], "bind": scope, "ip_version": int(fam), "reachable": reach,
+                    "access": None, "via": "direct", "middlewares": [], "route_key": None, "flags": flags})
+    for chain_name, fw in (("v4", fw4), ("v6", fw6)):
+        for r in fw[1].get("INPUT", []) + fw[1].get("FW6-INPUT", []):
+            dport, _ = _opt(r, "--dport")
+            s, _ = _opt(r, "-s")
+            i, _ = _opt(r, "-i")
+            if dport and dport.isdigit() and not s and not i and _opt(r, "-j")[0] == "ACCEPT":
+                port = int(dport)
+                if not any(e["kind"] == "port" and e["port"] == port and e["ip_version"] == (6 if chain_name == "v6" else 4)
+                           and e["bind"] in ("all", "public") for e in eps):
+                    eps.append({"key": f'fw-open/{port}@{chain_name}', "kind": "port", "name": f"firewall-open {port} (IPv{6 if chain_name == 'v6' else 4}, nothing listening)",
+                                "proto": "tcp", "port": port, "process": "", "bind": "none", "ip_version": 6 if chain_name == "v6" else 4,
+                                "reachable": [], "access": None, "via": "direct", "middlewares": [], "route_key": None,
+                                "flags": ["firewall allows a port nothing listens on"]})
+
+    # Hostnames behind Cloudflare.
+    dns = cf.get("dns", [])
+    tunnel_hosts = {i.get("hostname") for t in cf.get("tunnels", []) for i in t.get("ingress", []) if i.get("hostname")}
+    def dns_for(host):
+        exact = [d for d in dns if d["name"] == host and d["type"] in ("A", "AAAA", "CNAME")]
+        if exact:
+            return exact
+        zone = ".".join(host.split(".")[1:])
+        return [d for d in dns if d["name"] == f"*.{zone}" and d["type"] in ("A", "AAAA", "CNAME")]
+    for rt in out.get("routes", []):
+        host = rt.get("host")
+        if not host:
+            continue
+        recs = dns_for(host)
+        if any(h == host or (h.startswith("*.") and host.endswith(h[1:])) for h in tunnel_hosts) or \
+                any((d.get("target") or "").endswith("cfargotunnel.com") for d in recs):
+            via = "cloudflare-tunnel"
+        elif any(d["proxied"] for d in recs):
+            via = "cloudflare-proxy"
+        elif recs:
+            via = "dns-direct"
+        else:
+            via = "not-in-dns"
+        access, app = _access_for(host, rt.get("path"), cf.get("access_apps", []))
+        mws = rt.get("middlewares", [])
+        flags = []
+        if via in ("cloudflare-tunnel", "cloudflare-proxy") and access in ("none", "bypass") \
+                and not any(AUTH_MW_RE.search(m) for m in mws):
+            flags.append("public: relies on the app's own sign-in")
+        if via.startswith("cloudflare") and not mws:
+            flags.append("no Traefik middlewares at all (no CrowdSec, rate limit or security headers)")
+        if any(d["to_this_host"] and not d["proxied"] for d in recs):
+            flags.append("DNS points straight at this host (reveals origin, skips Cloudflare)")
+        # NOTE: Traefik's internal-only allowlist is the container network
+        # itself, which includes cloudflared, so it does NOT stop tunnel
+        # traffic. It is listed but never counted as protection.
+        eps.append({"key": f'https://{host}{rt.get("path") or ""}#{rt["router"]}', "kind": "hostname",
+                    "name": f'{host}{rt.get("path") or ""}', "host": host, "path": rt.get("path"), "proto": "https",
+                    "port": 443, "process": "", "bind": None, "ip_version": None,
+                    "reachable": ["internet"] if via.startswith("cloudflare") else [],
+                    "access": access, "access_app": app, "via": via, "middlewares": mws,
+                    "route_key": rt["key"], "flags": flags})
+
+    for w in cf.get("workers", []):
+        routes = [r["pattern"] for r in cf.get("worker_routes", []) if r.get("script") == w]
+        eps.append({"key": f"worker/{w}", "kind": "worker", "name": w, "proto": "https", "port": 443, "process": "",
+                    "bind": None, "ip_version": None, "reachable": ["internet"], "access": None, "via": "cloudflare-worker",
+                    "middlewares": [], "route_key": None, "routes": routes, "flags": []})
+    out["public_endpoints"] = eps
+    out["cf_exported_at"] = cf.get("exported_at")
+
+
 # ───────────────────────────── inventory markdown ─────────────────────────────
 def fmt_bytes(b):
     if b is None:
@@ -1459,6 +1726,13 @@ def write_inventory(out, path):
     for a in sorted(out.get("api_paths", []), key=lambda a: -a["hits"])[:60]:
         L.append(f'| {a["router"]} | {a["method"]} | `{a["path"]}` | {a["hits"]:,} | {a["errors_4xx"]} | '
                  f'{a["errors_5xx"]} | {a["p95_ms"]} |')
+    eps = out.get("public_endpoints", [])
+    if eps:
+        L += ["", f'## Public endpoints (Cloudflare data exported {out.get("cf_exported_at") or "?"})', "",
+              "| Endpoint | Kind | Reachable from | Via | Cloudflare Access | Middlewares | Flags |", "|---|---|---|---|---|---|---|"]
+        for e in sorted(eps, key=lambda e: (e["kind"], e["name"])):
+            L.append(f'| {e["name"]} | {e["kind"]} | {", ".join(e["reachable"]) or "—"} | {e["via"]} | {e.get("access") or "—"} | '
+                     f'{", ".join(e["middlewares"]) or "—"} | {"; ".join(e["flags"]) or "ok"} |')
     creds = out.get("credentials", [])
     if creds:
         L += ["", "## Credentials (names only; values never leave the vault)", "",
@@ -1512,12 +1786,12 @@ def main():
     out = {"run": now_iso(), "host": HOST, "sources": {}, "_outdir": outdir}
     steps = [("podman", collect_podman), ("db", collect_dbs), ("cron", collect_cron), ("scripts", collect_scripts),
              ("traefik", collect_traefik), ("ingress", collect_ingress), ("egress", collect_egress),
-             ("creds", collect_creds),
+             ("creds", collect_creds), ("exposure", collect_exposure),
              ("grafana", collect_grafana), ("backup", collect_backup), ("mcp", collect_mcp)]
     # A source is skipped (not run, not reconciled) when one it builds on failed.
     needs = {"db": ["podman"], "traefik": ["podman"], "grafana": ["podman"], "backup": ["podman"],
              "mcp": ["podman"], "scripts": ["podman", "cron"], "ingress": ["traefik"], "egress": ["podman"],
-             "creds": ["podman"]}
+             "creds": ["podman"], "exposure": ["traefik"]}
     for name, fn in steps:
         t0 = time.time()
         failed = [n for n in needs.get(name, []) if not out["sources"].get(n, {}).get("ok")]
@@ -1542,7 +1816,7 @@ def main():
                       "counts": {k: len(out.get(k, [])) for k in
                                  ("pods", "containers", "networks", "jobs", "datastores", "routes", "dashboards", "datasources",
                                   "mcp_servers", "scripts", "apis", "egress", "api_paths", "credentials",
-                                  "unmanaged_secrets")},
+                                  "unmanaged_secrets", "public_endpoints")},
                       "db_warnings": out.get("db_warnings", [])}, indent=1))
     return 0 if all(s["ok"] for s in out["sources"].values()) else 2
 
