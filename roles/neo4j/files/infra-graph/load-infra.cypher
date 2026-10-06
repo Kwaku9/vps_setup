@@ -10,7 +10,7 @@
 //
 // Owned labels (deleted when unseen): Host Network Pod Container Datastore
 // Database Table ScheduledJob Route Middleware Datasource Dashboard McpServer
-// Script Api Credential.
+// Script Api Credential PublicEndpoint.
 // External is shared: nodes this loader created (src set) are reconciled like
 // owned labels; hand-curated ones (no src) are enriched but never deleted.
 // Not owned, never touched: Risk, Role, the code graph (CodeFile, Endpoint, ...)
@@ -35,6 +35,7 @@ CREATE CONSTRAINT script_path    IF NOT EXISTS FOR (n:Script)       REQUIRE n.pa
 CREATE CONSTRAINT api_key        IF NOT EXISTS FOR (n:Api)          REQUIRE n.key  IS UNIQUE;
 CREATE CONSTRAINT external_name  IF NOT EXISTS FOR (n:External)     REQUIRE n.name IS UNIQUE;
 CREATE CONSTRAINT credential_name IF NOT EXISTS FOR (n:Credential)  REQUIRE n.name IS UNIQUE;
+CREATE CONSTRAINT public_ep_key  IF NOT EXISTS FOR (n:PublicEndpoint) REQUIRE n.key IS UNIQUE;
 
 // ---------- podman: host, networks, pods, containers ----------
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
@@ -482,6 +483,27 @@ SET x.unmanaged = true, x.vault_files = [], x.src = 'creds', x.seen = datetime(d
 MERGE (x)-[r:INJECTED_INTO]->(ct)
 SET r.env = u.env, r.observed = true, r.declared = false, r.src = 'creds', r.seen = datetime(d.run);
 
+// ---------- exposure: everything reachable from outside, and what guards it ----------
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.exposure.ok
+UNWIND d.public_endpoints AS e
+MERGE (x:PublicEndpoint {key: e.key})
+SET x.name = e.name, x.kind = e.kind, x.host = e.host, x.path = e.path, x.proto = e.proto, x.port = e.port,
+    x.process = e.process, x.bind = e.bind, x.ip_version = e.ip_version, x.reachable = e.reachable,
+    x.via = e.via, x.access = e.access, x.access_app = e.access_app, x.middlewares = e.middlewares,
+    x.flags = e.flags, x.flagged = size(e.flags) > 0, x.cf_exported_at = d.cf_exported_at,
+    x.src = 'exposure', x.seen = datetime(d.run)
+WITH d, e, x
+MATCH (h:Host {name: d.host})
+MERGE (x)-[r:ON_HOST]->(h) SET r.src = 'exposure', r.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.exposure.ok AND d.sources.traefik.ok
+UNWIND d.public_endpoints AS e
+WITH d, e WHERE e.route_key IS NOT NULL
+MATCH (x:PublicEndpoint {key: e.key}), (rt:Route {key: e.route_key})
+MERGE (x)-[r:EXPOSES]->(rt) SET r.src = 'exposure', r.seen = datetime(d.run);
+
 // ---------- reconcile: delete what successful sources no longer see ----------
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
 WITH d, datetime(d.run) AS run
@@ -495,7 +517,7 @@ WITH d, datetime(d.run) AS run,
      {Host:'podman', Network:'podman', Pod:'podman', Container:'podman',
       Datastore:'db', Database:'db', Table:'db', ScheduledJob:'cron',
       Route:'traefik', Middleware:'traefik', Datasource:'grafana', Dashboard:'grafana', McpServer:'mcp',
-      Script:'scripts', Api:'ingress', Credential:'creds'} AS owner
+      Script:'scripts', Api:'ingress', Credential:'creds', PublicEndpoint:'exposure'} AS owner
 UNWIND keys(owner) AS label
 WITH run, label, owner[label] AS src, d WHERE d.sources[owner[label]].ok
 MATCH (n) WHERE label IN labels(n) AND (n.seen IS NULL OR n.seen < run)
