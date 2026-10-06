@@ -1192,6 +1192,33 @@ def vault_refs(text, names):
     return refs
 
 
+def role_defaults(role_dir):
+    try:
+        with open(os.path.join(role_dir, "defaults", "main.yml")) as fh:
+            return yaml.safe_load(fh) or {}
+    except Exception:
+        return {}
+
+
+def resolve_literal(value, defaults):
+    """A templated path's literal value, when it can be known statically:
+    "{{ x | default('/a/b') }}" -> "/a/b"; "{{ role.key }}" -> the role default.
+    Anything else stays unresolved (None)."""
+    if not isinstance(value, str):
+        return None
+    if "{{" not in value:
+        return value
+    m = re.fullmatch(r"\{\{\s*([\w.]+)\s*(?:\|\s*default\(\s*['\"]([^'\"]+)['\"]\s*\))?\s*\}\}", value.strip())
+    if not m:
+        return None
+    node = defaults
+    for part in m[1].split("."):
+        node = node.get(part) if isinstance(node, dict) else None
+    if isinstance(node, str) and "{{" not in node:
+        return node
+    return m[2]
+
+
 def declared_uses(names):
     """(env injections, rendered files, files referencing each key) from the roles' code."""
     env_uses, renders, mentions = [], {}, {}
@@ -1227,6 +1254,7 @@ def declared_uses(names):
                     doc = yaml.safe_load(text)
                 except Exception:
                     continue
+                defaults = role_defaults(os.path.dirname(os.path.dirname(p)))
                 for t in _tasks(doc):
                     pc = t.get("containers.podman.podman_container") or t.get("podman_container")
                     if isinstance(pc, dict) and isinstance(pc.get("name"), str) and "{{" not in pc["name"] \
@@ -1236,10 +1264,10 @@ def declared_uses(names):
                                 env_uses.append({"container": pc["name"], "env": str(env_key), "name": n})
                     for mod in ("copy", "ansible.builtin.copy"):
                         a = t.get(mod)
-                        if isinstance(a, dict) and isinstance(a.get("content"), str) \
-                                and isinstance(a.get("dest"), str) and "{{" not in a["dest"]:
+                        dest = resolve_literal(a.get("dest"), defaults) if isinstance(a, dict) else None
+                        if isinstance(a, dict) and isinstance(a.get("content"), str) and dest:
                             for n in vault_refs(a["content"], names):
-                                renders.setdefault(n, set()).add(a["dest"])
+                                renders.setdefault(n, set()).add(dest)
     return env_uses, renders, mentions
 
 
@@ -1255,11 +1283,30 @@ def collect_creds(out):
     for e in index:
         by_name.setdefault(e["name"], []).append(e)
     secrets = {n for n in by_name if is_secret_name(n)}
+    # Match against every key, then promote keys whose value turns up where a
+    # secret lives (a secret-looking env var, or a token/key/password file):
+    # usage beats naming (e.g. cloudflare_access_metrics holds a token).
     fp_owner = {}
-    for n in secrets:
-        for e in by_name[n]:
+    for n, entries in by_name.items():
+        for e in entries:
             if not e["empty"]:
                 fp_owner.setdefault(e["fp"], set()).add(n)
+    SECRET_FILE_RE = re.compile(r"(?i)(token|key|secret|passw|cred|\.env$|rclone\.conf$)")
+    for c in out["containers"]:
+        for k, v in env_of(c).items():
+            if v and ENV_SECRET_RE.search(k):
+                for val in [v] + URL_PASSWORD_RE.findall(v):
+                    secrets |= fp_owner.get(_fp(val, key), set())
+    for sc in out.get("scripts", []):
+        for path in sc.get("reads", []):
+            if SECRET_FILE_RE.search(os.path.basename(path)):
+                try:
+                    if os.path.getsize(path) <= 65536:
+                        with open(path, errors="replace") as fh:
+                            secrets |= fp_owner.get(_fp(fh.read().strip(), key), set())
+                except OSError:
+                    pass
+    fp_owner = {fp: ns & secrets for fp, ns in fp_owner.items() if ns & secrets}
 
     # Observed: fingerprint every live env value (and passwords inside URLs).
     observed = []      # {container, env, fp, names}
@@ -1278,6 +1325,26 @@ def collect_creds(out):
 
     env_decl, renders, mentions = declared_uses(set(by_name))
     scripts = out.get("scripts", [])
+
+    # Observed in files: token and config files that scripts read. Fingerprint
+    # the whole content and each "key = value" / "KEY=value" value, so a file
+    # links to its secret however Ansible wrote it (indirect lookups, templated
+    # destinations). Small text files only.
+    file_hits = {}
+    for path in sorted({f for sc in scripts for f in sc.get("reads", [])}):
+        try:
+            if os.path.getsize(path) > 65536:
+                continue
+            with open(path, errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        cands = [text.strip()] + [m.strip().strip("\"'") for m in
+                                  re.findall(r"(?m)^\s*[\w.-]+\s*[=:]\s*(.+?)\s*$", text)]
+        for val in cands:
+            if len(val) >= 8:
+                for n in fp_owner.get(_fp(val, key), ()):
+                    file_hits.setdefault(n, set()).add(path)
 
     # Rotation history: when did each key's current fingerprint first appear?
     hist_path = os.path.join(out["_outdir"], "creds-state.json")
@@ -1309,7 +1376,7 @@ def collect_creds(out):
                     live_val = next((env_of(c).get(d["env"]) for c in out["containers"] if c["name"] == d["container"]), None)
                     # Declared from this key but the running value matches nothing in the vault.
                     slot["matches_vault"] = False if live_val else None
-        files = sorted(renders.get(n, []))
+        files = sorted(set(renders.get(n, [])) | file_hits.get(n, set()))
         users = sorted({s["path"] for s in scripts
                         if s["path"] in files or set(s.get("reads", [])) & set(files)})
         label, target = grant_of(n)
