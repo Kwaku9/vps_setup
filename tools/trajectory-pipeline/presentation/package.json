@@ -1,0 +1,11 @@
+{
+  "name": "trajectory-learning-presentation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes hyperframes@0.8.134 present ./composition --no-open",
+    "serve": "python3 -m http.server 8767 --bind 127.0.0.1",
+    "build": "python3 build_deck.py",
+    "check": "npx --yes hyperframes@0.8.134 check ./composition --samples 32"
+  }
+}
