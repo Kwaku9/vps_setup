@@ -10,7 +10,7 @@
 //
 // Owned labels (deleted when unseen): Host Network Pod Container Datastore
 // Database Table ScheduledJob Route Middleware Datasource Dashboard McpServer
-// Script Api Credential PublicEndpoint Pipeline.
+// Script Api Credential PublicEndpoint Pipeline AlertRule.
 // External is shared: nodes this loader created (src set) are reconciled like
 // owned labels; hand-curated ones (no src) are enriched but never deleted.
 // Not owned, never touched: Risk, Role, the code graph (CodeFile, Endpoint, ...)
@@ -37,6 +37,7 @@ CREATE CONSTRAINT external_name  IF NOT EXISTS FOR (n:External)     REQUIRE n.na
 CREATE CONSTRAINT credential_name IF NOT EXISTS FOR (n:Credential)  REQUIRE n.name IS UNIQUE;
 CREATE CONSTRAINT public_ep_key  IF NOT EXISTS FOR (n:PublicEndpoint) REQUIRE n.key IS UNIQUE;
 CREATE CONSTRAINT pipeline_file  IF NOT EXISTS FOR (n:Pipeline)     REQUIRE n.file IS UNIQUE;
+CREATE CONSTRAINT alert_rule_key IF NOT EXISTS FOR (n:AlertRule)    REQUIRE n.key IS UNIQUE;
 
 // ---------- podman: host, networks, pods, containers ----------
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
@@ -521,6 +522,50 @@ OPTIONAL MATCH (f:CodeFile {path: p.file})
 FOREACH (_ IN CASE WHEN f IS NULL THEN [] ELSE [1] END |
   MERGE (x)-[r:DEFINED_IN]->(f) SET r.src = 'pipelines', r.seen = datetime(d.run));
 
+// ---------- alert rules: what each watches and where it pages ----------
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.alerts.ok
+UNWIND d.alert_rules AS a
+MERGE (x:AlertRule {key: a.key})
+SET x.name = a.name, x.source = a.source, x.group = a.group, x.severity = a.severity, x.expr = a.expr,
+    x.for = a.for, x.covers_all_containers = a.covers_all_containers, x.state = a.state, x.health = a.health,
+    x.last_error = a.last_error, x.paused = coalesce(a.paused, false), x.src = 'alerts', x.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.alerts.ok
+UNWIND d.alert_rules AS a
+UNWIND a.watches AS w
+MATCH (x:AlertRule {key: a.key})
+OPTIONAL MATCH (c:Container {name: w.name}) WHERE w.label = 'Container'
+OPTIONAL MATCH (p:Pod {name: w.name}) WHERE w.label = 'Pod'
+OPTIONAL MATCH (j:ScheduledJob {name: w.name}) WHERE w.label = 'ScheduledJob'
+OPTIONAL MATCH (h:Host {name: w.name}) WHERE w.label = 'Host'
+WITH d, x, coalesce(c, p, j, h) AS t WHERE t IS NOT NULL
+MERGE (x)-[r:WATCHES]->(t) SET r.src = 'alerts', r.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.alerts.ok
+UNWIND d.alert_rules AS a
+WITH d, a WHERE a.notifies IS NOT NULL
+MATCH (x:AlertRule {key: a.key}), (c:Container {name: a.notifies})
+MERGE (x)-[r:NOTIFIES]->(c) SET r.src = 'alerts', r.seen = datetime(d.run);
+
+// Coverage on the watched things themselves, for quick "what is unwatched" queries.
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.alerts.ok
+MATCH (c:Container)
+OPTIONAL MATCH (r:AlertRule)-[:WATCHES]->(c)
+OPTIONAL MATCH (r2:AlertRule)-[:WATCHES]->(:Pod)-[:CONTAINS]->(c)
+WITH c, count(DISTINCT r) + count(DISTINCT r2) AS n
+SET c.alert_rules = n;
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.alerts.ok
+MATCH (j:ScheduledJob)
+OPTIONAL MATCH (r:AlertRule)-[:WATCHES]->(j)
+WITH j, count(r) AS n
+SET j.alert_rules = n;
+
 // ---------- reconcile: delete what successful sources no longer see ----------
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
 WITH d, datetime(d.run) AS run
@@ -534,7 +579,7 @@ WITH d, datetime(d.run) AS run,
      {Host:'podman', Network:'podman', Pod:'podman', Container:'podman',
       Datastore:'db', Database:'db', Table:'db', ScheduledJob:'cron',
       Route:'traefik', Middleware:'traefik', Datasource:'grafana', Dashboard:'grafana', McpServer:'mcp',
-      Script:'scripts', Api:'ingress', Credential:'creds', PublicEndpoint:'exposure', Pipeline:'pipelines'} AS owner
+      Script:'scripts', Api:'ingress', Credential:'creds', PublicEndpoint:'exposure', Pipeline:'pipelines', AlertRule:'alerts'} AS owner
 UNWIND keys(owner) AS label
 WITH run, label, owner[label] AS src, d WHERE d.sources[owner[label]].ok
 MATCH (n) WHERE label IN labels(n) AND (n.seen IS NULL OR n.seen < run)
