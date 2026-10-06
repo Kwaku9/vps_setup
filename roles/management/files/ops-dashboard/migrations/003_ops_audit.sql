@@ -28,3 +28,28 @@ CREATE INDEX IF NOT EXISTS ops_audit_user_idx ON sessions.ops_audit (username, t
 GRANT SELECT, INSERT ON sessions.ops_audit TO ops_dashboard;
 GRANT USAGE ON SEQUENCE sessions.ops_audit_id_seq TO ops_dashboard;
 REVOKE UPDATE, DELETE, TRUNCATE ON sessions.ops_audit FROM ops_dashboard;
+
+-- The REVOKE alone is not enough: ops_dashboard is a member of app_rw, whose
+-- inherited write-everything rights cannot be revoked per table. A trigger
+-- applies whatever the caller's grants, so only a superuser (who can disable
+-- it, deliberately) may change or remove history.
+CREATE OR REPLACE FUNCTION sessions.ops_audit_append_only() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) THEN
+        RAISE EXCEPTION 'sessions.ops_audit is append-only (% refused for %)', TG_OP, current_user;
+    END IF;
+    -- Superuser: let the change through. A row trigger returning NULL would
+    -- silently skip the row instead.
+    IF TG_LEVEL = 'ROW' THEN
+        RETURN COALESCE(NEW, OLD);
+    END IF;
+    RETURN NULL;
+END $$;
+
+DROP TRIGGER IF EXISTS ops_audit_no_change ON sessions.ops_audit;
+CREATE TRIGGER ops_audit_no_change BEFORE UPDATE OR DELETE ON sessions.ops_audit
+    FOR EACH ROW EXECUTE FUNCTION sessions.ops_audit_append_only();
+DROP TRIGGER IF EXISTS ops_audit_no_truncate ON sessions.ops_audit;
+CREATE TRIGGER ops_audit_no_truncate BEFORE TRUNCATE ON sessions.ops_audit
+    FOR EACH STATEMENT EXECUTE FUNCTION sessions.ops_audit_append_only();

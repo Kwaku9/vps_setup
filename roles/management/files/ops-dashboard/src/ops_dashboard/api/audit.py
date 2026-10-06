@@ -55,12 +55,13 @@ def event(scope, user: dict | None, *, action: str, target: str | None = None, o
     }
 
 
-async def record(scope, user: dict | None, **kw) -> dict:
+async def record(scope, user: dict | None, *, persist: bool = True, **kw) -> dict:
+    """Log the event; also insert it into sessions.ops_audit unless persist=False."""
     row = event(scope, user, **kw)
     logger.info(json.dumps({"audit": True, **row}, default=str, separators=(",", ":")))
     app = scope.get("app")
     pool = getattr(getattr(app, "state", None), "db_pool", None)
-    if pool is not None:
+    if persist and pool is not None:
         try:
             async with pool.acquire() as conn:
                 await conn.execute(_INSERT, row["username"], row["role"], row["action"], row["target"],
