@@ -14,6 +14,11 @@ kind = "claude"
 path = "state/incoming-pg"
 glob = "*.jsonl"
 
+[[sources]]
+kind = "codex"
+path = "state/incoming-pg-codex"
+glob = "*.jsonl"
+
 # Student-runtime telemetry from TrajectoryInterceptor (not the session corpus).
 [[sources]]
 kind = "canonical"
@@ -47,10 +52,10 @@ enabled = false
 dsn_env = "TRAJECTORY_PG_DSN"
 
 [archive]
-# Read-only pull from sessions.* (enterprise DB). Codex rows need their own
-# adapter; chatgpt rows have no tool calls and are excluded.
+# Read-only pull from sessions.* (enterprise DB). Codex sessions land in
+# <out_dir>-codex; chatgpt rows have no tool calls and are excluded.
 out_dir = "incoming-pg"
-sources = ["vps", "local"]
+sources = ["vps", "local", "codex"]
 
 [neo4j]
 enabled = false
