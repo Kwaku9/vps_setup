@@ -18,6 +18,7 @@ from .routers import ingest as ingest_router
 from .routers import sessions as sessions_router
 from .routers import approvals as approvals_router
 from .routers import auth as auth_router
+from .routers import inventory as inventory_router
 from .routers import repo_radar as repo_radar_router
 from .routers import timeline_search as timeline_search_router
 from .routers.metrics import vm_client as router_vm_client
@@ -139,6 +140,7 @@ app.include_router(sessions_router.router)
 app.include_router(approvals_router.router)
 app.include_router(repo_radar_router.router)
 app.include_router(timeline_search_router.router)
+app.include_router(inventory_router.router)
 
 
 @app.get("/api/health")
