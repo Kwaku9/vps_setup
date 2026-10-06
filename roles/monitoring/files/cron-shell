@@ -1,0 +1,49 @@
+#!/bin/sh
+# cron-shell: the SHELL for root's crontab (cronie runs `$SHELL -c "<command>"`).
+#
+# Runs the job exactly as /bin/sh would, then records how it went so a failing
+# job pages someone (vmalert CronJobFailed). Before this, nothing recorded a
+# cron job's exit status: geoip-refresh failed every week for months unseen.
+#
+# Per job, in /opt/compose/textfile-collector/cron_<name>.prom (node-exporter):
+#   cron_job_last_exit_code{cron_job}             exit status of the last run
+#   cron_job_last_run_timestamp_seconds{cron_job} when it last finished
+#   cron_job_last_duration_seconds{cron_job}      how long it took
+#   cron_job_last_success_timestamp_seconds{...}  last run that exited 0
+# The job's own exit status is returned unchanged, and a failure to write the
+# metrics never affects the job. The label is cron_job, not job: node-exporter
+# scrapes already carry job="node-exporter".
+
+[ "$1" = "-c" ] || exec /bin/sh "$@"
+cmd=$2
+start=$(date +%s)
+/bin/sh -c "$cmd"
+rc=$?
+end=$(date +%s)
+
+{
+    dir=${CRON_SHELL_DIR:-/opt/compose/textfile-collector}
+    tab=${CRON_SHELL_CRONTAB:-/etc/crontabs/root}
+    # Name the job by the "#Ansible: <name>" comment above its crontab line;
+    # fall back to the command's program name for unmanaged lines.
+    name=$(awk -v c="$cmd" 'index($0, c) && prev ~ /^#Ansible: / { sub(/^#Ansible: /, "", prev); print prev; exit } { prev = $0 }' "$tab" 2>/dev/null)
+    [ -n "$name" ] || name=$(basename "$(printf '%s' "$cmd" | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^\//) {print $i; exit}}')" 2>/dev/null)
+    [ -n "$name" ] || name=unknown
+    slug=$(printf '%s' "$name" | tr -c 'A-Za-z0-9_\n' '_' | cut -c1-80)
+    label=$(printf '%s' "$name" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    file="$dir/cron_$slug.prom"
+    last_ok=$(awk '/^cron_job_last_success_timestamp_seconds/ {print $NF}' "$file" 2>/dev/null)
+    [ "$rc" -eq 0 ] && last_ok=$end
+    if tmp=$(mktemp "$dir/.cron_$slug.XXXXXX"); then
+        {
+            echo "cron_job_last_exit_code{cron_job=\"$label\"} $rc"
+            echo "cron_job_last_run_timestamp_seconds{cron_job=\"$label\"} $end"
+            echo "cron_job_last_duration_seconds{cron_job=\"$label\"} $((end - start))"
+            [ -n "$last_ok" ] && echo "cron_job_last_success_timestamp_seconds{cron_job=\"$label\"} $last_ok"
+        } > "$tmp"
+        # 0644: node-exporter is not root; a 0600 .prom drops every series in it.
+        chmod 0644 "$tmp" && mv -f "$tmp" "$file"
+    fi
+} 2>/dev/null || true
+
+exit "$rc"
