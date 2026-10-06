@@ -10,7 +10,7 @@
 //
 // Owned labels (deleted when unseen): Host Network Pod Container Datastore
 // Database Table ScheduledJob Route Middleware Datasource Dashboard McpServer
-// Script Api Credential PublicEndpoint.
+// Script Api Credential PublicEndpoint Pipeline.
 // External is shared: nodes this loader created (src set) are reconciled like
 // owned labels; hand-curated ones (no src) are enriched but never deleted.
 // Not owned, never touched: Risk, Role, the code graph (CodeFile, Endpoint, ...)
@@ -36,6 +36,7 @@ CREATE CONSTRAINT api_key        IF NOT EXISTS FOR (n:Api)          REQUIRE n.ke
 CREATE CONSTRAINT external_name  IF NOT EXISTS FOR (n:External)     REQUIRE n.name IS UNIQUE;
 CREATE CONSTRAINT credential_name IF NOT EXISTS FOR (n:Credential)  REQUIRE n.name IS UNIQUE;
 CREATE CONSTRAINT public_ep_key  IF NOT EXISTS FOR (n:PublicEndpoint) REQUIRE n.key IS UNIQUE;
+CREATE CONSTRAINT pipeline_file  IF NOT EXISTS FOR (n:Pipeline)     REQUIRE n.file IS UNIQUE;
 
 // ---------- podman: host, networks, pods, containers ----------
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
@@ -504,6 +505,22 @@ WITH d, e WHERE e.route_key IS NOT NULL
 MATCH (x:PublicEndpoint {key: e.key}), (rt:Route {key: e.route_key})
 MERGE (x)-[r:EXPOSES]->(rt) SET r.src = 'exposure', r.seen = datetime(d.run);
 
+// ---------- pipelines: CI/CD definitions and whether they can run ----------
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.pipelines.ok
+UNWIND d.pipelines AS p
+MERGE (x:Pipeline {file: p.file})
+SET x.name = p.name, x.system = p.system, x.repo = p.repo, x.origin = p.origin, x.own = p.own,
+    x.state = p.state, x.runnable = p.state STARTS WITH 'runnable', x.triggers = [t IN p.triggers | toString(t)],
+    x.runner = p.runner, x.deploys = p.deploys, x.secret_names = p.secrets, x.github_state = p.github_state,
+    x.last_run_status = p.last_run.conclusion, x.last_run_event = p.last_run.event,
+    x.last_run_at = CASE WHEN p.last_run IS NULL THEN null ELSE datetime(p.last_run.at) END,
+    x.src = 'pipelines', x.seen = datetime(d.run)
+WITH d, p, x
+OPTIONAL MATCH (f:CodeFile {path: p.file})
+FOREACH (_ IN CASE WHEN f IS NULL THEN [] ELSE [1] END |
+  MERGE (x)-[r:DEFINED_IN]->(f) SET r.src = 'pipelines', r.seen = datetime(d.run));
+
 // ---------- reconcile: delete what successful sources no longer see ----------
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
 WITH d, datetime(d.run) AS run
@@ -517,7 +534,7 @@ WITH d, datetime(d.run) AS run,
      {Host:'podman', Network:'podman', Pod:'podman', Container:'podman',
       Datastore:'db', Database:'db', Table:'db', ScheduledJob:'cron',
       Route:'traefik', Middleware:'traefik', Datasource:'grafana', Dashboard:'grafana', McpServer:'mcp',
-      Script:'scripts', Api:'ingress', Credential:'creds', PublicEndpoint:'exposure'} AS owner
+      Script:'scripts', Api:'ingress', Credential:'creds', PublicEndpoint:'exposure', Pipeline:'pipelines'} AS owner
 UNWIND keys(owner) AS label
 WITH run, label, owner[label] AS src, d WHERE d.sources[owner[label]].ok
 MATCH (n) WHERE label IN labels(n) AND (n.seen IS NULL OR n.seen < run)

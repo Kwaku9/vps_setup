@@ -40,7 +40,7 @@ for k, v in d["sources"].items():
     print(f'infra_graph_source_ok{{source="{k}"}} {1 if v["ok"] else 0}')
 print("# HELP infra_graph_objects Objects discovered this run.")
 print("# TYPE infra_graph_objects gauge")
-for k in ("pods", "containers", "jobs", "datastores", "routes", "dashboards", "scripts", "apis", "api_paths", "credentials", "public_endpoints"):
+for k in ("pods", "containers", "jobs", "datastores", "routes", "dashboards", "scripts", "apis", "api_paths", "credentials", "public_endpoints", "pipelines"):
     print(f'infra_graph_objects{{kind="{k}"}} {len(d.get(k, []))}')
 creds = d.get("credentials", [])
 if creds:
@@ -58,6 +58,13 @@ if eps:
         print(f'infra_graph_public_endpoints{{kind="{kind}",set="all"}} {sum(1 for e in eps if e["kind"] == kind)}')
         print(f'infra_graph_public_endpoints{{kind="{kind}",set="flagged"}} {sum(1 for e in eps if e["kind"] == kind and e["flags"])}')
     print(f'infra_graph_public_endpoints{{kind="port",set="internet"}} {sum(1 for e in eps if e["kind"] == "port" and "internet" in e["reachable"])}')
+pipes = d.get("pipelines", [])
+if pipes:
+    print("# HELP infra_graph_pipelines CI/CD definitions by state; failing = last GitHub run failed.")
+    print("# TYPE infra_graph_pipelines gauge")
+    print(f'infra_graph_pipelines{{set="runnable"}} {sum(1 for p in pipes if p["state"].startswith("runnable"))}')
+    print(f'infra_graph_pipelines{{set="inert"}} {sum(1 for p in pipes if not p["state"].startswith("runnable"))}')
+    print(f'infra_graph_pipelines{{set="failing"}} {sum(1 for p in pipes if (p.get("last_run") or {}).get("conclusion") == "failure")}')
 PY
 chmod 0644 "$OUT/infra_graph.prom.tmp"
 mv "$OUT/infra_graph.prom.tmp" "$PROM_DIR/infra_graph.prom"
