@@ -6,6 +6,9 @@ Usage: merge-claude-settings.py <settings.json> <hook_command> [<env.json>]
 - Adds the session-event hook to every lifecycle event WITHOUT removing any
   existing hook (e.g. the Telegram approval PreToolUse hook is preserved).
 - Merges env keys from the optional env file into settings["env"].
+- Pins cleanupPeriodDays so Claude Code never deletes raw transcripts (the
+  default is 30 days; 0 disables saving entirely). They are the unredacted
+  source of record for session ingest and trajectory learning.
 - Refuses to overwrite a settings.json that exists but is not valid JSON
   (prints ERROR, exits 2) so it can never silently wipe an existing config.
 - Prints CHANGED if it wrote, OK if nothing changed.
@@ -20,6 +23,7 @@ EVENTS = [
 ]
 EVENTS_WITH_MATCHER = {"PreToolUse", "PostToolUse"}
 MARKER = "session-event-hook.js"
+RETENTION_DAYS = 36500
 
 
 def load_required(path):
@@ -69,6 +73,10 @@ def main():
             if senv.get(k) != v:
                 senv[k] = v
                 changed = True
+
+    if settings.get("cleanupPeriodDays") != RETENTION_DAYS:
+        settings["cleanupPeriodDays"] = RETENTION_DAYS
+        changed = True
 
     if changed:
         with open(settings_path, "w") as f:
