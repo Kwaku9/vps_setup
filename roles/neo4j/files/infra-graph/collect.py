@@ -1680,6 +1680,166 @@ def collect_exposure(out):
     out["cf_exported_at"] = cf.get("exported_at")
 
 
+# ───────────────────────────── pipelines (CI/CD) ─────────────────────────────
+# Every CI/CD definition in the workspace and whether it can actually run.
+# A GitHub workflow only runs in a repo pushed to GitHub, so a definition in a
+# plain copy of upstream code (n8n, bolt.diy, fabric...) is inert. Status for
+# runnable GitHub pipelines comes from the public API (private repos need a
+# token this host does not have: reported as unknown, not as healthy).
+WORKSPACE_ROOTS = ["/workspace/vscode-projects", "/workspace/pycharm-projects"]
+GITHUB_OWNER = "Kwaku9"
+PIPELINE_SKIP_DIRS = {"node_modules", ".worktrees", "worktrees", "__pycache__", ".venv", "venv", "dist", "build"}
+DEPLOY_HINTS = [
+    (r"ansible-playbook", "ansible"), (r"\bssh\b|\bscp\b|\brsync\b", "ssh"),
+    (r"docker (push|buildx)|podman push|ghcr\.io", "container-registry"),
+    (r"wrangler (deploy|publish)|cloudflare/wrangler-action", "cloudflare-workers"),
+    (r"gcloud (run|app|functions) deploy|google-github-actions/deploy", "google-cloud"),
+    (r"npm publish|pypi|twine upload", "package-registry"), (r"gh release|softprops/action-gh-release", "github-release"),
+    (r"eas (build|submit|update)", "expo-eas"), (r"kubectl|helm ", "kubernetes"),
+]
+
+
+def _repo_of(path):
+    d = path if os.path.isdir(path) else os.path.dirname(path)
+    while d and d != "/":
+        if os.path.exists(os.path.join(d, ".git")):
+            return d
+        d = os.path.dirname(d)
+    return None
+
+
+def _origin(repo):
+    try:
+        url = run(["git", "-C", repo, "remote", "get-url", "origin"], timeout=10).strip()
+    except Exception:
+        return None
+    # github.com URLs and SSH host aliases (git@github-marketplace:Owner/repo.git)
+    m = re.search(r"github[\w.-]*[:/]([^/:]+)/([^/]+?)(?:\.git)?$", url)
+    return f"{m[1]}/{m[2]}" if m else url
+
+
+def _deploy_hints(text):
+    return sorted({name for pat, name in DEPLOY_HINTS if re.search(pat, text, re.I)})
+
+
+def _gh_get(path):
+    req = urllib.request.Request("https://api.github.com/" + path,
+                                 headers={"Accept": "application/vnd.github+json", "User-Agent": "infra-graph"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.load(r)
+
+
+def _parse_pipeline(path):
+    with open(path, errors="replace") as fh:
+        text = fh.read(500_000)
+    base = os.path.basename(path)
+    p = {"file": path, "secrets": sorted(set(re.findall(r"\$\{\{\s*secrets\.([A-Za-z0-9_]+)", text))),
+         "deploys": _deploy_hints(text), "triggers": [], "runner": None}
+    if "/.github/workflows/" in path:
+        doc = yaml.safe_load(text) or {}
+        on = doc.get("on", doc.get(True))  # PyYAML reads a bare `on:` key as True
+        p["triggers"] = [on] if isinstance(on, str) else sorted(on) if isinstance(on, (list, dict)) else []
+        runners = {str(j.get("runs-on")) for j in (doc.get("jobs") or {}).values() if isinstance(j, dict) and j.get("runs-on")}
+        p.update(system="github-actions", name=doc.get("name") or base, runner=", ".join(sorted(runners)) or None)
+    elif base == "cloudbuild.yaml":
+        p.update(system="google-cloud-build", name=f"cloud build ({os.path.basename(os.path.dirname(path))})",
+                 triggers=["configured in Google Cloud"], runner="google-cloud-build")
+    elif base == "wrangler.toml":
+        name = (re.search(r'(?m)^name\s*=\s*"([^"]+)"', text) or [None, base])[1]
+        routes = re.findall(r'pattern\s*=\s*"([^"]+)"', text)
+        p.update(system="cloudflare-workers", name=f"worker {name}", triggers=["manual: wrangler deploy"],
+                 runner="cloudflare", routes=routes, workers_dev="workers_dev = false" not in text)
+    elif base == "eas.json":
+        doc = json.loads(text or "{}")
+        p.update(system="expo-eas", name=f"eas ({os.path.basename(os.path.dirname(path))}): " + ", ".join(sorted((doc.get("build") or {}).keys())),
+                 triggers=["manual: eas build/submit"], runner="expo-eas")
+    elif base in (".gitlab-ci.yml", "Jenkinsfile"):
+        p.update(system="gitlab-ci" if base.startswith(".gitlab") else "jenkins", name=base)
+    else:
+        return None
+    return p
+
+
+def collect_pipelines(out):
+    pipes, repos_seen = [], {}
+    for root in WORKSPACE_ROOTS:
+        for dirpath, dirs, files in os.walk(root):
+            dirs[:] = [d for d in dirs if d not in PIPELINE_SKIP_DIRS and not d.startswith("C:")]
+            if dirpath.count("/") > 9:
+                dirs[:] = []
+            cands = []
+            if dirpath.endswith("/.github/workflows"):
+                cands = [f for f in files if f.endswith((".yml", ".yaml"))]
+            cands += [f for f in files if f in ("cloudbuild.yaml", "wrangler.toml", "eas.json", ".gitlab-ci.yml", "Jenkinsfile")]
+            for f in cands:
+                path = os.path.join(dirpath, f)
+                try:
+                    p = _parse_pipeline(path)
+                except Exception as exc:  # a broken definition is still a finding
+                    p = {"file": path, "name": os.path.basename(path), "system": "unparseable", "error": str(exc)[:120],
+                         "secrets": [], "deploys": [], "triggers": [], "runner": None}
+                if not p:
+                    continue
+                repo = _repo_of(path)
+                if repo and repo not in repos_seen:
+                    repos_seen[repo] = _origin(repo)
+                origin = repos_seen.get(repo) if repo else None
+                own = bool(origin) and origin.split("/")[0].lower() == GITHUB_OWNER.lower()
+                if not repo:
+                    state = "inert: not a git repo (copied code)"
+                elif p["system"] == "github-actions" and not (origin and "/" in origin and "://" not in origin):
+                    state = "inert: repo has no GitHub remote"
+                elif p["system"] == "github-actions" and not own:
+                    state = "upstream repo (not yours)"
+                else:
+                    state = "runnable"
+                p.update(repo=repo, origin=origin, own=own or (bool(repo) and not origin), state=state)
+                pipes.append(p)
+
+    # Git hooks: local automation that runs on commit/merge.
+    for repo in sorted({r for r in repos_seen} | {os.path.dirname(os.path.dirname(h)) for h in
+                                                   glob.glob("/workspace/*/*/.git/hooks")}):
+        for h in sorted(glob.glob(os.path.join(repo, ".git", "hooks", "*"))):
+            if h.endswith(".sample") or not os.access(h, os.X_OK) or not os.path.isfile(h):
+                continue
+            with open(h, errors="replace") as fh:
+                text = fh.read(100_000)
+            calls = sorted(set(re.findall(r"(/(?:opt|usr/local|workspace)/[\w./-]+|\b[\w-]+\.(?:sh|py))", text)))[:8]
+            pipes.append({"file": h, "name": f"git {os.path.basename(h)} hook", "system": "git-hook",
+                          "triggers": [os.path.basename(h)], "runner": "local", "secrets": [], "deploys": _deploy_hints(text),
+                          "calls": calls, "repo": repo, "origin": _origin(repo), "own": True, "state": "runnable"})
+
+    # Run status, and your workflows in repos not checked out here.
+    status_note = None
+    try:
+        local = {p["origin"] for p in pipes if p.get("origin")}
+        own_repos = [r["full_name"] for r in _gh_get(f"users/{GITHUB_OWNER}/repos?per_page=100&type=owner")]
+        for full in own_repos[:60]:
+            wfs = _gh_get(f"repos/{full}/actions/workflows").get("workflows", [])
+            if not wfs:
+                continue
+            runs = _gh_get(f"repos/{full}/actions/runs?per_page=30").get("workflow_runs", [])
+            for wf in wfs:
+                last = next((r for r in runs if r.get("workflow_id") == wf["id"]), None)
+                match = next((p for p in pipes if p.get("origin") == full and p["file"].endswith("/" + wf["path"])), None)
+                info = {"github_state": wf.get("state"),
+                        "last_run": last and {"status": last["status"], "conclusion": last["conclusion"],
+                                              "event": last["event"], "at": last["created_at"]}}
+                if match:
+                    match.update(info)
+                elif full not in local or not any(p["file"].endswith("/" + wf["path"]) for p in pipes):
+                    pipes.append({"file": f"github:{full}/{wf['path']}", "name": wf.get("name") or wf["path"],
+                                  "system": "github-actions", "triggers": [], "runner": None, "secrets": [], "deploys": [],
+                                  "repo": None, "origin": full, "own": True,
+                                  "state": "runnable (GitHub only, not checked out here)", **info})
+    except Exception as exc:  # rate limit or no network: definitions still count
+        status_note = f"GitHub status unavailable: {exc}"[:160]
+    if not pipes:
+        raise RuntimeError("implausible: no pipeline definitions found")
+    out["pipelines"] = pipes
+    out["pipelines_note"] = status_note
+
+
 # ───────────────────────────── inventory markdown ─────────────────────────────
 def fmt_bytes(b):
     if b is None:
@@ -1726,6 +1886,17 @@ def write_inventory(out, path):
     for a in sorted(out.get("api_paths", []), key=lambda a: -a["hits"])[:60]:
         L.append(f'| {a["router"]} | {a["method"]} | `{a["path"]}` | {a["hits"]:,} | {a["errors_4xx"]} | '
                  f'{a["errors_5xx"]} | {a["p95_ms"]} |')
+    pipes = out.get("pipelines", [])
+    if pipes:
+        L += ["", "## CI/CD pipelines", "", out.get("pipelines_note") or "",
+              "| Pipeline | System | Repo | State | Triggers | Runner | Deploys | Last run | Secrets |",
+              "|---|---|---|---|---|---|---|---|---|"]
+        for p in sorted(pipes, key=lambda p: (not p.get("own"), p["state"] != "runnable", p.get("origin") or "", p["name"])):
+            lr = p.get("last_run") or {}
+            L.append(f'| {p["name"]} | {p["system"]} | {p.get("origin") or (p.get("repo") or "—").replace("/workspace/", "")} | '
+                     f'{p["state"]}{" (disabled on GitHub)" if p.get("github_state") not in (None, "active") else ""} | '
+                     f'{", ".join(map(str, p.get("triggers") or [])) or "—"} | {p.get("runner") or "—"} | {", ".join(p.get("deploys") or []) or "—"} | '
+                     f'{(lr.get("conclusion") or lr.get("status") or "—")} {(lr.get("at") or "")[:10]} | {", ".join(p.get("secrets") or []) or "—"} |')
     eps = out.get("public_endpoints", [])
     if eps:
         L += ["", f'## Public endpoints (Cloudflare data exported {out.get("cf_exported_at") or "?"})', "",
@@ -1786,7 +1957,7 @@ def main():
     out = {"run": now_iso(), "host": HOST, "sources": {}, "_outdir": outdir}
     steps = [("podman", collect_podman), ("db", collect_dbs), ("cron", collect_cron), ("scripts", collect_scripts),
              ("traefik", collect_traefik), ("ingress", collect_ingress), ("egress", collect_egress),
-             ("creds", collect_creds), ("exposure", collect_exposure),
+             ("creds", collect_creds), ("exposure", collect_exposure), ("pipelines", collect_pipelines),
              ("grafana", collect_grafana), ("backup", collect_backup), ("mcp", collect_mcp)]
     # A source is skipped (not run, not reconciled) when one it builds on failed.
     needs = {"db": ["podman"], "traefik": ["podman"], "grafana": ["podman"], "backup": ["podman"],
@@ -1816,7 +1987,7 @@ def main():
                       "counts": {k: len(out.get(k, [])) for k in
                                  ("pods", "containers", "networks", "jobs", "datastores", "routes", "dashboards", "datasources",
                                   "mcp_servers", "scripts", "apis", "egress", "api_paths", "credentials",
-                                  "unmanaged_secrets", "public_endpoints")},
+                                  "unmanaged_secrets", "public_endpoints", "pipelines")},
                       "db_warnings": out.get("db_warnings", [])}, indent=1))
     return 0 if all(s["ok"] for s in out["sources"].values()) else 2
 
