@@ -1,0 +1,4 @@
+# CAP AT <2: mcp 2.0 moved FastMCP out of mcp.server.fastmcp (see
+# session-recall-mcp/requirements.txt for the crash loop that taught this).
+mcp>=1.2.0,<2.0
+neo4j>=5.20,<6

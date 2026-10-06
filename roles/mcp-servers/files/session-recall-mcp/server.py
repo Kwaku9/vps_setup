@@ -36,23 +36,35 @@ def _conn():
 @mcp.tool()
 def search_sessions(query: str, k: int = 8, project: str | None = None,
                     since: str | None = None) -> list:
-    """Semantic (meaning-based) search over the user's past Claude Code sessions.
+    """Semantic search over the user's past AI coding-agent sessions: the
+    institutional memory of how their workstation, VPS and projects were built,
+    broken and fixed. Use it BEFORE answering from assumptions about this
+    environment, and whenever the user says "we did/decided/fixed X before".
 
-    Best for fuzzy recall when you remember *what* was discussed but not where:
-    "what did we decide about X", "find the session where we talked about Y",
-    "how did Z turn out", "check previous sessions for ...". Matches on meaning
-    via embeddings, not keywords, so paraphrases still hit.
+    Coverage: Claude Code sessions on the laptop (source "local") and the VPS
+    ("vps") since 2026-01-28, plus Codex sessions since 2026-07-19; about 1,300
+    sessions, refreshed daily. NOT covered: the 2024-25 ChatGPT archive (reach
+    it through neo4j-sessions instead).
 
-    Returns up to `k` best-matching sessions as
-    {session_uuid, title, project, date, snippet, score}, highest score first.
-    Optional `project` (exact display name) and `since` (ISO date) pre-filter.
-    Follow up with get_session to read the full transcript.
+    How it matches: embeddings over message chunks, so describe the situation
+    in plain words ("container can't reach postgres after reboot") rather than
+    exact strings. Paraphrases hit; rare literals (a hash, an error code) may
+    not, and for those a Cypher text match is better. Each session appears at
+    most once, scored by its single best chunk.
 
-    Complements the neo4j-sessions MCP: use THIS for "what did we discuss?"; use
-    neo4j-sessions' read_neo4j_cypher for precise/structural queries (counts,
-    which files/commits a session touched, cross-session links, the infra map).
-    Using both for one question is fine — e.g. search here to find a session,
-    then Cypher to pull its files/commits.
+    Args: query (natural language); k (sessions to return, default 8);
+    project (exact display name, e.g. "vps_setup"); since (ISO date, e.g.
+    "2026-09-01", to prefer recent state over stale history).
+
+    Returns [{session_uuid, title, project, date, snippet, score}], best first.
+    score is cosine similarity: above ~0.6 is usually on topic, below ~0.45 is
+    usually noise. The snippet is one chunk, not a summary; call get_session
+    before relying on what was concluded.
+
+    Treat results as history, not current truth: verify live state before
+    acting on a past fix. Sibling tools: neo4j-sessions read_neo4j_cypher for
+    counts, files and commits a session touched, and the VPS infra map; the
+    knowledge MCP for code, docs and blast radius.
 
     On failure returns [{"error": "..."}]; no matches returns []."""
     try:
@@ -67,11 +79,20 @@ def search_sessions(query: str, k: int = 8, project: str | None = None,
 
 @mcp.tool()
 def get_session(session_uuid: str, max_chars: int = 8000) -> dict:
-    """Fetch one past session's title, date, project, and a trimmed
-    user+assistant transcript — for when a search snippet is too thin to answer.
+    """Read one past session's conversation: title, start time, project, and
+    the user and assistant messages in order. Use it after search_sessions (or
+    with a session_uuid from a neo4j-sessions query) when a snippet is too thin
+    to know what was actually decided or how a problem ended.
 
-    Typically called after search_sessions, or with a session_uuid surfaced by a
-    neo4j-sessions Cypher query, to read what was actually said in that session.
+    Works for every source in the archive, including ChatGPT sessions that
+    search_sessions cannot find.
+
+    Limits: tool calls and tool output are NOT included (only the text people
+    and the agent wrote), so commands run and their results must come from
+    neo4j-sessions (Message-[:USED_TOOL]->ToolCall). The transcript is cut at
+    max_chars (default 8000). The end of a session usually holds the outcome,
+    so if the cut lands mid-story, raise max_chars instead of guessing.
+
     On failure or unknown uuid returns {"error": "..."}."""
     try:
         conn = _conn()
