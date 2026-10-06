@@ -2,18 +2,19 @@ state_dir = "state"
 settle_seconds = 60
 minimum_new_tasks = 500
 max_error_ratio = 0.25
-redact_env = ["TRAJECTORY_PG_DSN", "TRAJECTORY_NEO4J_PASSWORD", "JUDGE_API_KEY", "HF_TOKEN", "LITELLM_API_KEY"]
+redact_env = ["TRAJECTORY_PG_DSN", "PGPASSWORD", "TRAJECTORY_NEO4J_PASSWORD", "JUDGE_API_KEY", "HF_TOKEN", "LITELLM_API_KEY"]
 
+# SINGLE SOURCE: the redacted Postgres archive (sessions.*), materialized by
+# `trajectory pull-postgres`. Live transcript folders (~/.claude, ~/.codex) are
+# unredacted and are refused by load_config unless a source sets
+# allow_unredacted = true. Raw JSONL is preserved by the ingest/archive jobs,
+# not by this pipeline.
 [[sources]]
 kind = "claude"
-path = "~/.claude/projects"
-glob = "**/*.jsonl"
+path = "state/incoming-pg"
+glob = "*.jsonl"
 
-[[sources]]
-kind = "codex"
-path = "~/.codex/sessions"
-glob = "**/*.jsonl"
-
+# Student-runtime telemetry from TrajectoryInterceptor (not the session corpus).
 [[sources]]
 kind = "canonical"
 path = "state/incoming"
@@ -39,7 +40,17 @@ minimum_confidence = 0.95
 
 [postgres]
 enabled = false
+# libpq DSN without the password, e.g. through the tunnel
+#   ssh -N -L 15432:127.0.0.1:5432 root@<vps-tailnet-host>
+#   TRAJECTORY_PG_DSN="host=127.0.0.1 port=15432 dbname=enterprise user=learning_reader"
+# with the password in PGPASSWORD (from vault), never in the DSN or argv.
 dsn_env = "TRAJECTORY_PG_DSN"
+
+[archive]
+# Read-only pull from sessions.* (enterprise DB). Codex rows need their own
+# adapter; chatgpt rows have no tool calls and are excluded.
+out_dir = "incoming-pg"
+sources = ["vps", "local"]
 
 [neo4j]
 enabled = false
