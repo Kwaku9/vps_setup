@@ -168,6 +168,10 @@ def _is_page_load(path: str) -> bool:
     return not path.startswith(("/api/", "/assets/")) and "." not in path.rsplit("/", 1)[-1]
 
 
+UNAUTH_DB_EVERY = 60  # seconds between persisted 401 rows per client address
+_unauth_last: dict[str, float] = {}
+
+
 class AuthMiddleware:
     """Session gate for HTTP and WebSocket. Must sit inside SessionMiddleware."""
 
@@ -200,8 +204,17 @@ class AuthMiddleware:
             await send({"type": "websocket.close", "code": 4401})
             return
         if scope["path"].startswith("/api/"):
+            # A stale tab or a scanner can poll without a session every second.
+            # Every attempt goes to the log (Loki); Postgres gets one row per
+            # client per UNAUTH_DB_EVERY seconds so it cannot be flooded.
+            ip = audit.client_ip(scope) or "?"
+            persist = now - _unauth_last.get(ip, 0) >= UNAUTH_DB_EVERY
+            if persist:
+                _unauth_last[ip] = now
+                if len(_unauth_last) > 10_000:
+                    _unauth_last.clear()
             await audit.record(scope, None, action="request", target=scope["path"],
-                               outcome="unauthenticated", status=401)
+                               outcome="unauthenticated", status=401, persist=persist)
             return await JSONResponse({"detail": "not signed in"}, 401)(scope, receive, send)
         qs = scope.get("query_string", b"").decode()
         target = scope["path"] + ("?" + qs if qs else "")

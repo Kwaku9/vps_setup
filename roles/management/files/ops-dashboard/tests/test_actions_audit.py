@@ -23,7 +23,7 @@ class FakeProvider:
 def make(role, *, pool=object(), ok=True, monkeypatch=None):
     events, alerts = [], []
 
-    async def fake_record(scope, user, **kw):
+    async def fake_record(scope, user, persist=True, **kw):
         events.append({"user": (user or {}).get("username"), **kw})
 
     monkeypatch.setattr(audit, "record", fake_record)

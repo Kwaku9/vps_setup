@@ -16,8 +16,8 @@ def events(monkeypatch):
     """Capture audit events instead of writing them."""
     got = []
 
-    async def fake_record(scope, user, **kw):
-        got.append({"user": (user or {}).get("username"), **kw})
+    async def fake_record(scope, user, persist=True, **kw):
+        got.append({"user": (user or {}).get("username"), **kw, **({} if persist else {"persist": False})})
         return kw
 
     monkeypatch.setattr(audit, "record", fake_record)
@@ -278,3 +278,12 @@ def test_session_without_timestamps_is_invalid():
 def test_session_from_the_future_is_invalid():
     now = 1_000_000.0
     assert auth.session_valid({"via": "cf", "iat": now + 3600, "seen": now}, now) is False
+
+
+def test_unauthenticated_flood_persists_one_row_per_minute(client, events, always_valid, monkeypatch):
+    monkeypatch.setattr(auth, "_unauth_last", {})
+    for _ in range(5):
+        assert client.get("/api/thing").status_code == 401
+    persisted = [e for e in events if e.get("outcome") == "unauthenticated" and "persist" not in e]
+    logged_only = [e for e in events if e.get("persist") is False]
+    assert len(persisted) == 1 and len(logged_only) == 4
