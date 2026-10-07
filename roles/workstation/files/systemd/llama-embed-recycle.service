@@ -1,0 +1,16 @@
+[Unit]
+Description=Recycle llama-embed-gpu to reclaim its per-request memory leak
+Documentation=file:///home/general/.local/bin/llama-embed-recycle
+# Belt and braces alongside the script's own busy guard: if any nightly consumer
+# is somehow still running, do not even start.
+After=archivist-sync.service embed-recall.service neo4j-sync.service
+
+[Service]
+Type=oneshot
+# ExecCondition, not ExecStartPre: a skipped cycle (under threshold, or a
+# consumer still busy) exits non-zero and systemd records the unit as skipped
+# rather than FAILED, so a quiet night does not look like a fault.
+ExecCondition=/bin/bash -c '/home/general/.local/bin/llama-embed-recycle --dry-run | grep -q "^llama-embed-recycle: WOULD restart"'
+ExecStart=/home/general/.local/bin/llama-embed-recycle
+# The restart itself waits up to 60s for /health, plus container teardown.
+TimeoutStartSec=180

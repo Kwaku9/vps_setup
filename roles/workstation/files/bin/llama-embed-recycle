@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# Recycle llama-embed-gpu to reclaim its slow leak.
+#
+# Measured 2026-10-05. Three numbers matter, and the middle one is a trap:
+#   260MB  - fresh, BEFORE its first request. Not a useful baseline.
+#   ~890MB - healthy WARM baseline. The first batch allocates a one-time
+#            CUDA/cuBLAS workspace of roughly 600MB. This is not a leak.
+#   +85KB  - per embedding, linear, no plateau. THIS is the leak. Measured as
+#            +21.9MB then +21.6MB across two runs of 256 embeddings, with a 75s
+#            idle control that moved RSS by -0.1MB, so growth is work-driven and
+#            not time-driven.
+# Slot count is NOT the cause: 1, 2 and 4 slots all measure the same, and 1 slot
+# costs 31% throughput. So the lever is a restart, not --parallel.
+# The threshold must sit ABOVE the 890MB warm baseline or this restarts healthy
+# containers; 1500MB means roughly 600MB of real leak is waiting to be reclaimed.
+# The model reloads in 1.3s and LiteLLM's `timeout: 15` on the laptop primary
+# falls through to the VPS CPU deployment, so the blip is not user-visible.
+#
+#   llama-embed-recycle             restart if it is both safe and worth doing
+#   llama-embed-recycle --dry-run   report the decision, change nothing
+#   llama-embed-recycle --force     restart regardless of the size threshold
+#                                   (the busy guard still applies)
+set -uo pipefail
+
+UNIT=llama-embed-gpu.service
+THRESHOLD_MB=${LLAMA_EMBED_RECYCLE_MB:-1500}
+# Nightly consumers. Restarting mid-batch would drop in-flight embeddings, and
+# archivist-sync has overrun its window before (01:02 start, 01:26 finish).
+CONSUMERS=(archivist-sync.service embed-recall.service neo4j-sync.service)
+
+# Ad-hoc holder lock, requested 2026-10-06 by session 95083f55 (Mail Kit), which
+# runs local archive embedding and Gemma-vs-Qwen eval query embedding against
+# :18090 outside any systemd unit. It takes `flock -x` on this path for the whole
+# run. The CONSUMERS list above cannot see that work, so without this guard a
+# 06:00 recycle would yank the embedder mid-batch.
+#
+# Semantics agreed with that session: lock held means SKIP this recycle entirely,
+# never wait. Tomorrow's run catches up.
+#
+# Testing for the file's EXISTENCE would be wrong: it is an flock, so the file
+# routinely exists while unlocked. The only correct probe is a non-blocking
+# acquire. `flock -n FILE true` exits non-zero when another process holds it, and
+# creates the file when absent (which then acquires cleanly, i.e. not held).
+BUSY_LOCK=${LLAMA_EMBED_BUSY_LOCK:-/run/user/1000/llama-embed-busy.lock}
+
+DRY=0; FORCE=0
+for a in "$@"; do
+    case "$a" in
+        --dry-run) DRY=1 ;;
+        --force)   FORCE=1 ;;
+        -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "unknown argument: $a" >&2; exit 2 ;;
+    esac
+done
+
+say() { echo "llama-embed-recycle: $*"; }
+
+rss_mb() {
+    # podman stats reports e.g. "2.272GB / 16.36GB"; normalise to MB.
+    local raw unit val
+    raw=$(podman stats --no-stream --format '{{.MemUsage}}' llama-embed-gpu 2>/dev/null | cut -d/ -f1 | tr -d ' ')
+    [[ -z "$raw" ]] && { echo ""; return; }
+    val=$(echo "$raw" | sed 's/[A-Za-z]*$//')
+    unit=$(echo "$raw" | sed 's/[0-9.]*//')
+    case "${unit^^}" in
+        GB) awk -v v="$val" 'BEGIN{printf "%.0f", v*1000}' ;;
+        MB) awk -v v="$val" 'BEGIN{printf "%.0f", v}' ;;
+        KB) awk -v v="$val" 'BEGIN{printf "%.0f", v/1000}' ;;
+        *)  awk -v v="$val" 'BEGIN{printf "%.0f", v/1000000}' ;;
+    esac
+}
+
+if ! systemctl --user is-active --quiet "$UNIT"; then
+    say "$UNIT is not running; nothing to recycle."
+    exit 0
+fi
+
+# Ad-hoc lock guard. Checked before the unit guard because it is the cheapest
+# probe and the one most likely to be held during manual work. Applies even under
+# --force: --force overrides the SIZE threshold, never a correctness guard.
+# A non-zero exit from flock for any other reason (permissions, bad path) also
+# skips, which is the safe direction: we decline to restart rather than restart
+# blind.
+if ! flock -n "$BUSY_LOCK" true 2>/dev/null; then
+    say "SKIP: $BUSY_LOCK is held by another process; not restarting mid-run."
+    exit 0
+fi
+
+# Busy guard. Deliberately exits 0: a skipped cycle is a normal outcome, not a
+# failure, and the next day's timer will catch it.
+for c in "${CONSUMERS[@]}"; do
+    if systemctl --user is-active --quiet "$c"; then
+        say "SKIP: $c is running; will not restart the embedder mid-batch."
+        exit 0
+    fi
+done
+
+before=$(rss_mb)
+if [[ -z "$before" ]]; then
+    say "could not read RSS; refusing to act blind."
+    exit 1
+fi
+
+if (( FORCE == 0 )) && (( before < THRESHOLD_MB )); then
+    say "SKIP: RSS ${before}MB is under the ${THRESHOLD_MB}MB threshold; not worth a restart."
+    exit 0
+fi
+
+if (( DRY == 1 )); then
+    say "WOULD restart: RSS ${before}MB (threshold ${THRESHOLD_MB}MB), no consumer active."
+    exit 0
+fi
+
+say "restarting: RSS ${before}MB (threshold ${THRESHOLD_MB}MB)"
+if ! systemctl --user restart "$UNIT"; then
+    say "ERROR: restart failed; check journalctl --user-unit llama-embed-gpu"
+    exit 1
+fi
+
+# Do not report success until it actually answers: the quadlet is 'active' as
+# soon as the container starts, which precedes the model being loaded.
+for _ in $(seq 1 60); do
+    if curl -sf -m 2 -o /dev/null http://127.0.0.1:18090/health; then
+        after=$(rss_mb)
+        say "ready again. RSS ${before}MB -> ${after:-?}MB (reclaimed $(( before - ${after:-before} ))MB)"
+        exit 0
+    fi
+    sleep 1
+done
+say "ERROR: did not become healthy within 60s after restart"
+exit 1

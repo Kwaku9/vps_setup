@@ -1,0 +1,30 @@
+# On-demand activation for rerank-gpu, created 2026-10-05.
+#
+# rerank-gpu held 1.35GB RAM and 1184MiB of a 6GB card around the clock while
+# serving ZERO requests between 2026-09-09 and 2026-10-05. Rather than delete
+# the capability or ask every caller to run `systemctl start`, this socket owns
+# the port callers already use and starts the container on the first connection.
+#
+# Callers need no change: 18092 on loopback and on the tailnet, exactly as the
+# container used to publish. The container itself now sits on loopback 18093.
+[Unit]
+Description=rerank-gpu activation socket (18092, starts the reranker on demand)
+Documentation=man:systemd-socket-proxyd(8)
+
+[Socket]
+# Explicit binds only - never 0.0.0.0 (estate policy).
+#   127.0.0.1    -> local callers (dsm5-kb batches, archivist evals)
+#   100.79.60.27 -> OpenWebUI on alpine-vps (rag.external_reranker_url)
+ListenStream=127.0.0.1:18092
+ListenStream=100.79.60.27:18092
+# The tailnet address does not exist until tailscaled is up, and a socket unit
+# that cannot bind its address fails outright. IP_FREEBIND lets the bind succeed
+# before the interface is configured. It does NOT widen exposure: the socket is
+# still bound to that one address, never a wildcard.
+FreeBind=true
+# One proxy process handles every connection, rather than one per connection.
+Accept=no
+Service=rerank-proxy.service
+
+[Install]
+WantedBy=sockets.target

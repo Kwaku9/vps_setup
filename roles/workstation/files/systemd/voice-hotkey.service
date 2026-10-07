@@ -9,7 +9,12 @@ Restart=on-failure
 RestartSec=3
 Environment=STT_BACKEND=auto
 Environment=OLLAMA_URL=http://localhost:11434
-Environment=OLLAMA_STT_MODEL=gemma4-fast
+# Ollama STT fallback disabled 2026-10-04. `gemma4-fast` was never installed,
+# so every fallback 404'd and an OOM-killed whisper dropped the recording.
+# No installed ollama model has the `audio` capability, so there is nothing to
+# point this at; failed recordings now spool instead. Set this to an
+# audio-capable model to re-enable.
+Environment=OLLAMA_STT_MODEL=
 Environment=WHISPER_API_URL=http://localhost:8787
 Environment=WHISPER_MODEL=large-v3-turbo
 Environment=KOKORO_API_URL=http://localhost:3456

@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""memwatch: why this 15GB laptop is out of RAM, and who has the GPU.
+
+Covers the blind spots that cost a push-to-talk recording on 2026-10-04:
+  - /tmp is tmpfs, so files there are RAM. 3.3GB was parked in it, invisible.
+  - zram swap is compressed RAM, so a "full" swap is not relief, it is pressure.
+  - the kernel OOM killer picks a victim and only the kernel log remembers.
+  - GPU VRAM has multiple tenants and nvidia-smi alone does not name services.
+
+  memwatch            one snapshot
+  memwatch -w         refresh every 2s until Ctrl+C
+  memwatch --no-podman  skip container stats (they cost ~1s)
+"""
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+G = 1024 ** 3
+M = 1024 ** 2
+
+
+def sh(cmd, timeout=12):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.stdout.strip()
+    except Exception:
+        return ""
+
+
+def bar(frac, width=22):
+    frac = max(0.0, min(1.0, frac))
+    fill = int(round(frac * width))
+    return "[" + "#" * fill + "-" * (width - fill) + "]"
+
+
+def meminfo():
+    d = {}
+    with open("/proc/meminfo") as f:
+        for line in f:
+            k, _, v = line.partition(":")
+            d[k] = int(v.split()[0]) * 1024  # kB -> bytes
+    return d
+
+
+def section(title):
+    print(f"\n\033[1m{title}\033[0m")
+
+
+def show_memory():
+    mi = meminfo()
+    total, avail = mi["MemTotal"], mi["MemAvailable"]
+    used = total - avail
+    section("SYSTEM MEMORY")
+    print(f"  {bar(used/total)} {used/G:5.1f} / {total/G:.1f} GiB used, "
+          f"\033[1m{avail/G:.2f} GiB available\033[0m ({used/total*100:.0f}%)")
+
+    st, sf = mi.get("SwapTotal", 0), mi.get("SwapFree", 0)
+    if st:
+        su = st - sf
+        warn = "  <- FULL: zram is compressed RAM, no relief left" if su / st > 0.95 else ""
+        print(f"  {bar(su/st)} {su/G:5.1f} / {st/G:.1f} GiB swap{warn}")
+
+    # tmpfs is RAM. This is the part btop hides by default and df buries.
+    tmpfs_total = 0
+    rows = []
+    for line in sh(["df", "-B1", "--output=target,used,size", "-t", "tmpfs"]).splitlines()[1:]:
+        parts = line.split()
+        if len(parts) != 3:
+            continue
+        tgt, u = parts[0], int(parts[1])
+        tmpfs_total += u
+        if u > 16 * M:
+            rows.append((u, tgt))
+    print(f"  tmpfs (RAM-backed files): \033[1m{tmpfs_total/G:.2f} GiB\033[0m"
+          f"{'   <- reclaimable by deleting files' if tmpfs_total > G else ''}")
+    for u, tgt in sorted(rows, reverse=True):
+        print(f"      {u/G:5.2f} GiB  {tgt}")
+
+
+def show_gpu():
+    name = sh(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"])
+    if not name:
+        return
+    mem = sh(["nvidia-smi", "--query-gpu=memory.used,memory.total",
+              "--format=csv,noheader,nounits"])
+    section("GPU MEMORY")
+    try:
+        u, t = [int(x) for x in mem.split(",")]
+        print(f"  {bar(u/t)} {u:5d} / {t} MiB  ({name})")
+    except Exception:
+        print(f"  {name}: {mem}")
+    apps = sh(["nvidia-smi", "--query-compute-apps=pid,used_memory,process_name",
+               "--format=csv,noheader,nounits"])
+    if not apps:
+        print("  no compute tenants")
+        return
+    for line in apps.splitlines():
+        try:
+            pid, used, pname = [x.strip() for x in line.split(",", 2)]
+            print(f"      {int(used):5d} MiB  {owner(pid)}  ({os.path.basename(pname)})")
+        except Exception:
+            print(f"      {line}")
+
+
+def owner(pid):
+    """Name the systemd unit or container behind a pid."""
+    try:
+        with open(f"/proc/{pid}/cgroup") as f:
+            cg = f.read()
+    except OSError:
+        return f"pid {pid}"
+    return innermost_unit(cg) or f"pid {pid}"
+
+
+def innermost_unit(text):
+    """Deepest .service in a cgroup path, ignoring the per-user session scope."""
+    names = [n for n in re.findall(r"/([a-zA-Z0-9_.@-]+)\.service", text)
+             if not n.startswith("user@")]
+    if names:
+        return names[-1]
+    # Not in a service: terminal scopes (ptyxis-spawn-*.scope) and compose-started
+    # containers land here. Trim the scope's uuid so the column stays readable.
+    scopes = re.findall(r"/([a-zA-Z0-9_.@\\-]+)\.scope", text)
+    if scopes:
+        nm = scopes[-1]
+        # libpod-<64 hex>.scope: a compose-started container. Name it.
+        m = re.match(r"libpod-([0-9a-f]{12})", nm)
+        if m:
+            return _containers().get(m.group(1), "container " + m.group(1)[:8])
+        nm = re.sub(r"-[0-9a-f]{8}-[0-9a-f-]{20,}$", "", nm)
+        return nm[:26]
+    return None
+
+
+_CTR_CACHE = {}
+
+
+def _containers():
+    """id-prefix -> container name, fetched once per run."""
+    if not _CTR_CACHE:
+        out = sh(["podman", "ps", "--all", "--no-trunc",
+                  "--format", "{{.ID}} {{.Names}}"], timeout=20)
+        for line in out.splitlines():
+            parts = line.split(None, 1)
+            if len(parts) == 2:
+                _CTR_CACHE[parts[0][:12]] = parts[1].strip()
+        _CTR_CACHE.setdefault("__loaded__", "")
+    return _CTR_CACHE
+
+
+def show_top(n=8):
+    section(f"TOP {n} PROCESSES BY RAM")
+    out = sh(["ps", "-eo", "pid=,rss=,comm=", "--sort=-rss"])
+    for line in out.splitlines()[:n]:
+        parts = line.split(None, 2)
+        if len(parts) < 3:
+            continue
+        pid, rss, comm = parts[0], int(parts[1]), parts[2]
+        print(f"  {rss/1024:6.0f} MB  {comm:<18} {owner(pid)}")
+
+
+def show_containers():
+    out = sh(["podman", "stats", "--no-stream", "--format",
+              "{{.Name}}\t{{.MemUsage}}"], timeout=25)
+    if not out:
+        return
+    section("CONTAINERS BY RAM")
+    rows = []
+    for line in out.splitlines():
+        if "\t" not in line:
+            continue
+        nm, usage = line.split("\t", 1)
+        head = usage.split("/")[0].strip()
+        try:
+            val = float(re.sub(r"[^\d.]", "", head))
+            unit = re.sub(r"[\d.\s]", "", head).upper()
+            mb = val * {"GB": 1000, "MB": 1, "KB": 0.001, "B": 1e-6}.get(unit, 1)
+        except Exception:
+            mb = 0
+        rows.append((mb, nm, head))
+    for mb, nm, head in sorted(rows, reverse=True)[:10]:
+        if mb >= 1:
+            print(f"  {mb:6.0f} MB  {nm}")
+
+
+def show_ooms():
+    out = sh(["journalctl", "-k", "--no-pager", "--since", "-24h"], timeout=25)
+    kills = []
+    for line in out.splitlines():
+        if "oom-kill:" not in line:
+            continue
+        ts = " ".join(line.split()[:3])
+        svc = innermost_unit(line) or "?"
+        task = re.search(r"task=([^,]+)", line)
+        kills.append((ts, svc, task.group(1) if task else "?"))
+    section(f"OOM KILLS, LAST 24H: {len(kills)}")
+    if not kills:
+        print("  none")
+        return
+    for ts, svc, task in kills[-6:]:
+        flag = "   <- PTT canary" if "whisper" in svc else ""
+        print(f"  {ts}  {svc} / {task}{flag}")
+
+
+def show_canary():
+    state = sh(["systemctl", "--user", "is-active", "whisper-gpu.service"]) or "unknown"
+    spool = os.path.expanduser(
+        os.environ.get("PTT_SPOOL_DIR", "~/.local/share/voice-hotkey/spool"))
+    try:
+        n = len([f for f in os.listdir(spool) if f.endswith(".wav")])
+    except OSError:
+        n = 0
+    section("PTT CANARY")
+    color = "32" if state == "active" else "33"
+    print(f"  whisper-gpu: \033[{color}m{state}\033[0m")
+    print(f"  spooled recordings awaiting retry: {n}"
+          + ("   run: voice-hotkey-drain" if n else ""))
+
+
+def snapshot(podman=True):
+    print(f"\033[1m=== memwatch {time.strftime('%Y-%m-%d %H:%M:%S')} ===\033[0m")
+    show_memory()
+    show_gpu()
+    show_top()
+    if podman and shutil.which("podman"):
+        show_containers()
+    show_ooms()
+    show_canary()
+
+
+def main():
+    podman = "--no-podman" not in sys.argv
+    if "-w" in sys.argv or "--watch" in sys.argv:
+        try:
+            while True:
+                print("\033[2J\033[H", end="")
+                snapshot(podman)
+                sys.stdout.flush()
+                time.sleep(2)
+        except KeyboardInterrupt:
+            print()
+    else:
+        snapshot(podman)
+
+
+if __name__ == "__main__":
+    main()

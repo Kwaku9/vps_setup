@@ -1,0 +1,64 @@
+[Unit]
+Description=Reranker GPU server (bge-reranker-v2-m3 cross-encoder) - OWUI RAG hybrid rerank, tailnet-exposed
+After=network-online.target
+Wants=network-online.target
+# 2026-08-11: died at boot alongside llama-embed-gpu with
+#   "failed to stat CDI host device /dev/nvidia-modeset: no such file or directory"
+# The NVIDIA device nodes had not appeared yet; Restart=always with no RestartSec
+# burned the default 5-burst in under a second and systemd gave up permanently.
+# This one went unnoticed for a day because OWUI degrades quietly without a
+# reranker (results get worse, nothing errors). See llama-embed-gpu.container.
+StartLimitIntervalSec=600
+StartLimitBurst=30
+
+[Container]
+Image=localhost/rerank-gpu:latest
+ContainerName=rerank-gpu
+AddDevice=nvidia.com/gpu=all
+# Persist the HF model cache so the model downloads only once.
+Environment=HF_HOME=/cache
+# 2026-08-12: swapped ms-marco-MiniLM-L-12-v2 -> bge-reranker-v2-m3.
+# MiniLM has a 512-token window (~2,000 chars). Measured on the DSM corpus:
+# moving the answer text from the front to the back of a 9,171-char document
+# swung its score from +8.54 to -9.54 - the model never saw the tail. The
+# structure-aware chunker emits criteria sets up to 8.4k chars, so complete
+# answers were being demoted below fragments (ADHD criteria ranked 6th).
+# bge-reranker-v2-m3 has an 8,192-token window; RERANK_MAX_LENGTH must be
+# raised too or app.py still truncates at its 512 default.
+Environment=RERANK_MODEL=BAAI/bge-reranker-v2-m3
+Environment=RERANK_MAX_LENGTH=8192
+# 2026-08-12: that swap broke push-to-talk. bge-reranker-v2-m3 in fp32 sat
+# resident at 3024MiB of the 6GB card; whisper-gpu then loaded on a PTT press but
+# OOM'd mid-generate ("CUDA failed with error out of memory", HTTP 500), so
+# recording worked and transcription silently dropped. This process is resident
+# and whisper is on-demand, so the reranker must leave whisper >=2GB headroom:
+# fp16 weights (2166MiB -> 1083MiB) plus a small batch at the 8192-token window.
+Environment=RERANK_DTYPE=float16
+Environment=RERANK_BATCH_SIZE=4
+# Return freed blocks to the driver instead of hoarding a fragmented cache -
+# whisper allocates from the same card between rerank calls.
+Environment=PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+Volume=%h/rerank-models:/cache:Z
+# Explicit binds only - never 0.0.0.0 (estate policy). Host 18092 -> container 18091.
+#   127.0.0.1    -> local callers on this laptop
+#   100.79.60.27 -> OpenWebUI on alpine-vps (rag.external_reranker_url)
+# 2026-10-05: moved off 18092, which now belongs to rerank-proxy.socket for
+# on-demand activation. This port is loopback-only and is the proxy's backend;
+# callers keep using 18092 exactly as before, on both loopback and the tailnet.
+PublishPort=127.0.0.1:18093:18091
+# Serves POST /rerank in the {results:[{index, relevance_score}]} schema OWUI expects.
+
+[Service]
+Restart=always
+RestartSec=10
+# First start downloads the ~2.2GB bge-reranker-v2-m3 weights; allow time.
+TimeoutStartSec=300
+# Block until the CDI-referenced NVIDIA nodes exist AND the tailnet address is
+# assigned - binding to 100.79.60.27 fails outright if tailscale0 is not up.
+ExecStartPre=/bin/bash -c 'for i in {1..30}; do if [ -e /dev/nvidia0 ] && [ -e /dev/nvidiactl ] && [ -e /dev/nvidia-modeset ] && [ -e /dev/nvidia-uvm ]; then exit 0; fi; sleep 2; done; echo "rerank-gpu: timed out waiting for NVIDIA device nodes" >&2; exit 1'
+
+# [Install] REMOVED 2026-10-05. Deliberately not started at boot: measured zero
+# requests between 2026-09-09 and 2026-10-05 while holding 1.35GB RAM and
+# 1184MiB VRAM. It is now started on demand by rerank-proxy.socket and stopped
+# again when idle (StopWhenUnneeded, see the drop-in). To restore boot-start,
+# put back:  [Install] / WantedBy=default.target
