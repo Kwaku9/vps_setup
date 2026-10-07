@@ -1,6 +1,8 @@
 node_modules
 frontend/node_modules
 frontend/dist
+frontend-svelte/node_modules
+frontend-svelte/dist
 __pycache__
 *.pyc
 .git

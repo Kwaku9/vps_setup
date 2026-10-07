@@ -276,3 +276,9 @@ site-packages/
 !scripts/lint-secrets.sh
 !scripts/install-hooks.sh
 !scripts/pods-baseline.txt
+
+# ops-dashboard phone app (frontend-svelte): its icons and lockfile are source.
+# The lockfile is committed so `npm ci` works from a fresh clone or worktree.
+!roles/management/files/ops-dashboard/frontend-svelte/public/*.png
+!roles/management/files/ops-dashboard/frontend-svelte/public/*.svg
+!roles/management/files/ops-dashboard/frontend-svelte/package-lock.json

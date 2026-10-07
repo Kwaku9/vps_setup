@@ -6,6 +6,14 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
+# Stage 1b: Build the phone app (Svelte, served at /m/)
+FROM node:22-alpine AS mobile-build
+WORKDIR /app/frontend-svelte
+COPY frontend-svelte/package*.json ./
+RUN npm ci
+COPY frontend-svelte/ ./
+RUN npm run build
+
 # Stage 2: Python backend
 FROM python:3.13-slim
 WORKDIR /app
@@ -19,6 +27,7 @@ RUN pip install --no-cache-dir ".[api]"
 COPY src/ ./src/
 COPY config/ ./config/
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
+COPY --from=mobile-build /app/frontend-svelte/dist ./frontend-svelte/dist
 
 ENV PYTHONPATH=/app/src
 EXPOSE 8090
