@@ -21,6 +21,7 @@ from .routers import auth as auth_router
 from .routers import inventory as inventory_router
 from .routers import repo_radar as repo_radar_router
 from .routers import timeline_search as timeline_search_router
+from .routers import triage as triage_router
 from .routers.metrics import vm_client as router_vm_client
 from .victoria import VictoriaMetricsClient
 from .ws.metrics_stream import metrics_poll_loop
@@ -30,6 +31,8 @@ from ..sessions.db import create_pool
 logger = logging.getLogger(__name__)
 
 FRONTEND_DIST = Path(__file__).parent.parent.parent.parent / "frontend" / "dist"
+# The Svelte phone app (Option A), served at /m/ beside the classic React UI.
+MOBILE_DIST = Path(__file__).parent.parent.parent.parent / "frontend-svelte" / "dist"
 
 
 @asynccontextmanager
@@ -141,6 +144,7 @@ app.include_router(approvals_router.router)
 app.include_router(repo_radar_router.router)
 app.include_router(timeline_search_router.router)
 app.include_router(inventory_router.router)
+app.include_router(triage_router.router)
 
 
 @app.get("/api/health")
@@ -162,7 +166,9 @@ class SPAStaticFiles(StaticFiles):
 
     async def get_response(self, path: str, scope) -> Response:
         response = await super().get_response(path, scope)
-        if not path or path == "." or path.endswith(".html"):
+        # sw.js and the manifest are fixed names too: a stale service worker
+        # would pin the phone app to an old build.
+        if not path or path == "." or path.endswith((".html", "sw.js", ".webmanifest")):
             response.headers["Cache-Control"] = "no-cache, must-revalidate"
         else:
             response.headers.setdefault(
@@ -171,6 +177,9 @@ class SPAStaticFiles(StaticFiles):
         return response
 
 
-# Serve frontend static files in production
+# Serve frontend static files in production. /m first: the "/" mount would
+# otherwise swallow it.
+if MOBILE_DIST.is_dir():
+    app.mount("/m", SPAStaticFiles(directory=str(MOBILE_DIST), html=True), name="mobile")
 if FRONTEND_DIST.is_dir():
     app.mount("/", SPAStaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
