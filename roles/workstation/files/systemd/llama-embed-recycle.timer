@@ -1,0 +1,18 @@
+[Unit]
+Description=Daily llama-embed-gpu recycle at 06:00, after the nightly chain
+
+[Timer]
+# 06:00 is deliberate: the last nightly consumer is neo4j-sync at 05:30, so this
+# lands when the most leak has accumulated and nothing is about to need the
+# embedder. Order of the chain: 01:00 archivist-sync, 02:33 archivist-db-backup,
+# 04:00 timeline sync, 04:35 embed-recall, 05:30 neo4j-sync.
+OnCalendar=*-*-* 06:00:00
+# Persistent=false ON PURPOSE. A missed run means the laptop was off, and a
+# cold boot gives a fresh container with nothing to reclaim, so catching up
+# would restart a healthy process for no reason.
+Persistent=false
+RandomizedDelaySec=120
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

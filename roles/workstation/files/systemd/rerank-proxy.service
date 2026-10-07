@@ -1,0 +1,39 @@
+# Socket-activated front end for rerank-gpu. See rerank-proxy.socket.
+[Unit]
+Description=Socket-activated proxy fronting rerank-gpu on 18092
+Documentation=man:systemd-socket-proxyd(8)
+# Pull the container up, and do not proxy until it is actually answering.
+Requires=rerank-gpu.service
+After=rerank-gpu.service
+# If the reranker cannot start, do not leave a proxy accepting into nothing.
+BindsTo=rerank-gpu.service
+
+[Service]
+# `Requires` is satisfied when the container has STARTED, which is not the same
+# as the model being loaded and uvicorn listening: bge-reranker-v2-m3 takes tens
+# of seconds. Block here so the client's connection waits in the socket backlog
+# instead of meeting a closed port. 90 x 2s tolerates a cold model load.
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 90); do curl -sf -m 2 -o /dev/null http://127.0.0.1:18093/health && exit 0; sleep 2; done; echo "rerank-gpu backend never became ready on 18093" >&2; exit 1'
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=15min 127.0.0.1:18093
+# When the proxy exits on idle, rerank-gpu is no longer needed and its drop-in
+# StopWhenUnneeded releases the RAM and VRAM. Next connection starts it again.
+
+# Hardening. This process shuffles bytes between two loopback sockets and needs
+# no filesystem, no privileges and no other address families.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_UNIX
+CapabilityBoundingSet=
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# A byte shuffler that grows past this is misbehaving.
+MemoryMax=64M
