@@ -25,6 +25,11 @@ tailscale_forwarders:
     target_host: "10.89.0.30"  # dev-pod infra IP on enterprise_network
     target_port: 8082          # Metro listens here inside the pod
     description: "Expo Metro bundler for aicortex-chat iOS dev build"
+  - name: litellm-spend-db
+    listen_port: 5433
+    target_host: "127.0.0.1"   # ai-stack-postgres is published on the host loopback at 5433
+    target_port: 5433
+    description: "Stack B gateway's path to the shared LiteLLM spend ledger (reached via the Mail Kit router's VPC relay); tailnet-only bind"
 
 # ── Unbound: DNS-over-TLS resolver for tailnet clients ──────────────────────
 # Codified 2026-09-09 (was hand-configured and had been crashed since June).
