@@ -33,7 +33,10 @@ ai_stack:
     # buildfol.io chat widget down with `Upstream error 500`. A digest is immutable, so a
     # recreate can never silently change versions. To upgrade: change this digest
     # deliberately, then watch RestartCount stay flat (a crash-loop reports status=running).
-    image: "ghcr.io/berriai/litellm-database@sha256:5ead13edd4efd89f32dab349c1f19447d395affca53f3aeae00f5e6e01b8c08d"
+    # Bumped v1.98.0 -> v1.104.0 (2026-10-07): newest stable; closes GHSA-7hp6-4w63-5g45 (critical,
+    # salt-key privilege escalation, fixed 1.100.4). Migration rehearsed on a clone first: 38
+    # migrations, 81 -> 91 tables, 0 DataErrors. Rollback dump: litellm-pre-1.104.0.dump.
+    image: "ghcr.io/berriai/litellm-database@sha256:fbe28229d2d02181c0a7d9df9599de614b491f3d897d2d7da18404f088310218"
     port: 4000
     config_file: "config.yml"
     env:
@@ -81,6 +84,7 @@ ai_stack:
     # request onto this CPU fallback. If the laptop's tailnet IP changes, this and
     # the Fedora quadlet's PublishPort must move together.
     gpu_tailnet_url: "http://100.79.60.27:18090/v1"     # Fedora GPU (primary) over tailnet
+    gpu_rerank_url: "http://100.79.60.27:18092/rerank"  # Fedora GPU bge-reranker-v2-m3; keep in step with gpu_tailnet_url
     data_dir: "/opt/podman-data/llama-embed"
     model_file: "embeddinggemma-300M-Q8_0.gguf"
     model_url: "https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf"
@@ -91,7 +95,11 @@ ai_stack:
     # interactive queries (last observed request: 182 tokens). 512 keeps ample
     # headroom for real requests at a fraction of the allocation. Bulk embedding
     # runs on the laptop GPU, never here.
-    ubatch_size: 512
+    # 2026-10: raised 512 -> 2048. llama.cpp embeddings need the WHOLE input in one
+    # ubatch; 480-640 token chunks plus the `title: none | text: ` prefix exceed 512
+    # and fail on this fallback. Matches the GPU instance. Costs RSS (see report in
+    # tools/fedora-gpu-embed/README.md); revisit if swap/available RAM degrades.
+    ubatch_size: 2048
     memory: "2g"                    # a CEILING, not an allocation - costs nothing idle
 
   # SearxNG (AI search)
