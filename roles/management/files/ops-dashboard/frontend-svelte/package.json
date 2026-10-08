@@ -6,11 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "check": "svelte-check --tsconfig ./tsconfig.json"
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "node --experimental-strip-types tests/transcript.test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/public-sans": "^5.2.5",
-    "@fontsource/jetbrains-mono": "^5.2.5"
+    "@fontsource/jetbrains-mono": "^5.2.5",
+    "dompurify": "^3.4.16",
+    "marked": "^18.1.0"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
