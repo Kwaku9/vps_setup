@@ -30,6 +30,8 @@ export interface LiveSession {
 }
 export interface TranscriptMessage {
   uuid: string; role: string; type: string; content_text: string | null; sequence_num: number; timestamp: string | null;
+  content_json?: unknown;
+  cursor?: number;
 }
 
 export interface Finding { severity: 'bad' | 'warn' | 'info'; kind: string; title: string; detail: string }

@@ -43,7 +43,7 @@ export const api = {
   approvals: () => get<PendingApproval[]>('/api/approvals/pending'),
   decide: (id: number, decision: 'approve' | 'deny') => post<{ ok: boolean }>(`/api/approvals/${id}/decide`, { decision }),
   sessions: () => get<LiveSession[]>('/api/sessions/active'),
-  transcript: (uuid: string, since = 0) => get<TranscriptMessage[]>(`/api/sessions/${enc(uuid)}/transcript?since=${since}`),
+  transcript: (uuid: string, afterId = 0) => get<TranscriptMessage[]>(`/api/sessions/${enc(uuid)}/transcript?after_id=${afterId}`),
   audit: (limit = 200) => get<AuditRow[]>(`/api/audit?limit=${limit}`),
   summary: () => get<InventorySummary>('/api/inventory/summary'),
   findings: () => get<Finding[]>('/api/inventory/findings'),
