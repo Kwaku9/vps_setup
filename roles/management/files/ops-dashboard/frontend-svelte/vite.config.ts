@@ -5,6 +5,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 export default defineConfig({
   base: '/m/',
   plugins: [svelte()],
+  worker: { format: 'es' },
   build: { target: 'es2022', chunkSizeWarningLimit: 300 },
   server: {
     port: 5181,

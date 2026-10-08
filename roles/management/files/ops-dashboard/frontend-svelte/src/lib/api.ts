@@ -1,5 +1,5 @@
 import type { ActionResult, AuditRow, ContainerDetails, Finding, InventorySummary, LiveSession, Me, PendingApproval, Service,
-  TranscriptMessage, Triage } from './types';
+  InputReceipt, TranscriptMessage, Triage } from './types';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -44,6 +44,8 @@ export const api = {
   decide: (id: number, decision: 'approve' | 'deny') => post<{ ok: boolean }>(`/api/approvals/${id}/decide`, { decision }),
   sessions: () => get<LiveSession[]>('/api/sessions/active'),
   transcript: (uuid: string, afterId = 0) => get<TranscriptMessage[]>(`/api/sessions/${enc(uuid)}/transcript?after_id=${afterId}`),
+  reply: (uuid: string, id: string, text: string) => post<{ id: string; status: string }>(`/api/sessions/${enc(uuid)}/input`, { id, text }),
+  inputStatus: (uuid: string) => get<InputReceipt[]>(`/api/sessions/${enc(uuid)}/input`),
   audit: (limit = 200) => get<AuditRow[]>(`/api/audit?limit=${limit}`),
   summary: () => get<InventorySummary>('/api/inventory/summary'),
   findings: () => get<Finding[]>('/api/inventory/findings'),

@@ -27,7 +27,10 @@ export interface LiveSession {
   host: string | null; git_branch: string | null; model: string | null; project: string | null;
   last_event_at: string | null; input_tokens: number | null; output_tokens: number | null;
   needs_approval?: boolean; approval_id?: number | null; approval_tool?: string | null; approval_prompt?: string | null;
+  session_name?: string | null; agent_kind?: 'claude' | 'codex' | null;
+  workstation_connected?: boolean | null; input_available?: boolean | null;
 }
+export interface InputReceipt { id: string; status: string; detail: string | null; created_at: string }
 export interface TranscriptMessage {
   uuid: string; role: string; type: string; content_text: string | null; sequence_num: number; timestamp: string | null;
   content_json?: unknown;

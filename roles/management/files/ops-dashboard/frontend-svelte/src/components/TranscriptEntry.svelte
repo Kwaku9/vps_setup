@@ -2,6 +2,7 @@
   import { clock } from '../lib/fmt';
   import { renderMarkdown } from '../lib/markdown';
   import type { TranscriptEntry } from '../lib/transcript';
+  import { listen, voice } from '../lib/voice.svelte';
   let { entry }: { entry: TranscriptEntry } = $props();
   const who = $derived(entry.kind === 'output' ? 'CLI output' : entry.role === 'user' ? 'You' : entry.role === 'assistant' ? 'Assistant' : entry.role);
   const formatted = $derived(['message', 'output'].includes(entry.kind) ? renderMarkdown(entry.text) : '');
@@ -9,7 +10,14 @@
 
 {#if entry.kind === 'message' || entry.kind === 'output'}
   <article class="message" class:user={entry.kind === 'message' && entry.role === 'user'} class:output={entry.kind === 'output'} class:error={entry.error}>
-    <header><span class="speaker">{who}</span><time datetime={entry.timestamp ?? undefined}>{clock(entry.timestamp)}</time></header>
+    <header><span class="speaker">{who}</span>
+      {#if entry.kind === 'message' && entry.role === 'assistant'}
+        <button class="listen" onclick={() => listen(entry.id, entry.text)} aria-label={voice.activeId === entry.id ? 'Stop reading message' : 'Listen to assistant message'}>
+          {voice.activeId === entry.id ? '■ Stop' : '▷ Listen'}
+        </button>
+      {/if}
+      <time datetime={entry.timestamp ?? undefined}>{clock(entry.timestamp)}</time></header>
+    {#if voice.activeId === entry.id}<p class="voice-status" role="status">{voice.message}</p>{/if}
     <div class="prose">{@html formatted}</div>
   </article>
 {:else}
@@ -32,6 +40,8 @@
   .message.user { background: #1B2230; border-color: #2c3a4e; }
   header, .activity-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
   .speaker { color: var(--ok); font-size: 12px; font-weight: 700; }
+  .listen { margin-left: auto; min-height: 36px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--sub); font-size: 11px; }
+  .voice-status { font-size: 11px; color: var(--muted); margin: 0 0 8px; }
   .user .speaker { color: var(--info); }
   .output .speaker { color: var(--info); }
   .message.error { border-color: var(--bad); } .message.error .speaker { color: var(--bad-ink); }
