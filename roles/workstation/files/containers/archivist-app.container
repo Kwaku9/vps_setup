@@ -4,11 +4,9 @@
 Description=ARCHIVIST web UI + CPU pipeline
 Wants=archivist-pg.service network-online.target
 After=archivist-pg.service network-online.target
-# Hold the start until the removable media this container bind-mounts is actually
-# present. Without this, a boot where the USB drives enumerate late causes a
-# statfs failure, a 5-crash restart storm, and a permanently dead unit that
-# needs a manual `systemctl --user reset-failed` + start to recover.
-RequiresMountsFor=/run/media/general/Ventoy /run/media/general/GOPRO
+# No RequiresMountsFor on the USB drives: the web UI and search must start
+# whether or not they are plugged in (2026-10-08). The old per-drive mounts made
+# any boot without the Ventoy drive a statfs failure and a dead unit.
 StartLimitIntervalSec=600
 StartLimitBurst=10
 
@@ -23,11 +21,15 @@ Environment=ARCHIVIST_DB__HOST=127.0.0.1
 Environment=ARCHIVIST_DB__PORT=5436
 # Bind to loopback since Network=host — otherwise it would publish on 0.0.0.0.
 Environment=ARCHIVIST_WEB_HOST=127.0.0.1
-# Media sources (read-only). Do NOT unplug the Ventoy USB while this is running.
-Volume=/run/media/general/Ventoy/iCloud:/run/media/general/Ventoy/iCloud:ro
-Volume=/run/media/general/GOPRO:/run/media/general/GOPRO:ro
-# Culebra2 stills/clips — the only surviving copy of 17 files lost on 2026-06-09.
-Volume=/run/media/general/Ventoy/Videos/Culebra2:/run/media/general/Ventoy/Videos/Culebra2:ro
+# Media sources: ONE read-only mount of /run/media, which always exists, instead
+# of per-drive mounts that fail when a drive is absent. rslave lets drives that
+# are mounted later show up without a restart where propagation allows.
+# NOTE: SELinux labels the exFAT drives dosfs_t, which container_t cannot read,
+# so this container still cannot open originals on them; ingest and enrichment
+# run from the host CLI. The mount keeps the paths in place for a future
+# context= mount option fix. Culebra2 on the Ventoy drive holds the only
+# surviving copy of 17 files lost on 2026-06-09: it is only ever read.
+Volume=/run/media:/run/media:ro,rslave
 # Derived data (thumbnails, keyframes, models cache).
 Volume=%h/.local/share/archivist/derived:/home/archivist/.local/share/archivist/derived:Z
 Volume=%h/.local/share/archivist/models:/home/archivist/.local/share/archivist/models:ro,Z
