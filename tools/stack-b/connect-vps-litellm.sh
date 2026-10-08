@@ -11,16 +11,29 @@
 set -eu
 cd /workspace/vscode-projects/vps_setup
 M=$(podman exec litellm sh -c 'echo $LITELLM_MASTER_KEY')
-podman exec litellm python3 - "$M" <<'PY' > /dev/shm/newkey-value
+# A previous partial run may have minted the alias already: retire it first so
+# the vault ends up holding the one key that exists.
+podman exec litellm python3 - "$M" <<'PY'
+import json,sys,urllib.request
+req=urllib.request.Request("http://127.0.0.1:4000/key/delete",data=json.dumps({"key_aliases":["vps-litellm-to-stack-b"]}).encode(),headers={"Authorization":"Bearer "+sys.argv[1],"content-type":"application/json"})
+try: urllib.request.urlopen(req,timeout=30)
+except Exception: pass
+PY
+KEY=$(podman exec litellm python3 - "$M" <<'PY'
 import json,sys,urllib.request
 req=urllib.request.Request("http://127.0.0.1:4000/key/generate",data=json.dumps({"models":["cand-a","cand-b","cand-b-fallback"],"key_alias":"vps-litellm-to-stack-b","metadata":{"purpose":"VPS LiteLLM upstream credential for Stack B"}}).encode(),headers={"Authorization":"Bearer "+sys.argv[1],"content-type":"application/json"})
 print(json.load(urllib.request.urlopen(req,timeout=30))["key"])
 PY
-chmod 600 /dev/shm/newkey-value
-test -s /dev/shm/newkey-value
+)
+[ -n "$KEY" ] || { echo "ABORT: no key minted"; exit 1; }
 echo "virtual key vps-litellm-to-stack-b issued"
+# The vault helper runs inside the ansible-deployment container and reads
+# /dev/shm/newkey-value THERE (its /dev/shm is not the host's). Hand the value
+# over on stdin; it is never an argument.
+printf '%s' "$KEY" | podman exec -i ansible-deployment sh -c 'umask 077; cat > /dev/shm/newkey-value'
+unset KEY
 podman exec -w /ansible ansible-deployment sh tools/vault/vault_add_key.sh stack_b_gateway_key
-rm -f /dev/shm/newkey-value
+podman exec ansible-deployment rm -f /dev/shm/newkey-value
 echo "vault updated; deploying litellm"
 podman exec -w /ansible ansible-deployment ansible-playbook -i inventory/hosts site.yml --tags litellm > /var/log/litellm-stack-b-connect.log 2>&1
 grep -A2 "PLAY RECAP" /var/log/litellm-stack-b-connect.log | tail -2
