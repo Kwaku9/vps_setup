@@ -24,7 +24,7 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </header>
-      <div class="body" onscroll={onbodyscroll}>{@render children()}</div>
+      <div class="body" class:transcript={!!onbodyscroll} onscroll={onbodyscroll}>{@render children()}</div>
       {#if footer}<footer>{@render footer()}</footer>{/if}
     </div>
   {/if}
@@ -40,7 +40,7 @@
   h2 { margin: 0; font-size: 17px; font-weight: 700; flex: 1; min-width: 0; word-break: break-word; }
   .close { width: 44px; height: 44px; border-radius: 22px; border: 0; background: var(--raise); display: grid; place-items: center; flex-shrink: 0; }
   .body { overflow: auto; padding: 4px 18px 20px; display: flex; flex-direction: column; gap: 14px; }
-  .body { min-height: 0; overscroll-behavior: contain; overflow-anchor: none; }
+  .body.transcript { min-height: 0; overscroll-behavior: contain; overflow-anchor: none; }
   footer { flex-shrink: 0; border-top: 1px solid var(--line); padding: 8px 18px; }
   @media (min-width: 700px) { dialog { margin: auto; } .sheet { border-radius: 20px; border: 1px solid var(--line); } }
 </style>
