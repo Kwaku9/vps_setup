@@ -1,14 +1,17 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import ApprovalCard from '../components/ApprovalCard.svelte';
   import Dot from '../components/Dot.svelte';
   import Sheet from '../components/Sheet.svelte';
   import Status from '../components/Status.svelte';
+  import TranscriptEntry from '../components/TranscriptEntry.svelte';
   import { api } from '../lib/api';
-  import { ago, clock, num } from '../lib/fmt';
+  import { ago, num } from '../lib/fmt';
   import type { Tone } from '../lib/inventory-views';
   import { Poll } from '../lib/poll.svelte';
   import { go, route } from '../lib/router.svelte';
   import { fresh } from '../lib/triage';
+  import { mergeMessages, transcriptEntries } from '../lib/transcript';
   import type { LiveSession, PendingApproval, TranscriptMessage } from '../lib/types';
 
   let { approvals }: { approvals: Poll<PendingApproval[]> } = $props();
@@ -40,36 +43,65 @@
   let tError = $state<string | null>(null);
   let tLoading = $state(false);
   let end: HTMLElement | undefined = $state();
+  let following = $state(true);
+  let newMessages = $state(0);
+  const entries = $derived(transcriptEntries(msgs));
+
+  function onTranscriptScroll(event: Event & { currentTarget: EventTarget & HTMLDivElement }) {
+    const body = event.currentTarget;
+    following = body.scrollHeight - body.scrollTop - body.clientHeight < 72;
+    if (following) newMessages = 0;
+  }
+  function latest() {
+    following = true; newMessages = 0;
+    end?.scrollIntoView({ block: 'end' });
+  }
 
   $effect(() => {
     const uuid = openUuid;
     if (!uuid) { open = false; return; }
-    open = true; msgs = []; tError = null; tLoading = true;
-    let since = 0, stop = false;
+    open = true; msgs = []; tError = null; tLoading = true; following = true; newMessages = 0;
+    let since = 0, stop = false, busy = false;
     const pull = async () => {
+      if (busy || stop) return;
+      busy = true;
       try {
-        const batch = await api.transcript(uuid, since);
-        if (stop) return;
-        if (batch.length) {
-          msgs = [...msgs, ...batch].slice(-400);
-          since = batch[batch.length - 1].sequence_num;
-          queueMicrotask(() => end?.scrollIntoView({ block: 'end' }));
+        // Drain paginated history immediately, rather than hiding 100 rows per
+        // page and making a long session take minutes to catch up to the CLI.
+        let more = true;
+        while (more && !stop) {
+          const batch = await api.transcript(uuid, since);
+          if (stop) return;
+          if (batch.length) {
+            const shouldFollow = following;
+            const merged = mergeMessages(msgs, batch);
+            if (!following) newMessages += merged.length - msgs.length;
+            msgs = merged;
+            const next = Math.max(...batch.map((message) => message.cursor ?? message.sequence_num));
+            more = batch.length === 500 && next > since;
+            since = Math.max(since, next);
+            await tick();
+            if (stop) return;
+            if (shouldFollow) latest();
+          } else more = false;
         }
         tError = null;
       } catch (e) {
-        tError = e instanceof Error ? e.message : String(e);
+        if (!stop) tError = e instanceof Error ? e.message : String(e);
       } finally {
-        tLoading = false;
+        busy = false;
+        if (!stop) tLoading = false;
       }
     };
     pull();
     const t = setInterval(() => { if (document.visibilityState === 'visible') pull(); }, 5000);
-    return () => { stop = true; clearInterval(t); };
+    const onVisible = () => { if (document.visibilityState === 'visible') pull(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { stop = true; clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
   });
   $effect(() => { if (!open && openUuid) go('sessions'); });
 
   const current = $derived((sessions.data ?? []).find((s) => s.session_uuid === openUuid));
-  const text = (m: TranscriptMessage) => (m.content_text ?? '').trim();
 </script>
 
 <div class="screen">
@@ -83,7 +115,7 @@
   {/each}
 
   <Status loading={sessions.loading} error={sessions.error && !sessions.data ? sessions.error : null}
-    empty={!!sessions.data && !live.length && !loose.length} emptyText="No live Claude sessions." />
+    empty={!!sessions.data && !live.length && !loose.length} emptyText="No live CLI sessions." />
 
   <ul class="list">
     {#each listed as s (s.session_uuid)}
@@ -110,30 +142,41 @@
   {/if}
 </div>
 
-<Sheet title={current?.project ?? 'Transcript'} bind:open>
-  {#if current}<p class="muted m0 small">{label(current)} · {current.host ?? ''} · {current.git_branch ?? ''}</p>{/if}
+<Sheet title={current?.project ?? 'Transcript'} bind:open onbodyscroll={onTranscriptScroll}>
+  {#if current}
+    <div class="session-info">
+      <span class="session-status"><Dot tone={tone(current)} />{label(current)}</span>
+      <span class="muted mono small">{[current.host, current.git_branch, current.model].filter(Boolean).join(' · ')}</span>
+      {#if current.current_stage}<span class="sub small">{current.current_stage}</span>{/if}
+    </div>
+  {/if}
   {#if tError}<p class="banner">{tError}</p>{/if}
-  {#if tLoading}<p class="muted">Loading…</p>{:else if !msgs.length}<p class="muted">No messages yet.</p>{/if}
-  <ol class="tx">
-    {#each msgs.filter((m) => text(m)) as m (m.uuid)}
-      <li class={m.role}>
-        <span class="who mono">{m.role} · {clock(m.timestamp)}</span>
-        <p>{text(m).length > 1600 ? text(m).slice(0, 1600) + '…' : text(m)}</p>
-      </li>
+  {#if tLoading}<p class="muted small">Loading transcript…</p>{:else if !entries.length}<p class="muted">No messages yet.</p>{/if}
+  <ol class="tx" aria-label="Session transcript">
+    {#each entries as entry (entry.id)}
+      <li><TranscriptEntry {entry} /></li>
     {/each}
   </ol>
-  <span bind:this={end}></span>
+  <span class="end" bind:this={end}></span>
+  {#snippet footer()}
+    <div class="transcript-footer">
+      <span class="muted small">{following ? 'Following latest' : 'Reading earlier'} · {entries.length} entries</span>
+      {#if !following}
+        <button class="btn small quiet" onclick={latest}>{newMessages ? `${newMessages} new · ` : ''}Latest ↓</button>
+      {/if}
+    </div>
+  {/snippet}
 </Sheet>
 
 <style>
   .small { font-size: 12px; }
-  .m0 { margin: 0; }
   .stale { display: block; margin: 14px auto 0; color: var(--muted); font-weight: 500; }
   .list > li { gap: 6px; }
   a.item { text-decoration: none; color: inherit; }
-  .tx { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-  .tx li { background: var(--surface-2); border-radius: 12px; padding: 8px 12px; }
-  .tx li.user { background: #1B2230; }
-  .who { font-size: 11px; color: var(--muted); }
-  .tx p { margin: 2px 0 0; font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+  .session-info { display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+  .session-status { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; }
+  .tx { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .tx li { min-width: 0; }
+  .end { height: 1px; flex-shrink: 0; }
+  .transcript-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; }
 </style>

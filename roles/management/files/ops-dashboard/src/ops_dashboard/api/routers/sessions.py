@@ -1,6 +1,8 @@
 """Read API + WebSocket for live sessions."""
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 
 from ..routers.ingest import ws_manager
@@ -38,20 +40,39 @@ async def active_sessions(request: Request):
 
 
 @router.get("/{session_uuid}/transcript")
-async def transcript(session_uuid: str, since: int = 0, request: Request = None):
+async def transcript(session_uuid: str, since: int = 0, after_id: int | None = None, request: Request = None):
     pool = request.app.state.db_pool
     if pool is None:
         return []
+    # Live hook deltas restart sequence_num at 1. Use the monotonically
+    # increasing row ID for the mobile cursor so later deltas are not skipped.
+    # The classic client keeps its existing `since` contract.
+    cursor_column = "m.id" if after_id is not None else "m.sequence_num"
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT m.uuid, m.role, m.type, m.content_text, m.sequence_num, m.timestamp
+            f"""SELECT m.id AS cursor, m.uuid, m.role, m.type, m.content_text, m.content_json,
+                      m.sequence_num, m.timestamp
                  FROM sessions.messages m
                  JOIN sessions.sessions s ON s.id = m.session_id
-                WHERE s.session_uuid = $1 AND m.sequence_num > $2
-                ORDER BY m.sequence_num ASC LIMIT 500""",
-            session_uuid, since,
+                WHERE s.session_uuid = $1 AND {cursor_column} > $2
+                  AND NOT coalesce(m.is_sidechain, false)
+                ORDER BY {cursor_column} ASC LIMIT 500""",
+            session_uuid, after_id if after_id is not None else since,
         )
-    return [dict(r) for r in rows]
+    messages = []
+    for row in rows:
+        message = dict(row)
+        # asyncpg returns JSONB as a string unless a custom codec is registered.
+        # Keep this additive field a JSON value for both dashboard clients.
+        content = message.get("content_json")
+        if isinstance(content, str):
+            try:
+                content = json.loads(content)
+            except (ValueError, TypeError):
+                content = None
+        message["content_json"] = content
+        messages.append(message)
+    return messages
 
 
 @router.get("/{session_uuid}")
