@@ -20,12 +20,16 @@ async def active_sessions(request: Request):
             """SELECT s.session_uuid, s.live_status, s.needs_input, s.current_stage,
                       s.host, s.git_branch, s.model, s.last_event_at,
                       s.input_tokens, s.output_tokens, p.display_name AS project,
+                      w.name AS session_name, w.agent_kind,
+                      (w.last_seen > now()-interval '90 seconds') AS workstation_connected,
+                      (w.input_available AND w.last_seen > now()-interval '90 seconds') AS input_available,
                       a.id AS approval_id,
                       a.prompt_text AS approval_prompt,
                       a.metadata->>'tool_name' AS approval_tool,
                       (a.id IS NOT NULL) AS needs_approval
                  FROM sessions.sessions s
                  LEFT JOIN sessions.projects p ON p.id = s.project_id
+                 LEFT JOIN sessions.workstation_sessions w ON w.session_id = s.id
                  LEFT JOIN LATERAL (
                      SELECT id, prompt_text, metadata
                        FROM gateway.approvals
