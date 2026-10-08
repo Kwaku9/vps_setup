@@ -56,9 +56,9 @@ export interface SwitchResult {
 export interface MetricsSnapshot {
   service_name: string;
   timestamp: number;
-  cpu_percent: number;
-  memory_percent: number;
-  memory_usage_mb: number;
+  cpu_percent: number | null;
+  memory_percent: number | null;
+  memory_usage_mb: number | null;
   status: string;
 }
 

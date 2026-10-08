@@ -7,10 +7,23 @@ import logging
 import os
 from dataclasses import dataclass, field
 
-from ..config import load_config, load_profiles, load_services, load_stacks, compute_diff, resolve_profile_stacks
-from ..models import EndpointType, Profile, Service, ServicePlatform, ServiceStack
-from ..providers.vps import VpsProvider
+from ..config import (
+    compute_diff,
+    load_config,
+    load_profiles,
+    load_services,
+    load_stacks,
+)
+from ..models import (
+    EndpointType,
+    Profile,
+    Service,
+    ServicePlatform,
+    ServiceStack,
+    ServiceStatus,
+)
 from ..providers.azure import AzureProvider
+from ..providers.vps import VpsProvider
 from .schemas import MetricsSnapshot
 
 logger = logging.getLogger(__name__)
@@ -105,9 +118,17 @@ def merge_live_containers(state: DashboardState, live: list[dict]) -> None:
     # Add newly discovered unmanaged containers.
     for entry in live:
         name = _container_name(entry)
-        if not name or name in state.services:
+        if not name:
             continue
-        pod = entry.get("Pod") or None
+        pod = entry.get("PodName") or entry.get("Pod") or None
+        raw_status = entry.get("State", "unknown")
+        status = ServiceStatus.RUNNING if raw_status == "running" else (
+            ServiceStatus.STOPPED if raw_status in {"stopped", "exited", "created"} else ServiceStatus.UNKNOWN)
+        if name in state.services:
+            if not state.services[name].managed:
+                state.services[name].pod = pod
+                state.services[name].status = status
+            continue
         state.services[name] = Service(
             name=name,
             platform=ServicePlatform.VPS,
@@ -115,6 +136,7 @@ def merge_live_containers(state: DashboardState, live: list[dict]) -> None:
             pod=pod,
             description="unclassified",
             managed=False,
+            status=status,
         )
 
 

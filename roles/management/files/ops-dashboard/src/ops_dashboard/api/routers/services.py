@@ -26,6 +26,8 @@ def _service_to_schema(state: DashboardState, name: str) -> ServiceSchema:
         dependencies=svc.dependencies,
         cpu_percent=metrics.cpu_percent if metrics else None,
         memory_percent=metrics.memory_percent if metrics else None,
+        memory_usage_mb=metrics.memory_usage_mb if metrics else None,
+        metrics_at=metrics.timestamp if metrics else None,
         managed=svc.managed,
     )
 
