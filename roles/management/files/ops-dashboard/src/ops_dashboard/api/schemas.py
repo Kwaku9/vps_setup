@@ -18,6 +18,8 @@ class ServiceSchema(BaseModel):
     dependencies: list[str] = []
     cpu_percent: float | None = None
     memory_percent: float | None = None
+    memory_usage_mb: float | None = None
+    metrics_at: float | None = None
     stack_group: str | None = None
     managed: bool = True
 
@@ -70,9 +72,9 @@ class SetTierRequest(BaseModel):
 class MetricsSnapshot(BaseModel):
     service_name: str
     timestamp: float = 0.0
-    cpu_percent: float = 0.0
-    memory_percent: float = 0.0
-    memory_usage_mb: float = 0.0
+    cpu_percent: float | None = None
+    memory_percent: float | None = None
+    memory_usage_mb: float | None = None
     status: str = "unknown"
 
 

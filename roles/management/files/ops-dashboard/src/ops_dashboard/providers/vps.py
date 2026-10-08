@@ -111,10 +111,23 @@ class VpsProvider(Provider):
             return []
         try:
             data = json.loads(out)
-            return data if isinstance(data, list) else []
         except json.JSONDecodeError:
             logger.warning("podman ps returned non-JSON output")
             return []
+        if not isinstance(data, list):
+            return []
+        # `ps` reports a pod ID (and PodName can be empty). Resolve names in one
+        # extra batch instead of inspecting every container on each refresh.
+        pods_out, pods_rc = await self._ssh_command("podman pod ps --format json", timeout=10)
+        if pods_rc == 0 and pods_out:
+            try:
+                pods = json.loads(pods_out)
+                names = {p["Id"]: p["Name"] for p in pods if p.get("Id") and p.get("Name")}
+                for entry in data:
+                    entry["PodName"] = names.get(entry.get("Pod"), entry.get("PodName") or "")
+            except (json.JSONDecodeError, TypeError, KeyError, AttributeError):
+                logger.warning("Could not resolve live pod names")
+        return data
 
     async def inspect_container(self, name: str) -> dict | None:
         """Return a small projection of `podman inspect <name>`. None on failure."""
