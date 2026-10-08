@@ -13,13 +13,13 @@ cd /workspace/vscode-projects/vps_setup
 M=$(podman exec litellm sh -c 'echo $LITELLM_MASTER_KEY')
 # A previous partial run may have minted the alias already: retire it first so
 # the vault ends up holding the one key that exists.
-podman exec litellm python3 - "$M" <<'PY'
+podman exec -i litellm python3 - "$M" <<'PY'
 import json,sys,urllib.request
 req=urllib.request.Request("http://127.0.0.1:4000/key/delete",data=json.dumps({"key_aliases":["vps-litellm-to-stack-b"]}).encode(),headers={"Authorization":"Bearer "+sys.argv[1],"content-type":"application/json"})
 try: urllib.request.urlopen(req,timeout=30)
 except Exception: pass
 PY
-KEY=$(podman exec litellm python3 - "$M" <<'PY'
+KEY=$(podman exec -i litellm python3 - "$M" <<'PY'
 import json,sys,urllib.request
 req=urllib.request.Request("http://127.0.0.1:4000/key/generate",data=json.dumps({"models":["cand-a","cand-b","cand-b-fallback"],"key_alias":"vps-litellm-to-stack-b","metadata":{"purpose":"VPS LiteLLM upstream credential for Stack B"}}).encode(),headers={"Authorization":"Bearer "+sys.argv[1],"content-type":"application/json"})
 print(json.load(urllib.request.urlopen(req,timeout=30))["key"])
@@ -39,7 +39,7 @@ podman exec -w /ansible ansible-deployment ansible-playbook -i inventory/hosts s
 grep -A2 "PLAY RECAP" /var/log/litellm-stack-b-connect.log | tail -2
 sleep 15
 M=$(podman exec litellm sh -c 'echo $LITELLM_MASTER_KEY')
-podman exec litellm python3 - "$M" <<'PY'
+podman exec -i litellm python3 - "$M" <<'PY'
 import json,sys,urllib.request
 h={"Authorization":"Bearer "+sys.argv[1],"content-type":"application/json"}
 ids=[m["id"] for m in json.load(urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:4000/v1/models",headers=h),timeout=30))["data"]]
