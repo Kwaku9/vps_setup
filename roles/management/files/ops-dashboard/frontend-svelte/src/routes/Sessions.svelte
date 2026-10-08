@@ -5,6 +5,7 @@
   import Sheet from '../components/Sheet.svelte';
   import Status from '../components/Status.svelte';
   import TranscriptEntry from '../components/TranscriptEntry.svelte';
+  import SessionComposer from '../components/SessionComposer.svelte';
   import { api } from '../lib/api';
   import { ago, num } from '../lib/fmt';
   import type { Tone } from '../lib/inventory-views';
@@ -13,6 +14,7 @@
   import { fresh } from '../lib/triage';
   import { mergeMessages, transcriptEntries } from '../lib/transcript';
   import type { LiveSession, PendingApproval, TranscriptMessage } from '../lib/types';
+  import { cancelVoice, voice } from '../lib/voice.svelte';
 
   let { approvals }: { approvals: Poll<PendingApproval[]> } = $props();
 
@@ -59,6 +61,7 @@
 
   $effect(() => {
     const uuid = openUuid;
+    cancelVoice(); voice.error = '';
     if (!uuid) { open = false; return; }
     open = true; msgs = []; tError = null; tLoading = true; following = true; newMessages = 0;
     let since = 0, stop = false, busy = false;
@@ -97,7 +100,7 @@
     const t = setInterval(() => { if (document.visibilityState === 'visible') pull(); }, 5000);
     const onVisible = () => { if (document.visibilityState === 'visible') pull(); };
     document.addEventListener('visibilitychange', onVisible);
-    return () => { stop = true; clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
+    return () => { stop = true; clearInterval(t); document.removeEventListener('visibilitychange', onVisible); cancelVoice(); };
   });
   $effect(() => { if (!open && openUuid) go('sessions'); });
 
@@ -123,11 +126,11 @@
         <a class="item" href="#/sessions/{s.session_uuid}">
           <span class="top">
             <Dot tone={tone(s)} />
-            <span class="t">{s.project ?? s.session_uuid.slice(0, 8)}</span>
+            <span class="t">{s.session_name || s.project || s.session_uuid.slice(0, 8)}</span>
             <span class="r">{ago(s.last_event_at)}</span>
           </span>
           <span class="s">{label(s)}{s.current_stage ? ` · ${s.current_stage}` : ''}</span>
-          <span class="s mono">{[s.host, s.git_branch, s.model].filter(Boolean).join(' · ')}{s.output_tokens ? ` · ${num(s.output_tokens)} out` : ''}</span>
+          <span class="s mono">{[s.host, s.agent_kind === 'claude' ? 'Claude Code' : s.agent_kind === 'codex' ? 'Codex' : null, s.git_branch, s.model].filter(Boolean).join(' · ')}{s.output_tokens ? ` · ${num(s.output_tokens)} out` : ''}</span>
         </a>
         {#if s.approval_id && byId.get(s.approval_id)}
           <ApprovalCard approval={byId.get(s.approval_id)!} session={s} ondone={refreshBoth} />
@@ -142,7 +145,8 @@
   {/if}
 </div>
 
-<Sheet title={current?.project ?? 'Transcript'} bind:open onbodyscroll={onTranscriptScroll}>
+<Sheet title={current?.session_name || current?.project || 'Transcript'} bind:open onbodyscroll={onTranscriptScroll}
+  fitVisualViewport onbodyresize={() => { if (following) latest(); }}>
   {#if current}
     <div class="session-info">
       <span class="session-status"><Dot tone={tone(current)} />{label(current)}</span>
@@ -151,6 +155,7 @@
     </div>
   {/if}
   {#if tError}<p class="banner">{tError}</p>{/if}
+  {#if voice.error}<p class="banner" role="alert">{voice.error}</p>{/if}
   {#if tLoading}<p class="muted small">Loading transcript…</p>{:else if !entries.length}<p class="muted">No messages yet.</p>{/if}
   <ol class="tx" aria-label="Session transcript">
     {#each entries as entry (entry.id)}
@@ -165,6 +170,7 @@
         <button class="btn small quiet" onclick={latest}>{newMessages ? `${newMessages} new · ` : ''}Latest ↓</button>
       {/if}
     </div>
+    {#if current?.agent_kind}{#key current.session_uuid}<SessionComposer session={current} />{/key}{/if}
   {/snippet}
 </Sheet>
 

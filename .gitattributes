@@ -68,6 +68,8 @@ docs/ENCRYPTION_MAP.md !filter !diff
 
 # ── Tools (integration utilities) ──
 tools/**/*.py filter=git-crypt diff=git-crypt
+# Public bootstrap source; credentials arrive on stdin and are TPM sealed.
+tools/install-ops-session-bridge.py !filter !diff
 tools/*.js filter=git-crypt diff=git-crypt
 tools/yt-transcript-worker/*.js filter=git-crypt diff=git-crypt
 tools/yt-transcript-worker/*.toml filter=git-crypt diff=git-crypt
