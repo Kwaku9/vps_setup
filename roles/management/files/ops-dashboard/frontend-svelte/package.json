@@ -1,0 +1,25 @@
+{
+  "name": "ops-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "node --experimental-strip-types tests/transcript.test.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/public-sans": "^5.2.5",
+    "@fontsource/jetbrains-mono": "^5.2.5",
+    "dompurify": "^3.4.16",
+    "marked": "^18.1.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "svelte": "^5.40.0",
+    "svelte-check": "^4.3.0",
+    "typescript": "~5.9.3",
+    "vite": "^8.0.0"
+  }
+}

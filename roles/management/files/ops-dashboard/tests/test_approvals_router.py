@@ -2,6 +2,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from ops_dashboard.api import auth
 from ops_dashboard.api.routers import approvals
 
 
@@ -18,23 +19,24 @@ class FakeConn:
 @pytest.mark.asyncio
 async def test_apply_decision_true_on_one_row():
     conn = FakeConn("UPDATE 1")
-    ok = await approvals.apply_decision(conn, 7, "approve")
+    ok = await approvals.apply_decision(conn, 7, "approve", "kb")
     assert ok is True
-    assert conn.queries[0][1] == (7, "approved")
+    assert conn.queries[0][1] == (7, "approved", "dashboard:kb")
 
 
 @pytest.mark.asyncio
 async def test_apply_decision_false_when_no_row():
     conn = FakeConn("UPDATE 0")
-    ok = await approvals.apply_decision(conn, 7, "deny")
+    ok = await approvals.apply_decision(conn, 7, "deny", "kb")
     assert ok is False
-    assert conn.queries[0][1] == (7, "denied")
+    assert conn.queries[0][1] == (7, "denied", "dashboard:kb")
 
 
 def test_decide_rejects_bad_decision():
     app = FastAPI()
     app.state.db_pool = None
     app.include_router(approvals.router)
+    app.dependency_overrides[auth.current_user] = lambda: {"username": "kb", "role": "admin"}
     c = TestClient(app)
     r = c.post("/api/approvals/5/decide", json={"decision": "maybe"})
     assert r.status_code == 422
@@ -48,3 +50,12 @@ def test_pending_empty_without_pool():
     r = c.get("/api/approvals/pending")
     assert r.status_code == 200
     assert r.json() == []
+
+
+def test_decide_needs_admin():
+    app = FastAPI()
+    app.state.db_pool = None
+    app.include_router(approvals.router)
+    app.dependency_overrides[auth.current_user] = lambda: {"username": "kb", "role": "operator"}
+    c = TestClient(app)
+    assert c.post("/api/approvals/5/decide", json={"decision": "approve"}).status_code == 403

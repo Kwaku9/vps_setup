@@ -92,6 +92,9 @@ boot_services:
   containers:
     - { name: postgres,         enabled: true, depends_on: [] }
     - { name: redis,            enabled: true, depends_on: [] }
+    # google-docs-mcp: REMOVED 2026-10-02. enabled: false deletes the orphan init
+    # script; drop this line once no host carries /etc/init.d/google-docs-mcp.
+    - { name: google-docs-mcp,  enabled: false, depends_on: [] }
     - { name: crowdsec,         enabled: true, depends_on: [] }
     - { name: traefik,          enabled: true, depends_on: [crowdsec] }
     - { name: cloudflared,      enabled: true, depends_on: [traefik] }
@@ -104,7 +107,6 @@ boot_services:
     # pipe). They depend on postgres (gateway schema) like telegram-gateway.
     - { name: telegram-coder,   enabled: true, depends_on: [ai-stack-pod] }
     - { name: owui-coder,       enabled: true, depends_on: [ai-stack-pod] }
-    - { name: google-docs-mcp,  enabled: true, depends_on: [] }
     # graph-RAG service for the buildfol.io chat widget; needs neo4j-pod up first.
     - { name: timeline-context-api, enabled: true, depends_on: [neo4j-pod] }
     # timeline.aicortex.cloud graph + semantic search API; joins frontend-pod's

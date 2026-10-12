@@ -40,8 +40,39 @@ for k, v in d["sources"].items():
     print(f'infra_graph_source_ok{{source="{k}"}} {1 if v["ok"] else 0}')
 print("# HELP infra_graph_objects Objects discovered this run.")
 print("# TYPE infra_graph_objects gauge")
-for k in ("pods", "containers", "jobs", "datastores", "routes", "dashboards"):
+for k in ("pods", "containers", "jobs", "datastores", "routes", "dashboards", "scripts", "apis", "api_paths", "credentials", "public_endpoints", "pipelines", "alert_rules"):
     print(f'infra_graph_objects{{kind="{k}"}} {len(d.get(k, []))}')
+creds = d.get("credentials", [])
+if creds:
+    print("# HELP infra_graph_credentials Vault secrets by problem flag (names only; see INVENTORY.md).")
+    print("# TYPE infra_graph_credentials gauge")
+    for flag in ("drift", "conflict", "duplicate_in_file", "unreferenced", "empty"):
+        print(f'infra_graph_credentials{{flag="{flag}"}} {sum(1 for c in creds if c.get(flag))}')
+    print(f'infra_graph_credentials{{flag="reused"}} {sum(1 for c in creds if c.get("reused_as"))}')
+    print(f'infra_graph_credentials{{flag="unmanaged"}} {len(d.get("unmanaged_secrets", []))}')
+eps = d.get("public_endpoints", [])
+if eps:
+    print("# HELP infra_graph_public_endpoints Externally reachable endpoints (see INVENTORY.md).")
+    print("# TYPE infra_graph_public_endpoints gauge")
+    for kind in ("hostname", "port", "worker"):
+        print(f'infra_graph_public_endpoints{{kind="{kind}",set="all"}} {sum(1 for e in eps if e["kind"] == kind)}')
+        print(f'infra_graph_public_endpoints{{kind="{kind}",set="flagged"}} {sum(1 for e in eps if e["kind"] == kind and e["flags"])}')
+    print(f'infra_graph_public_endpoints{{kind="port",set="internet"}} {sum(1 for e in eps if e["kind"] == "port" and "internet" in e["reachable"])}')
+pipes = d.get("pipelines", [])
+if pipes:
+    print("# HELP infra_graph_pipelines CI/CD definitions by state; failing = last GitHub run failed.")
+    print("# TYPE infra_graph_pipelines gauge")
+    print(f'infra_graph_pipelines{{set="runnable"}} {sum(1 for p in pipes if p["state"].startswith("runnable"))}')
+    print(f'infra_graph_pipelines{{set="inert"}} {sum(1 for p in pipes if not p["state"].startswith("runnable"))}')
+    print(f'infra_graph_pipelines{{set="failing"}} {sum(1 for p in pipes if (p.get("last_run") or {}).get("conclusion") == "failure")}')
+cov = d.get("alert_coverage")
+if cov:
+    print("# HELP infra_graph_alert_coverage Things no alert rule watches specifically.")
+    print("# TYPE infra_graph_alert_coverage gauge")
+    print(f'infra_graph_alert_coverage{{kind="containers_unwatched"}} {len(cov["containers_unwatched"])}')
+    print(f'infra_graph_alert_coverage{{kind="jobs_unwatched"}} {len(cov["jobs_unwatched"])}')
+    print(f'infra_graph_alert_coverage{{kind="no_container_down_rule"}} {1 if cov["no_container_down_rule"] else 0}')
+    print(f'infra_graph_alert_coverage{{kind="rules_erroring"}} {sum(1 for r in d.get("alert_rules", []) if r.get("last_error"))}')
 PY
 chmod 0644 "$OUT/infra_graph.prom.tmp"
 mv "$OUT/infra_graph.prom.tmp" "$PROM_DIR/infra_graph.prom"

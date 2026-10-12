@@ -58,6 +58,22 @@ neo4j:
     cron_minute: "40"          # clear of the 03:00 ingest/03:30 sync and 04:20 jobs
     run_on_deploy: true
 
+  # code-graph: deterministic code knowledge graph (CodeProject/CodeFile/Symbol/
+  # Endpoint/Doc/Claim) over every own repo in files/code-graph/projects.yml.
+  code_graph:
+    enabled: true
+    script_dir: "/opt/compose/code-graph"
+    cron_hour: "5"
+    cron_minute: "10"          # after infra-graph (04:40), before the 06:00 backup
+    run_on_deploy: false       # a full first load takes ~3 min; use --tags code-graph-run
+
+  # knowledge-mcp: search/describe/impact/stale_docs/history tools over the graph.
+  knowledge_mcp:
+    enabled: true
+    container_name: "knowledge-mcp"
+    image: "localhost/knowledge-mcp:latest"
+    memory: "192m"
+
   sessions_graph:
     enabled: true
     script_dir: "/opt/compose/sessions-graph"
