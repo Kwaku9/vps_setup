@@ -199,23 +199,7 @@ services:
     ansible_tag: mcp
     dependencies: [postgres, traefik]
 
-  context7-mcp:
-    platform: vps
-    endpoint_type: pod
-    pod: mcp-pod
-    description: "Context7 MCP server"
-    memory_mb: 256
-    ansible_tag: mcp
-    dependencies: []
 
-  google-docs-mcp:
-    platform: vps
-    endpoint_type: pod
-    pod: mcp-pod
-    description: "Google Docs MCP server"
-    memory_mb: 256
-    ansible_tag: mcp
-    dependencies: []
 
   # === VPS: frontend-pod ===
   journey-tracker:
@@ -535,8 +519,6 @@ profiles:
       ansible-deployment: true
       github-runner: true
       ops-dashboard: true
-      context7-mcp: false
-      google-docs-mcp: false
       ib-mcp-server: false
       ibeam: false
       atlas-charts: false
@@ -590,8 +572,6 @@ profiles:
       ansible-deployment: true
       github-runner: true
       ops-dashboard: true
-      context7-mcp: false
-      google-docs-mcp: false
       ib-mcp-server: false
       ibeam: false
       atlas-charts: false
@@ -638,8 +618,6 @@ profiles:
       ansible-deployment: true
       github-runner: true
       ops-dashboard: true
-      context7-mcp: true
-      google-docs-mcp: true
       ib-mcp-server: false
       ibeam: false
       atlas-charts: false
@@ -690,8 +668,6 @@ profiles:
       ansible-deployment: true
       github-runner: true
       ops-dashboard: true
-      context7-mcp: false
-      google-docs-mcp: false
       ib-mcp-server: false
       ibeam: false
       atlas-charts: false
@@ -740,8 +716,6 @@ profiles:
       ansible-deployment: true
       github-runner: true
       ops-dashboard: true
-      context7-mcp: false
-      google-docs-mcp: false
       ib-mcp-server: false
       ibeam: false
       atlas-charts: false

@@ -45,6 +45,26 @@ END $$;
 
 -- 3. Assign tiers
 GRANT app_ro TO grafana_ro, recall_ro;                      -- read-only (Grafana dashboards; session-recall MCP)
-GRANT app_rw TO session_ingest, ops_dashboard, telegram_gw; -- read-write consumers
+GRANT app_rw TO session_ingest, telegram_gw;                -- read-write consumers
+
+-- grafana_ro also feeds Alloy's postgres exporter, whose WAL collector calls
+-- pg_ls_waldir(); that and the other pg_stat_* internals need pg_monitor.
+GRANT pg_monitor TO grafana_ro;
+
+-- 4. ops_dashboard: exactly what the dashboard's code touches, nothing more.
+-- It used to be in app_rw (read + write on every table in every schema),
+-- which is far too much for a web app; its audit table relies on a trigger
+-- partly because of that. Derived from the SQL in
+-- roles/management/files/ops-dashboard/src. When the dashboard needs a new
+-- table, grant it here (or in its own migration, like repo_radar_snapshots
+-- and ops_audit in roles/management/files/ops-dashboard/migrations).
+GRANT USAGE ON SCHEMA sessions, gateway, recall TO ops_dashboard;
+GRANT SELECT, INSERT, UPDATE ON sessions.sessions, sessions.projects                TO ops_dashboard;
+GRANT SELECT, INSERT         ON sessions.messages, sessions.tool_calls,
+                                sessions.session_events                            TO ops_dashboard;
+GRANT SELECT                 ON sessions.session_summaries, recall.chunks          TO ops_dashboard;
+GRANT SELECT, UPDATE         ON gateway.approvals                                  TO ops_dashboard;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA sessions                                    TO ops_dashboard;
+REVOKE app_rw FROM ops_dashboard;
 
 -- Verify with:  \du   and   SELECT rolname FROM pg_roles WHERE rolname LIKE 'app\_%' OR rolname IN ('grafana_ro','session_ingest','ops_dashboard','telegram_gw','recall_ro');

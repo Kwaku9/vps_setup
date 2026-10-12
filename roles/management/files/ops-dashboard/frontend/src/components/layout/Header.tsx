@@ -1,7 +1,11 @@
+import { useEffect, useState } from 'react';
 import { useDashboard } from '../../contexts/DashboardContext';
+import { fetchMe, logout, type Me } from '../../api/client';
 
 export function Header() {
   const { wsConnected } = useDashboard();
+  const [me, setMe] = useState<Me | null>(null);
+  useEffect(() => { fetchMe().then(setMe).catch(() => setMe(null)); }, []);
   return (
     <header className="safe-top sticky top-0 z-30 backdrop-blur-xl border-b border-white/5 bg-[var(--bg-base)]/80">
       <div className="mx-auto max-w-7xl px-4 md:px-6 py-3 flex items-center justify-between">
@@ -12,13 +16,26 @@ export function Header() {
             <div className="hidden sm:block text-[11px] text-white/50">ops.aicortex.cloud</div>
           </div>
         </div>
-        <div
-          className={`glass px-3 py-1.5 rounded-full text-[11px] font-medium flex items-center gap-2 ${
-            wsConnected ? 'text-emerald-300' : 'text-rose-300'
-          }`}
-        >
-          <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-          {wsConnected ? 'Live' : 'Disconnected'}
+        <div className="flex items-center gap-2">
+          <div
+            className={`glass px-3 py-1.5 rounded-full text-[11px] font-medium flex items-center gap-2 ${
+              wsConnected ? 'text-emerald-300' : 'text-rose-300'
+            }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+            {wsConnected ? 'Live' : 'Disconnected'}
+          </div>
+          {me && (
+            <button
+              onClick={() => logout()}
+              title={`Signed in as ${me.username} (${me.role}${me.via === 'breakglass' ? ', break-glass' : ''}). Sign out.`}
+              className={`glass px-3 py-1.5 rounded-full text-[11px] font-medium ${
+                me.via === 'breakglass' ? 'text-amber-300' : 'text-white/70'
+              }`}
+            >
+              {me.username} · {me.role} · Sign out
+            </button>
+          )}
         </div>
       </div>
     </header>

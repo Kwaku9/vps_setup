@@ -1,7 +1,11 @@
 """Profile listing and switching endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from html import escape
 
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from .. import audit
+from ..auth import require_role
 from ..dependencies import DashboardState, get_state
 from ..schemas import ProfileDiffSchema, ProfileSchema, SwitchProfileRequest, SwitchProfileResponse
 
@@ -38,7 +42,9 @@ async def get_profile(name: str, state: DashboardState = Depends(get_state)):
 
 
 @router.post("/switch", response_model=SwitchProfileResponse)
-async def switch_profile(req: SwitchProfileRequest, state: DashboardState = Depends(get_state)):
+async def switch_profile(req: SwitchProfileRequest, request: Request,
+                         state: DashboardState = Depends(get_state),
+                         user: dict = Depends(require_role("admin"))):
     if req.target_profile not in state.profiles:
         raise HTTPException(404, f"Profile '{req.target_profile}' not found")
 
@@ -49,6 +55,8 @@ async def switch_profile(req: SwitchProfileRequest, state: DashboardState = Depe
         unchanged=diff.unchanged,
     )
 
+    if req.confirm and not audit.audit_ready(request.app):
+        raise HTTPException(503, "The audit log is unavailable, so actions are paused.")
     if not req.confirm:
         return SwitchProfileResponse(
             diff=diff_schema,
@@ -81,6 +89,13 @@ async def switch_profile(req: SwitchProfileRequest, state: DashboardState = Depe
     message = f"Switched to {req.target_profile}"
     if errors:
         message += f" (with {len(errors)} errors: {', '.join(errors)})"
+    await audit.record(request.scope, user, action="profile-switch", target=req.target_profile,
+                       outcome="failed" if errors else "ok", status=200,
+                       detail={"started": diff.starting, "stopped": diff.stopping, "errors": errors})
+    audit.notify(state.vps_provider,
+                 f"🔧 <b>ops</b> {escape(user['username'])} switched profile to <b>{escape(req.target_profile)}</b>: "
+                 f"stopped {len(diff.stopping)}, started {len(diff.starting)}"
+                 + (f", {len(errors)} errors" if errors else ""))
 
     return SwitchProfileResponse(
         diff=diff_schema,

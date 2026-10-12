@@ -1,0 +1,11 @@
+[Unit]
+Description=Push this workstation's inventory to the VPS knowledge graph
+Documentation=file://%h/.local/share/fedora-inventory/README.md
+After=network-online.target
+
+[Service]
+Type=oneshot
+# ssh target for the VPS; override with: systemctl --user edit fedora-inventory.service
+Environment=INVENTORY_VPS_SSH=root@alpine-vps
+Environment=INVENTORY_HOST=fedora
+ExecStart=/usr/bin/python3 %h/.local/bin/fedora-inventory.py

@@ -62,30 +62,12 @@ def rank(hit: dict) -> float:
 
 @mcp.tool()
 def search(text: str, kind: str = "", include_dead: bool = False, limit: int = 15) -> list[dict]:
-    """Find where something lives in the user's own code and docs: functions,
-    classes, HTTP/MCP endpoints, projects, files and markdown docs across every
-    indexed repo on the VPS (about 55 projects, 3,600 symbols, 340 endpoints,
-    320 docs; re-indexed nightly). Start here for "where is X implemented",
-    "which service exposes /api/Y", or "is there a doc or plan about Z".
+    """Find code, APIs and docs across every repo by name, docstring, path or heading.
 
-    Matching is full-text (Lucene) over names, docstrings, paths and headings,
-    so use the identifiers or words likely to appear in code ("ingest_sessions",
-    "rerank", "Cloudflare tunnel"), not a whole question. Lucene syntax works:
-    "exact phrase", prefix*, a OR b.
-
-    Args: text; kind = symbol | endpoint | doc | project | file (optional
-    filter); include_dead (default False hides abandoned duplicate copies);
-    limit (default 15).
-
-    Returns hits ranked live-code-first: label, name, kind, project, class
-    (own-deployed > own-dev > own-dormant > unclassified > dead), location
-    (file:line or path), about (docstring or summary), and for docs doc_status
-    (verified / contradicted / unverifiable) and freshness. Many repos have
-    near-identical copies; trust own-deployed hits over others. Follow up with
-    describe(name) for one hit.
-
-    Not for past conversations (use session-recall) or arbitrary graph
-    queries (use neo4j-sessions read_neo4j_cypher).
+    kind: optional filter — symbol | endpoint | doc | project | file.
+    Returns ranked hits with project, class (own-deployed/own-dev/own-dormant/dead),
+    file:line, and for docs their audit status and freshness. Dead duplicate
+    copies are hidden unless include_dead=True.
     """
     labels = {"symbol": "Symbol", "endpoint": "Endpoint", "doc": "Doc", "project": "CodeProject", "file": "CodeFile"}
     rows = q("""
@@ -118,28 +100,9 @@ def search(text: str, kind: str = "", include_dead: bool = False, limit: int = 1
 
 @mcp.tool()
 def describe(name: str) -> dict:
-    """Everything the graph knows about ONE named thing, resolved in this
-    order: code project, container, database, endpoint or MCP tool,
-    function/class, MCP server, doc. Use it after search(), or directly when
-    you already have the exact name (e.g. "session-recall-mcp", "neo4j-db",
-    "vps_setup").
-
-    What comes back depends on the kind:
-    - project: components, endpoints, containers it runs as (and their pod),
-      databases used, docs about it, and which copies it supersedes.
-    - container: code behind it, pod, public routes, databases, MCP servers
-      and scheduled jobs inside it, whether it is backed up.
-    - database: tables and which containers read or write it, with role.
-    - function/endpoint: file:line, handler, callers and callees, where it runs.
-    - doc: each claim with status (contradicted first) and the evidence.
-
-    Names must match exactly: a container ("neo4j-db"), a project key
-    ("vps_setup"), a database as "<server>/<db>" ("postgres/enterprise") or
-    its bare db name, a qualified symbol. On {"error": "nothing named ..."}
-    run search() to find the exact name.
-    Infra facts reflect last night's sync, not this minute; check live state
-    (podman ps, curl) before acting on them.
-    """
+    """Everything known about one thing: a function/class, endpoint or MCP tool,
+    project, container, database or doc. Gives location, what it exposes or calls,
+    where it runs, what it depends on, the docs about it and whether they hold."""
     hit = q("""
         CALL () {
           MATCH (n:CodeProject) WHERE n.name = $n OR n.key = $n RETURN n, 0 AS pri
@@ -214,23 +177,9 @@ def describe(name: str) -> dict:
 
 @mcp.tool()
 def impact(name: str) -> dict:
-    """Blast radius: what breaks if this container, pod or database stops,
-    is restarted or is changed. Call it BEFORE any restart, upgrade, prune,
-    migration or config change on the VPS, and when diagnosing an outage to
-    see what else is affected.
-
-    Args: name = exact container, pod or database name. Databases are named
-    "<server>/<db>": e.g. "postgres" (container), "neo4j-pod" (pod),
-    "postgres/enterprise" (database).
-
-    Returns: depends_on_it (containers/pods that depend on, read or write it,
-    including through the database server it hosts), routes (public host and
-    path served by it), mcp_servers, dashboards that query it, scheduled jobs
-    that run in it, and the code projects deployed as it.
-
-    Empty lists mean "no edge recorded", not "proven safe": the map is
-    rebuilt nightly from live state and can miss runtime-only dependencies.
-    """
+    """Blast radius: what stops working if this container, pod, database or
+    project goes down — dependent containers, routes, MCP servers, dashboards,
+    scheduled jobs, and the code projects behind them."""
     return {
         "depends_on_it": q("""
             MATCH (t) WHERE (t:Container OR t:Pod OR t:Database) AND t.name = $n
@@ -254,20 +203,9 @@ def impact(name: str) -> dict:
 
 @mcp.tool()
 def stale_docs(project: str = "", limit: int = 30) -> list[dict]:
-    """Docs, READMEs, plans and memory notes that are known to be wrong or
-    changed since they were checked, worst first. Every doc's factual claims
-    are audited against the live code and infra; this returns docs with
-    contradicted claims, each with the claim and what is actually true, plus
-    docs edited after their audit (freshness = needs-reaudit).
-
-    Use it before trusting a doc to plan work, when a doc and reality
-    disagree, or to find documentation to fix. Args: project (optional
-    CodeProject name or key, e.g. "vps_setup"); limit (default 30).
-
-    Returns [{doc, project, status, freshness, contradicted, verified,
-    wrong: [{claim, actually}]}]. A doc absent from this list is not proven
-    correct; it may just be unaudited or unverifiable.
-    """
+    """Documentation that is wrong or unverified, worst first, with the correct
+    current fact for each contradicted claim. project: optional CodeProject name.
+    Also lists docs whose content changed after their audit (needs-reaudit)."""
     return q("""
         MATCH (d:Doc) WHERE (d.claims_contradicted > 0 OR d.freshness = 'needs-reaudit')
         OPTIONAL MATCH (d)-[:DESCRIBES]->(p:CodeProject)
@@ -282,22 +220,8 @@ def stale_docs(project: str = "", limit: int = 30) -> list[dict]:
 
 @mcp.tool()
 def history(path: str, limit: int = 20) -> list[dict]:
-    """Which past AI sessions edited a file, newest first, to answer "who
-    changed this, when, and why". Follow up with session-recall
-    get_session(session) to read the reasoning behind the change.
-
-    Args: path = repo-relative path, absolute path, or a trailing fragment
-    such as "roles/neo4j/defaults/main.yml" (a bare file name like
-    "server.py" matches every file with that name, so prefer a longer
-    suffix); limit (default 20).
-
-    Returns [{file, session, title, started, edits}] where edits counts the
-    create/modify/delete operations in that session.
-
-    Only covers files inside indexed repos. For any other path, use
-    neo4j-sessions: (:Session)-[:HAS_ARTIFACT]->(:Artifact)-[:TOUCHES_FILE]->
-    (:File) with f.path ENDS WITH $path.
-    """
+    """Claude Code sessions that changed a file (repo-relative or absolute path,
+    or just a file name), newest first — with the session title and project."""
     return q("""
         MATCH (cf:CodeFile) WHERE cf.rel ENDS WITH $p OR cf.path = $p
         MATCH (cf)-[:SAME_AS]->(f:File)<-[:TOUCHES_FILE]-(a:Artifact)
