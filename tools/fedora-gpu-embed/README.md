@@ -43,3 +43,23 @@ pointed at the local GPU and the tunneled DB → tears the tunnel down.
 `embed_recall_delta.py` is the same idempotent script the VPS nightly cron uses
 (`NOT EXISTS` + `ON CONFLICT DO NOTHING`); only the embedding endpoint differs
 (local GPU vs VPS CPU). Safe to re-run.
+
+## Embedding prefix, fail-loud over-length, VPS fallback (2026-10)
+- `embed_owui_kb.py` now applies the Open WebUI document prefix
+  (`RAG_EMBEDDING_CONTENT_PREFIX`, default `title: none | text: `), matching the
+  open-webui env in `roles/ai-stack/tasks/main.yml`. Queries get
+  `task: search result | query: ` from OWUI itself. KB vectors embedded RAW before
+  this change are in a different space from prefixed queries: re-run
+  `reindex-owui-kb-now.sh` (full, not `--only-stale`) after deploying. NOT yet done.
+- All three embed scripts no longer truncate over-length input. The row is logged,
+  skipped, counted, and the run exits nonzero. Skipped rows are retried next run.
+- Offline test: `python3 test_embed_prefix.py` (stubbed endpoint; includes controls
+  that must fail, e.g. `RAG_EMBEDDING_CONTENT_PREFIX="" python3 test_embed_prefix.py`
+  exits nonzero). It also parses `main.yml` so the default prefix cannot drift.
+- VPS CPU fallback `ubatch_size` raised 512 -> 2048 (all.yml shadows role defaults,
+  both changed). llama.cpp embeddings need the whole input in one ubatch, so
+  480-640 token chunks plus prefix failed at 512. Expected RSS: roughly +0.5 to +0.9 GB
+  versus the 512 setting (2048 was observed at ~1.2 GB RSS for a 318 MB model; the
+  compute buffer scales with ubatch). Container cap stays `memory: 2g`. The VPS
+  has run swap-exhausted with 276 MB minimum available (alpine-vps-memory-pressure),
+  so this is RISKY: deploy only after checking `free -m`; never `podman system prune`.
