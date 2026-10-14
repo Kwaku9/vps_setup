@@ -59,4 +59,6 @@ flows:
   - {from: scrape, to: internet, ports: [80, 443], reason: "crawling (via Squid)"}
 
   # --- every zone pushes metrics ---
-  - {from: "*", to: observe, to_pod: metrics-pod, ports: [8428], reason: "push metrics"}
+  # tunnel and web are excluded: tunnel egress is limited to Traefik, host sshd and Cloudflare (spec 4),
+  # and web reaches nothing (spec 5). Their metrics come from the host, not from a push.
+  - {from: "*", except: [tunnel, web], to: observe, to_pod: metrics-pod, ports: [8428], reason: "push metrics"}
