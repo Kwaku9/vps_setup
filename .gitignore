@@ -285,3 +285,4 @@ site-packages/
 # Network segmentation tooling must be version-controlled (the *.sh rule above would hide it).
 !scripts/lint-zones.sh
 !tools/netseg/rig.sh
+!scripts/check-firewall-netns.sh
