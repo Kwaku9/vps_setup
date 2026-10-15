@@ -1,6 +1,10 @@
 ---
 # Security Role Defaults
 
+# The zone supernet from network/zones.yml. squid.conf.j2 allows it so that a redirected zone pod is not
+# denied by `http_access deny all`; it is read from the same file the firewall rules are generated from.
+zone_supernet: "{{ (lookup('file', playbook_dir ~ '/network/zones.yml') | from_yaml).supernet }}"
+
 security:
   fail2ban:
     enabled: true
