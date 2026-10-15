@@ -1,0 +1,69 @@
+# Allowed cross-zone flows. Anything not listed is dropped (enforce) or logged as
+# "zone-would-deny" (audit). `from: "*"` means every zone except the destination.
+# `unverified: true` marks a flow taken from config that the Phase 0 capture has not
+# confirmed yet; the loader refuses it in any zone that is in `enforce` mode.
+# Spec section 5.
+flows:
+  # --- tunnel: strict access to Traefik ---
+  - {from: tunnel, from_pod: cloudflared-pod, to: edge, to_pod: edge-pod, ports: [443], reason: "Cloudflare tunnel to Traefik"}
+  - {from: tunnel, from_pod: cloudflared-pod, to: host, ports: [22], reason: "ssh.<domain> tunnel origin"}
+  - {from: tunnel, to: internet, proto: tcp, ports: [7844], reason: "tunnel to Cloudflare edge"}
+  - {from: tunnel, to: internet, proto: udp, ports: [7844], reason: "tunnel to Cloudflare edge (QUIC)"}
+
+  # --- edge (Traefik) to everything it routes to ---
+  - {from: edge, to: web, ports: [80], reason: "public static sites"}
+  - {from: edge, to: frontend, ports: [80, 5173, 8080, 8081], reason: "apps behind Cloudflare Access", unverified: true}
+  - {from: edge, to: svc, to_pod: ai-gateway-pod, ports: [4000], reason: "litellm host route"}
+  - {from: edge, to: identity, ports: [9000], reason: "Authentik forward-auth"}
+  - {from: edge, to: observe, to_pod: metrics-pod, ports: [3000], reason: "Grafana"}
+  - {from: edge, to: fintech, to_pod: charts-pod, ports: [3080], reason: "charts UI"}
+  - {from: edge, to: agent, to_pod: gateway-pod, ports: ["7555-7557"], reason: "Telegram and OWUI webhooks"}
+  - {from: edge, from_pod: edge-pod, to: mgmt, to_pod: management-pod, ports: [8090], reason: "ops dashboard; only the edge pod may connect"}
+  - {from: edge, from_pod: edge-pod, to: mail, to_pod: mailkit-pod, ports: [8790, 8791], reason: "Mail Kit MCP connectors for claude.ai (read, send); only the edge pod may connect"}
+  - {from: edge, to: internet, ports: [443], reason: "CrowdSec lists, ACME DNS challenge (via Squid)"}
+
+  # --- frontend ---
+  - {from: frontend, to: svc, ports: [4000, 8080], reason: "Open WebUI to LiteLLM and SearXNG", unverified: true}
+  - {from: frontend, to: data, to_pod: shared-db-pod, ports: [5432], reason: "apps to their schemas"}
+  - {from: frontend, to: identity, ports: [9000], reason: "OIDC back-channel", unverified: true}
+  - {from: frontend, to: agent, to_pod: gateway-pod, ports: [7557], reason: "OWUI CC Sessions pipe to owui-coder"}
+
+  # --- svc ---
+  - {from: svc, to: data, ports: [5432], reason: "LiteLLM and APIs to Postgres"}
+  - {from: svc, to: internet, ports: [443], reason: "model providers (via Squid)"}
+
+  # --- agent ---
+  - {from: agent, to: data, ports: [5432], reason: "recall, graph and bots to Postgres"}
+  - {from: agent, to: data, to_pod: neo4j-pod, ports: [7687], reason: "graph MCP to Neo4j"}
+  - {from: agent, to: svc, to_pod: ai-gateway-pod, ports: [4000], reason: "agents to LiteLLM"}
+  - {from: agent, to: scrape, ports: [8888], reason: "scraper calls"}
+  - {from: agent, to: fintech, to_pod: trading-pod, ports: [5002], reason: "IB MCP; order tools stay gated by ib_mcp_allow_trading"}
+  - {from: agent, to: internet, ports: [443], reason: "Telegram and APIs (via Squid)"}
+
+  # --- mgmt (ops dashboard: host-root-equivalent, spec section 4A) ---
+  - {from: mgmt, from_pod: management-pod, to: host, ports: [22], reason: "SSH to the host; the dashboard's control path"}
+  - {from: mgmt, to: data, to_pod: shared-db-pod, ports: [5432], reason: "sessions and gateway.approvals"}
+  - {from: mgmt, to: data, to_pod: neo4j-pod, ports: [7687], reason: "Neo4j"}
+  - {from: mgmt, to: svc, to_pod: ai-gateway-pod, ports: [4000], reason: "LiteLLM"}
+  - {from: mgmt, to: identity, ports: [9000], reason: "OIDC back-channel", unverified: true}
+  - {from: mgmt, to: internet, ports: [443], reason: "CF Access certs and OIDC (via Squid)", unverified: true}
+  - {from: mgmt, to: tailnet, ports: [22], reason: "workstation SSH over the tailnet", unverified: true}
+
+  # --- mail (Mail Kit MCP: can read and send mail; spec section 4B) ---
+  - {from: mail, to: internet, ports: [443], reason: "Mail Kit API and OAuth token endpoint (via Squid)"}
+
+  # --- fintech ---
+  - {from: fintech, to: data, to_pod: shared-db-pod, ports: [5432], reason: "trading schema, direct (API later)"}
+  - {from: fintech, to: internet, ports: [443], reason: "IBKR gateway (via Squid)"}
+
+  # --- observe ---
+  - {from: observe, to: data, to_pod: shared-db-pod, ports: [5432], reason: "Grafana grafana_ro datasource"}
+  - {from: observe, to: internet, ports: [443], reason: "alert delivery"}
+
+  # --- scrape ---
+  - {from: scrape, to: internet, ports: [80, 443], reason: "crawling (via Squid)"}
+
+  # --- every zone pushes metrics ---
+  # tunnel, web and mail are excluded: tunnel egress is limited to Traefik, host sshd and Cloudflare (spec 4),
+  # web reaches nothing (spec 5), and mail reaches only the internet (spec 4B). Their metrics come from the host.
+  - {from: "*", except: [tunnel, web, mail], to: observe, to_pod: metrics-pod, ports: [8428], reason: "push metrics"}

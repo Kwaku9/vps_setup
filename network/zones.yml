@@ -1,0 +1,134 @@
+# Source of truth for network zones. Consumed by tools/netseg (firewall rules,
+# reachability tests, capture report) and roles/container-runtime (networks).
+# Spec: docs/superpowers/specs/2026-10-10-network-segmentation-design.md section 3.
+#
+# Every zone starts in `audit`: unmatched traffic is logged as "zone-would-deny"
+# and still accepted. A zone flips to `enforce` only after the section 6.6 review.
+container_space: 10.89.0.0/16
+supernet: 10.89.128.0/24
+
+# Networks that still hold pods until phase 9. `deny_from` lists zones whose traffic
+# into these networks is dropped even while the zone is in audit.
+legacy:
+  cidrs: [10.89.0.0/24, 10.89.1.0/24, 10.89.2.0/24, 10.89.3.0/24]
+  deny_from: []
+
+# Containers deliberately outside every zone.
+#   ansible-deployment: host network + podman socket; it is the host.
+#   tetragon:           kept, intentionally down (owner decision 2026-10-12).
+#   dev-pod:            exited, tailnet-only; fate undecided.
+exempt: [ansible-deployment, tetragon, dev-pod, expo-dev]
+
+zones:
+  tunnel:
+    name: net-tunnel
+    bridge: br-tunnel
+    cidr: 10.89.128.0/29
+    single_pod: true        # same-bridge traffic is unfiltered, so nothing else may share this zone
+    purpose: cloudflared only; reaches Traefik, host sshd and Cloudflare
+    pods:
+      cloudflared-pod: {ip: 10.89.128.2, replaces: [cloudflared]}
+  edge:
+    name: net-edge
+    bridge: br-edge
+    cidr: 10.89.128.8/29
+    single_pod: true
+    purpose: Traefik and CrowdSec only; reachable only from the tunnel pod
+    pods:
+      edge-pod: {ip: 10.89.128.10, replaces: [traefik, crowdsec, security-infra-pod]}
+  web:
+    name: net-web
+    bridge: br-web
+    cidr: 10.89.128.16/28
+    purpose: anonymous and untrusted; reachable, reaches nothing
+    pods:
+      web-public-pod: {ip: 10.89.128.18, replaces: [decks-nginx, dsm5-nginx, lab-nginx, legal-nginx]}
+      honeypot-pod: {ip: 10.89.128.19, replaces: [honeypot, threat-map]}
+  frontend:
+    name: net-frontend
+    bridge: br-frontend
+    cidr: 10.89.128.32/28
+    purpose: user-facing apps behind Cloudflare Access
+    pods:
+      frontend-pod: {ip: 10.89.128.34, replaces: [frontend-pod, nginx, worldview-dev, journey-tracker]}
+      openwebui-pod: {ip: 10.89.128.35, replaces: [open-webui]}
+      marketplace-pod: {ip: 10.89.128.37, replaces: [marketplace-pod, marketplace-web]}
+      media-pod: {ip: 10.89.128.38, replaces: [media-pod, media-nginx]}
+  svc:
+    name: net-svc
+    bridge: br-svc
+    cidr: 10.89.128.48/28
+    purpose: internal services called by apps and agents
+    pods:
+      ai-gateway-pod: {ip: 10.89.128.50, replaces: [ai-stack-pod, litellm, searxng, kokoro-tts, gemini-tts-proxy]}
+      llama-embed-pod: {ip: 10.89.128.51, replaces: [llama-embed-pod, llama-embed]}
+      backend-pod: {ip: 10.89.128.52, replaces: [backend-pod, ais-relay, timeline-api, catalog-api]}
+  data:
+    name: net-data
+    bridge: br-data
+    cidr: 10.89.128.64/28
+    purpose: databases only; no egress
+    pods:
+      shared-db-pod: {ip: 10.89.128.66, replaces: [shared-db-pod, postgres]}
+      ai-db-pod: {ip: 10.89.128.67, replaces: [ai-stack-postgres]}
+      neo4j-pod: {ip: 10.89.128.68, replaces: [neo4j-pod, neo4j-db]}
+  identity:
+    name: net-identity
+    bridge: br-identity
+    cidr: 10.89.128.80/28
+    purpose: Authentik and its private Postgres and Redis
+    pods:
+      authentication-pod: {ip: 10.89.128.82, replaces: [authentication-pod, authentik-server, authentik-postgres, redis]}
+      authentication-worker-pod: {ip: 10.89.128.83, replaces: [authentication-worker-pod, authentik-worker]}
+      outpost-pod: {ip: 10.89.128.84, replaces: [authentik-workshop-outpost]}
+  observe:
+    name: net-observe
+    bridge: br-observe
+    cidr: 10.89.128.96/28
+    purpose: metrics, logs, traces; zones push in
+    pods:
+      metrics-pod: {ip: 10.89.128.98, replaces: [metrics-pod, victoriametrics, vmalert, grafana, renderer]}
+      logs-pod: {ip: 10.89.128.99, replaces: [logs-pod, loki, alloy]}
+      tempo-pod: {ip: 10.89.128.100, replaces: [tempo-pod, tempo]}
+  agent:
+    name: net-agent
+    bridge: br-agent
+    cidr: 10.89.128.112/28
+    purpose: MCP servers and bots
+    pods:
+      gateway-pod: {ip: 10.89.128.114, replaces: [telegram-gateway, telegram-coder, owui-coder]}
+      recall-pod: {ip: 10.89.128.115, replaces: [session-recall-mcp]}
+      graph-mcp-pod: {ip: 10.89.128.116, replaces: [neo4j-mcp-server, knowledge-mcp, timeline-context-api]}
+      reports-pod: {ip: 10.89.128.117, replaces: [reports-pod, grafana-reports]}
+  fintech:
+    name: net-fintech
+    bridge: br-fintech
+    cidr: 10.89.128.128/28
+    purpose: brokerage session and trading logic
+    pods:
+      trading-pod: {ip: 10.89.128.130, replaces: [ibeam, ib-mcp-server]}
+      charts-pod: {ip: 10.89.128.131, replaces: [atlas-charts]}
+      trading-jobs-pod: {ip: 10.89.128.132}
+  scrape:
+    name: net-scrape
+    bridge: br-scrape
+    cidr: 10.89.128.144/28
+    purpose: scrapy and crawl workers; internet only
+    pods:
+      scrape-pod: {ip: 10.89.128.146, replaces: [scrapy-mcp]}
+  mgmt:
+    name: net-mgmt
+    bridge: br-mgmt
+    cidr: 10.89.128.160/29
+    single_pod: true
+    purpose: ops dashboard only; host-root-equivalent control plane (spec section 4A)
+    pods:
+      management-pod: {ip: 10.89.128.162, replaces: [management-pod, ops-dashboard]}
+  mail:
+    name: net-mail
+    bridge: br-mail
+    cidr: 10.89.128.168/29
+    single_pod: true
+    purpose: Mail Kit MCP connectors only; can read and send mail, so nothing else shares its network (spec section 4B)
+    pods:
+      mailkit-pod: {ip: 10.89.128.170, replaces: [mailkit-pod, mailkit-mcp-read, mailkit-mcp-send]}
