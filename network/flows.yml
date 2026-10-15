@@ -19,6 +19,7 @@ flows:
   - {from: edge, to: fintech, to_pod: charts-pod, ports: [3080], reason: "charts UI"}
   - {from: edge, to: agent, to_pod: gateway-pod, ports: ["7555-7557"], reason: "Telegram and OWUI webhooks"}
   - {from: edge, to: mgmt, to_pod: management-pod, ports: [8090], reason: "ops dashboard; only the edge pod may connect"}
+  - {from: edge, to: mail, to_pod: mailkit-pod, ports: [8790, 8791], reason: "Mail Kit MCP connectors for claude.ai (read, send); only the edge pod may connect"}
   - {from: edge, to: internet, ports: [443], reason: "CrowdSec lists, ACME DNS challenge (via Squid)"}
 
   # --- frontend ---
@@ -47,6 +48,9 @@ flows:
   - {from: mgmt, to: identity, ports: [9000], reason: "OIDC back-channel", unverified: true}
   - {from: mgmt, to: internet, ports: [22, 443], reason: "CF Access certs, OIDC, workstation SSH over tailnet (via Squid where proxied)", unverified: true}
 
+  # --- mail (Mail Kit MCP: can read and send mail; spec section 4B) ---
+  - {from: mail, to: internet, ports: [443], reason: "Mail Kit API and OAuth token endpoint (via Squid)"}
+
   # --- fintech ---
   - {from: fintech, to: data, to_pod: shared-db-pod, ports: [5432], reason: "trading schema, direct (API later)"}
   - {from: fintech, to: internet, ports: [443], reason: "IBKR gateway (via Squid)"}
@@ -59,6 +63,6 @@ flows:
   - {from: scrape, to: internet, ports: [80, 443], reason: "crawling (via Squid)"}
 
   # --- every zone pushes metrics ---
-  # tunnel and web are excluded: tunnel egress is limited to Traefik, host sshd and Cloudflare (spec 4),
-  # and web reaches nothing (spec 5). Their metrics come from the host, not from a push.
-  - {from: "*", except: [tunnel, web], to: observe, to_pod: metrics-pod, ports: [8428], reason: "push metrics"}
+  # tunnel, web and mail are excluded: tunnel egress is limited to Traefik, host sshd and Cloudflare (spec 4),
+  # web reaches nothing (spec 5), and mail reaches only the internet (spec 4B). Their metrics come from the host.
+  - {from: "*", except: [tunnel, web, mail], to: observe, to_pod: metrics-pod, ports: [8428], reason: "push metrics"}
