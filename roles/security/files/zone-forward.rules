@@ -21,7 +21,7 @@ if iptables -N ZONE_DENY 2>/dev/null; then
     iptables -A ZONE_DENY -m limit --limit 20/min --limit-burst 50 -j LOG --log-prefix "zone-deny "
     iptables -A ZONE_DENY -j DROP
 fi
-# anti-spoofing: nothing may enter a zone bridge with a source outside that zone, and a zone's addresses may not arrive on any other interface
+# anti-spoofing: nothing may enter a zone bridge with a source outside that zone, a zone's addresses may not arrive on any other interface, and traffic addressed to a zone may only leave through that zone's bridge (a packet for 10.89.128.x arriving on the public NIC used to hit the FORWARD DROP policy; without this it would reach ZONE_AUDIT)
 iptables -A FORWARD -i br-tunnel ! -s 10.89.128.0/29 -j ZONE_DENY
 iptables -A FORWARD -i br-edge ! -s 10.89.128.8/29 -j ZONE_DENY
 iptables -A FORWARD -i br-web ! -s 10.89.128.16/28 -j ZONE_DENY
@@ -48,6 +48,19 @@ iptables -A FORWARD -s 10.89.128.128/28 ! -i br-fintech -j ZONE_DENY
 iptables -A FORWARD -s 10.89.128.144/28 ! -i br-scrape -j ZONE_DENY
 iptables -A FORWARD -s 10.89.128.160/29 ! -i br-mgmt -j ZONE_DENY
 iptables -A FORWARD -s 10.89.128.168/29 ! -i br-mail -j ZONE_DENY
+iptables -A FORWARD -d 10.89.128.0/29 ! -o br-tunnel -j ZONE_DENY
+iptables -A FORWARD -d 10.89.128.8/29 ! -o br-edge -j ZONE_DENY
+iptables -A FORWARD -d 10.89.128.16/28 ! -o br-web -j ZONE_DENY
+iptables -A FORWARD -d 10.89.128.32/28 ! -o br-frontend -j ZONE_DENY
+iptables -A FORWARD -d 10.89.128.48/28 ! -o br-svc -j ZONE_DENY
+iptables -A FORWARD -d 10.89.128.64/28 ! -o br-data -j ZONE_DENY
+iptables -A FORWARD -d 10.89.128.80/28 ! -o br-identity -j ZONE_DENY
+iptables -A FORWARD -d 10.89.128.96/28 ! -o br-observe -j ZONE_DENY
+iptables -A FORWARD -d 10.89.128.112/28 ! -o br-agent -j ZONE_DENY
+iptables -A FORWARD -d 10.89.128.128/28 ! -o br-fintech -j ZONE_DENY
+iptables -A FORWARD -d 10.89.128.144/28 ! -o br-scrape -j ZONE_DENY
+iptables -A FORWARD -d 10.89.128.160/29 ! -o br-mgmt -j ZONE_DENY
+iptables -A FORWARD -d 10.89.128.168/29 ! -o br-mail -j ZONE_DENY
 # every packet touching the zone supernet is decided in ZONE_FWD, ahead of the legacy per-network accepts
 iptables -A FORWARD -s 10.89.128.0/24 -j ZONE_FWD
 iptables -A FORWARD -d 10.89.128.0/24 -j ZONE_FWD
