@@ -120,6 +120,18 @@ backup:
     # See roles/honeypot-threatmap/tasks/evidence-export.yml
     - /opt/podman-data/honeypot-evidence   # small, append-only attacker telemetry
 
+  # Data dirs where tar exit 1 ("file changed as we read it") is logged as a NOTE
+  # instead of counted as a warning. tar exit 1 means the archive IS complete but a
+  # file changed mid-read, so it may be a torn copy -- tolerate it ONLY where the
+  # contents are re-creatable and nothing in the dir is a database. Exit >=2 is
+  # still a failure everywhere. Do NOT add database dirs (postgres, neo4j, ...).
+  # crowdsec/data: GeoLite mmdb + hub files (re-downloaded by crowdsec); the live
+  # crowdsec.db is excluded and captured by the sqlite3 online-backup step instead.
+  # Added 2026-10-15 after an intermittent, unreproducible exit 1 whose cause was
+  # unknown (tar's stderr was discarded); the NOTE now names the file.
+  tolerate_changed_dirs:
+    - /opt/podman-data/crowdsec/data
+
   # Named Podman volumes to export
   # loki-data (2.4G logs), tempo-data (1.3G traces), trivy-cache (1.1G vuln-db
   # cache) DROPPED: transient/regenerable, ~4.8G of low-value data removed.
