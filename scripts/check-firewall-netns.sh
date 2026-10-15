@@ -18,7 +18,11 @@
 #   4  a packet from the public side addressed to a zone is dropped (not accepted by ZONE_AUDIT)
 #   5  a failing command inside each generated block does not abort the script: exit 0, warnings printed,
 #      INPUT policy DROP with the SSH and loopback accepts still present
-#   6  host side effects: no ZONE_* chain appeared in the host namespace and fail2ban was not reloaded
+#   6  IPv6 link-local: a zone pod cannot reach host sshd over fe80:: (a non-zone bridge still can)
+#   7  NAT and the Squid intercept: a proxied zone's 80/443 to a PUBLIC address is redirected to Squid, a
+#      non-proxied zone's is not, private/tailnet/metadata destinations are never redirected, a zone reaches
+#      the Squid port only if it is proxied, MASQUERADE exists only for zones with an internet/tailnet flow
+#   8  host side effects: no ZONE_* chain appeared in the host namespace and fail2ban was not reloaded
 #
 # Needs: root, util-linux `unshare`, iproute2, iptables, python3 with jinja2 and PyYAML.
 # Usage: scripts/check-firewall-netns.sh
@@ -53,9 +57,10 @@ def render(files_dir, out):
     out.write_text(env.get_template("firewall.sh.j2").render(security=allv["security"]))
 render(root / "files", work / "good.sh")
 bad = work / "bad"; bad.mkdir()
-for n in ("zone-input.rules", "zone-forward.rules"):
+for n in ("zone-input.rules", "zone-forward.rules", "zone-nat.rules", "zone-input6.rules"):
     lines = (root / "files" / n).read_text().splitlines()
-    lines.insert(len(lines) // 3, "iptables -A NO_SUCH_CHAIN_FOR_TEST -j ACCEPT")   # must fail
+    if n != "zone-input6.rules":      # the v6 lines use the template's own failure-counting helper
+        lines.insert(len(lines) // 3, "iptables -A NO_SUCH_CHAIN_FOR_TEST -j ACCEPT")   # must fail
     (bad / n).write_text("\n".join(lines) + "\n")
 render(bad, work / "bad.sh")
 PY
@@ -77,10 +82,21 @@ print(f"ZONES={len(m.zones)}")
 print(f"G_BR={z.bridge}; G_CIDR={z.network}; G_GW={z.gateway}; G_POD={pod.ip}; G_OTHER={other}; G_PREFIX={z.network.prefixlen}")
 print(f"W_BR={w.bridge}; W_GW={w.gateway}; W_POD={wip}; W_PREFIX={w.network.prefixlen}")
 print(f"DST_ZONE_IP={target.ip}")
+flows = m.expanded_flows()
+cov = lambda ports, n: n in model.expand_ports(ports)
+proxied = next(x for x in m.zones.values() if x.pods and any(f.src == x.key and f.dst == "internet" and (cov(f.ports, 80) or cov(f.ports, 443)) for f in flows))
+plain = next(x for x in m.zones.values() if x.pods and not any(f.src == x.key and f.dst in ("internet", "tailnet") for f in flows))
+for tag, zz in (("PX", proxied), ("NP", plain)):
+    print(f"{tag}_BR={zz.bridge}; {tag}_GW={zz.gateway}; {tag}_POD={next(iter(zz.pods.values())).ip}; {tag}_PREFIX={zz.network.prefixlen}; {tag}_CIDR={zz.network}")
+print(f"EGRESS_ZONES={sum(1 for x in m.zones.values() if any(f.src == x.key and f.dst in ('internet', 'tailnet') for f in flows))}")
+import yaml
+sq = yaml.safe_load(open("all.yml"))["security"]["squid"]
+print(f"SQ_ENABLED={1 if sq.get('enabled') else 0}; SQ_HTTP={sq.get('http_port', 3128)}; SQ_HTTPS={sq.get('https_port', 3129)}")
 PY
 )"
 INPUT_RULES=$(grep -c '^iptables -A INPUT -i br-' roles/security/files/zone-input.rules)
 export ZONES G_BR G_GW G_POD G_OTHER G_PREFIX W_BR W_GW W_POD W_PREFIX DST_ZONE_IP INPUT_RULES WORK
+export PX_BR PX_GW PX_POD PX_PREFIX PX_CIDR NP_BR NP_GW NP_POD NP_PREFIX NP_CIDR EGRESS_ZONES SQ_ENABLED SQ_HTTP SQ_HTTPS
 
 cat > "$WORK/inner.sh" <<'INNER'
 #!/bin/bash
@@ -146,11 +162,63 @@ a1=$(iptables -L ZONE_AUDIT -n -v -x | awk '/ACCEPT/{print $1}'); d1=$(iptables 
 check "4  public-side packet to a zone is not accepted by ZONE_AUDIT" "$a1" "$a0"
 [ "$d1" -gt "$d0" ] && ok "4  ...and is dropped by ZONE_DENY" || no "4  ZONE_DENY drop counter did not increase ($d0 -> $d1)"
 
+# ---- 6. IPv6 link-local (bridges and containers carry fe80:: addresses; the v6 chain accepts tcp/22 everywhere)
+python3 -c "
+import socket
+s=socket.socket(socket.AF_INET6); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+s.setsockopt(socket.IPPROTO_IPV6,socket.IPV6_V6ONLY,1); s.bind(('::',22)); s.listen(16)
+while True:
+    c,_=s.accept(); c.close()
+" &
+LP6=$!
+ll() { for _ in $(seq 1 20); do a=$(ip -6 -o addr show dev "$1" scope link 2>/dev/null | grep -v tentative | awk '{print $4}' | cut -d/ -f1 | head -1); [ -n "$a" ] && { echo "$a"; return; }; sleep 0.5; done; }
+probe6() { ip netns exec "$1" python3 -c "import socket;s=socket.socket(socket.AF_INET6);s.settimeout(2);s.connect(('$2',22,0,socket.if_nametoindex('$3')));print('CONNECTED')" 2>&1 | tail -1 | sed 's/.*[Tt]imed out.*/TIMEOUT/'; }
+LL_W=$(ll "$W_BR"); LL_L=$(ll brfcleg)
+check "6  zone bridge has a link-local address to test against" "$([ -n "$LL_W" ] && echo yes || echo no)" yes
+check "6  zone pod cannot reach host sshd over IPv6 link-local" "$(probe6 fc3 "$LL_W" cfc3)" TIMEOUT
+check "6  control: a non-zone bridge still can" "$(probe6 fc4 "$LL_L" cfc4)" CONNECTED
+kill "$LP6" 2>/dev/null
+
+# ---- 7. NAT and the Squid intercept
+reach() { ip netns exec "$1" python3 -c "import socket;socket.create_connection(('$2',$3),2);print('CONNECTED')" 2>&1 | tail -1 | sed 's/^CONNECTED$/CONNECTED/; t; s/.*/NO/'; }
+python3 -c "
+import socket,threading
+def serve(port):
+    s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind(('0.0.0.0',port)); s.listen(16)
+    while True:
+        c,_=s.accept(); c.close()
+for port in ($SQ_HTTP, $SQ_HTTPS):
+    threading.Thread(target=serve,args=(port,),daemon=True).start()
+threading.Event().wait()
+" &
+LPS=$!
+pod fc6 "$PX_BR" "$PX_GW/$PX_PREFIX" "$PX_POD/$PX_PREFIX" "$PX_GW"
+pod fc7 "$NP_BR" "$NP_GW/$NP_PREFIX" "$NP_POD/$NP_PREFIX" "$NP_GW"
+sleep 1
+check "7  the template passes all.yml's Squid https port to the snippets" "$(grep -c "SQUID_HTTPS_PORT=$SQ_HTTPS" "$WORK/good.sh")" 1
+if [ "$SQ_ENABLED" = 1 ]; then
+    check "7  proxied zone, public address on 443: redirected to Squid" "$(reach fc6 203.0.113.9 443)" CONNECTED
+    check "7  proxied zone, public address on 80: redirected to Squid" "$(reach fc6 203.0.113.9 80)" CONNECTED
+    check "7  proxied zone, RFC1918 address: NOT redirected" "$(reach fc6 10.255.0.5 443)" NO
+    check "7  proxied zone, tailnet address: NOT redirected" "$(reach fc6 100.100.100.100 443)" NO
+    check "7  proxied zone, cloud metadata address: NOT redirected" "$(reach fc6 169.254.169.254 80)" NO
+    check "7  non-proxied zone, public address on 443: not redirected" "$(reach fc7 203.0.113.9 443)" NO
+    check "7  proxied zone reaches the Squid port on the host" "$(reach fc6 "$PX_GW" "$SQ_HTTPS")" CONNECTED
+    check "7  non-proxied zone cannot reach the Squid port" "$(reach fc7 "$NP_GW" "$SQ_HTTPS")" NO
+else
+    check "7  Squid disabled in all.yml: no redirect rules installed" "$(iptables -t nat -S ZONE_PROXY | grep -c REDIRECT)" 0
+fi
+check "7  MASQUERADE rules: one per zone with an internet/tailnet flow" "$(iptables -t nat -S ZONE_POST | grep -c MASQUERADE)" "$EGRESS_ZONES"
+check "7  a zone without such a flow has no source NAT" "$(iptables -t nat -S ZONE_POST | grep -c -e "-s $NP_CIDR ")" 0
+check "7  NAT jumps attached exactly once after two applies" "$(iptables -t nat -S PREROUTING | grep -c -e '-j ZONE_PRE')$(iptables -t nat -S POSTROUTING | grep -c -e '-j ZONE_POST')" 11
+kill "$LPS" 2>/dev/null
+
 # ---- 5. failure injection
 bash "$WORK/bad.sh" start > "$WORK/bad.log" 2>&1; rc=$?
 check "5  a failing command in each block does not abort the script" "$rc" 0
 check "5  the INPUT block failure is reported" "$(grep -c 'WARNING: zone INPUT rules failed' "$WORK/bad.log")" 1
 check "5  the FORWARD block failure is reported" "$(grep -c 'WARNING: zone FORWARD rules failed' "$WORK/bad.log")" 1
+check "5  the NAT block failure is reported" "$(grep -c 'WARNING: zone NAT rules failed' "$WORK/bad.log")" 1
 check "5  script still finishes" "$(grep -c 'Firewall started successfully' "$WORK/bad.log")" 1
 check "5  INPUT policy still DROP" "$(iptables -S INPUT | head -1)" "-P INPUT DROP"
 check "5  generic ssh accept still present" "$(iptables -S INPUT | grep -c -e '-p tcp -m tcp --dport 22 -j ACCEPT')" 1
@@ -167,6 +235,6 @@ f2b_reloads() { grep -c 'Reload all jails' /var/log/fail2ban.log 2>/dev/null || 
 before=$(host_zone_chains); f2b_before=$(f2b_reloads)
 timeout 300 unshare -n -m bash "$WORK/inner.sh"; rc=$?
 after=$(host_zone_chains); f2b_after=$(f2b_reloads)
-if [ "$before" = "$after" ]; then echo "PASS  6  no ZONE_* chain appeared in the host namespace ($before before, $after after)"; else echo "FAIL  6  host zone chains changed: $before -> $after"; rc=1; fi
-if [ "$f2b_before" = "$f2b_after" ]; then echo "PASS  6  fail2ban was not reloaded ($f2b_before reload lines before and after)"; else echo "FAIL  6  fail2ban reloaded $((f2b_after - f2b_before)) time(s) during the check"; rc=1; fi
+if [ "$before" = "$after" ]; then echo "PASS  8  no ZONE_* chain appeared in the host namespace ($before before, $after after)"; else echo "FAIL  8  host zone chains changed: $before -> $after"; rc=1; fi
+if [ "$f2b_before" = "$f2b_after" ]; then echo "PASS  8  fail2ban was not reloaded ($f2b_before reload lines before and after)"; else echo "FAIL  8  fail2ban reloaded $((f2b_after - f2b_before)) time(s) during the check"; rc=1; fi
 exit "$rc"
