@@ -5,7 +5,10 @@
 # WHY: the firewall script runs as root at every boot under `set -e`. A bad rule can leave the host in
 # default-DROP with no SSH accept. This renders the real template with the real `security` settings from
 # all.yml, executes it for real with the real iptables/kernel, and probes with real packets, all inside
-# `unshare -n -m` (its own empty netfilter and private mounts). The host's own firewall is never touched.
+# `unshare -n -m` (its own empty netfilter and private mounts). Not everything is isolated by a namespace:
+# the firewall script calls `fail2ban-client reload`, which talks to the host daemon over a UNIX socket and
+# would reload it (flushing active bans). So `fail2ban-client` is replaced by a stub for the whole run and
+# the script FAILS if the host's fail2ban log shows a reload.
 #
 # Checks (each prints PASS or FAIL; exit status is non-zero if any FAIL):
 #   1  the script applies cleanly TWICE (idempotent), no warnings, exit 0
@@ -15,6 +18,7 @@
 #   4  a packet from the public side addressed to a zone is dropped (not accepted by ZONE_AUDIT)
 #   5  a failing command inside each generated block does not abort the script: exit 0, warnings printed,
 #      INPUT policy DROP with the SSH and loopback accepts still present
+#   6  host side effects: no ZONE_* chain appeared in the host namespace and fail2ban was not reloaded
 #
 # Needs: root, util-linux `unshare`, iproute2, iptables, python3 with jinja2 and PyYAML.
 # Usage: scripts/check-firewall-netns.sh
@@ -25,6 +29,10 @@ command -v unshare >/dev/null || { echo "unshare not found"; exit 2; }
 python3 -c 'import jinja2, yaml' 2>/dev/null || { echo "python3 needs jinja2 and PyYAML"; exit 2; }
 
 WORK=$(mktemp -d /tmp/fwcheck.XXXXXX)
+mkdir -p "$WORK/bin"
+# `ping` failing makes reassert_fail2ban return early, so the host daemon is never contacted.
+printf '#!/bin/sh\nexit 1\n' > "$WORK/bin/fail2ban-client"; chmod +x "$WORK/bin/fail2ban-client"
+export PATH="$WORK/bin:$PATH"
 cleanup() {
     # `ip netns add` leaves an empty marker file under /run/netns even from a private mount namespace.
     for f in /run/netns/fc*; do
@@ -153,8 +161,12 @@ check "5  legacy forward accepts still installed" "$([ "$(iptables -S FORWARD | 
 exit "$FAILED"
 INNER
 
-before=$(iptables -L -n 2>/dev/null | grep -c '^Chain ZONE_')
+# Per-chain checks on purpose: a bare `iptables -L`/`-S` exits 3 on this host (a Tailscale nft rule it cannot render).
+host_zone_chains() { n=0; for c in ZONE_FWD ZONE_PUBLIC ZONE_AUDIT ZONE_DENY; do iptables -S "$c" >/dev/null 2>&1 && n=$((n + 1)); done; echo "$n"; }
+f2b_reloads() { grep -c 'Reload all jails' /var/log/fail2ban.log 2>/dev/null || echo 0; }
+before=$(host_zone_chains); f2b_before=$(f2b_reloads)
 timeout 300 unshare -n -m bash "$WORK/inner.sh"; rc=$?
-after=$(iptables -L -n 2>/dev/null | grep -c '^Chain ZONE_')
-if [ "$before" = "$after" ]; then echo "PASS  host firewall untouched (zone chains: $before before, $after after)"; else echo "FAIL  host zone chains changed: $before -> $after"; rc=1; fi
+after=$(host_zone_chains); f2b_after=$(f2b_reloads)
+if [ "$before" = "$after" ]; then echo "PASS  6  no ZONE_* chain appeared in the host namespace ($before before, $after after)"; else echo "FAIL  6  host zone chains changed: $before -> $after"; rc=1; fi
+if [ "$f2b_before" = "$f2b_after" ]; then echo "PASS  6  fail2ban was not reloaded ($f2b_before reload lines before and after)"; else echo "FAIL  6  fail2ban reloaded $((f2b_after - f2b_before)) time(s) during the check"; rc=1; fi
 exit "$rc"
