@@ -18,8 +18,8 @@ iptables -A INPUT -i br-tunnel -p tcp --dport 22 -m comment --comment "tunnel>ho
 # --- edge ---
 iptables -A INPUT -i br-edge -s 10.89.128.8/29 -p udp --dport 53 -j ACCEPT
 iptables -A INPUT -i br-edge -s 10.89.128.8/29 -p tcp --dport 53 -j ACCEPT
-iptables -A INPUT -i br-edge -s 10.89.128.8/29 -p tcp --dport 3128 -j ACCEPT
-iptables -A INPUT -i br-edge -s 10.89.128.8/29 -p tcp --dport 3129 -j ACCEPT
+iptables -A INPUT -i br-edge -s 10.89.128.8/29 -p tcp --dport ${SQUID_HTTP_PORT:-3128} -j ACCEPT
+iptables -A INPUT -i br-edge -s 10.89.128.8/29 -p tcp --dport ${SQUID_HTTPS_PORT:-3129} -j ACCEPT
 iptables -A INPUT -i br-edge -p tcp --dport 22 -m comment --comment "edge>host-ssh-denied" -j ZONE_DENY
 # --- web ---
 iptables -A INPUT -i br-web -s 10.89.128.16/28 -p udp --dport 53 -j ACCEPT
@@ -32,8 +32,8 @@ iptables -A INPUT -i br-frontend -p tcp --dport 22 -m comment --comment "fronten
 # --- svc ---
 iptables -A INPUT -i br-svc -s 10.89.128.48/28 -p udp --dport 53 -j ACCEPT
 iptables -A INPUT -i br-svc -s 10.89.128.48/28 -p tcp --dport 53 -j ACCEPT
-iptables -A INPUT -i br-svc -s 10.89.128.48/28 -p tcp --dport 3128 -j ACCEPT
-iptables -A INPUT -i br-svc -s 10.89.128.48/28 -p tcp --dport 3129 -j ACCEPT
+iptables -A INPUT -i br-svc -s 10.89.128.48/28 -p tcp --dport ${SQUID_HTTP_PORT:-3128} -j ACCEPT
+iptables -A INPUT -i br-svc -s 10.89.128.48/28 -p tcp --dport ${SQUID_HTTPS_PORT:-3129} -j ACCEPT
 iptables -A INPUT -i br-svc -p tcp --dport 22 -m comment --comment "svc>host-ssh-denied" -j ZONE_DENY
 # --- data ---
 iptables -A INPUT -i br-data -s 10.89.128.64/28 -p udp --dport 53 -j ACCEPT
@@ -46,37 +46,37 @@ iptables -A INPUT -i br-identity -p tcp --dport 22 -m comment --comment "identit
 # --- observe ---
 iptables -A INPUT -i br-observe -s 10.89.128.96/28 -p udp --dport 53 -j ACCEPT
 iptables -A INPUT -i br-observe -s 10.89.128.96/28 -p tcp --dport 53 -j ACCEPT
-iptables -A INPUT -i br-observe -s 10.89.128.96/28 -p tcp --dport 3128 -j ACCEPT
-iptables -A INPUT -i br-observe -s 10.89.128.96/28 -p tcp --dport 3129 -j ACCEPT
+iptables -A INPUT -i br-observe -s 10.89.128.96/28 -p tcp --dport ${SQUID_HTTP_PORT:-3128} -j ACCEPT
+iptables -A INPUT -i br-observe -s 10.89.128.96/28 -p tcp --dport ${SQUID_HTTPS_PORT:-3129} -j ACCEPT
 iptables -A INPUT -i br-observe -p tcp --dport 22 -m comment --comment "observe>host-ssh-denied" -j ZONE_DENY
 # --- agent ---
 iptables -A INPUT -i br-agent -s 10.89.128.112/28 -p udp --dport 53 -j ACCEPT
 iptables -A INPUT -i br-agent -s 10.89.128.112/28 -p tcp --dport 53 -j ACCEPT
-iptables -A INPUT -i br-agent -s 10.89.128.112/28 -p tcp --dport 3128 -j ACCEPT
-iptables -A INPUT -i br-agent -s 10.89.128.112/28 -p tcp --dport 3129 -j ACCEPT
+iptables -A INPUT -i br-agent -s 10.89.128.112/28 -p tcp --dport ${SQUID_HTTP_PORT:-3128} -j ACCEPT
+iptables -A INPUT -i br-agent -s 10.89.128.112/28 -p tcp --dport ${SQUID_HTTPS_PORT:-3129} -j ACCEPT
 iptables -A INPUT -i br-agent -p tcp --dport 22 -m comment --comment "agent>host-ssh-denied" -j ZONE_DENY
 # --- fintech ---
 iptables -A INPUT -i br-fintech -s 10.89.128.128/28 -p udp --dport 53 -j ACCEPT
 iptables -A INPUT -i br-fintech -s 10.89.128.128/28 -p tcp --dport 53 -j ACCEPT
-iptables -A INPUT -i br-fintech -s 10.89.128.128/28 -p tcp --dport 3128 -j ACCEPT
-iptables -A INPUT -i br-fintech -s 10.89.128.128/28 -p tcp --dport 3129 -j ACCEPT
+iptables -A INPUT -i br-fintech -s 10.89.128.128/28 -p tcp --dport ${SQUID_HTTP_PORT:-3128} -j ACCEPT
+iptables -A INPUT -i br-fintech -s 10.89.128.128/28 -p tcp --dport ${SQUID_HTTPS_PORT:-3129} -j ACCEPT
 iptables -A INPUT -i br-fintech -p tcp --dport 22 -m comment --comment "fintech>host-ssh-denied" -j ZONE_DENY
 # --- scrape ---
 iptables -A INPUT -i br-scrape -s 10.89.128.144/28 -p udp --dport 53 -j ACCEPT
 iptables -A INPUT -i br-scrape -s 10.89.128.144/28 -p tcp --dport 53 -j ACCEPT
-iptables -A INPUT -i br-scrape -s 10.89.128.144/28 -p tcp --dport 3128 -j ACCEPT
-iptables -A INPUT -i br-scrape -s 10.89.128.144/28 -p tcp --dport 3129 -j ACCEPT
+iptables -A INPUT -i br-scrape -s 10.89.128.144/28 -p tcp --dport ${SQUID_HTTP_PORT:-3128} -j ACCEPT
+iptables -A INPUT -i br-scrape -s 10.89.128.144/28 -p tcp --dport ${SQUID_HTTPS_PORT:-3129} -j ACCEPT
 iptables -A INPUT -i br-scrape -p tcp --dport 22 -m comment --comment "scrape>host-ssh-denied" -j ZONE_DENY
 # --- mgmt ---
 iptables -A INPUT -i br-mgmt -s 10.89.128.162/32 -p tcp --dport 22 -m comment --comment "management-pod>host" -j ACCEPT
 iptables -A INPUT -i br-mgmt -s 10.89.128.160/29 -p udp --dport 53 -j ACCEPT
 iptables -A INPUT -i br-mgmt -s 10.89.128.160/29 -p tcp --dport 53 -j ACCEPT
-iptables -A INPUT -i br-mgmt -s 10.89.128.160/29 -p tcp --dport 3128 -j ACCEPT
-iptables -A INPUT -i br-mgmt -s 10.89.128.160/29 -p tcp --dport 3129 -j ACCEPT
+iptables -A INPUT -i br-mgmt -s 10.89.128.160/29 -p tcp --dport ${SQUID_HTTP_PORT:-3128} -j ACCEPT
+iptables -A INPUT -i br-mgmt -s 10.89.128.160/29 -p tcp --dport ${SQUID_HTTPS_PORT:-3129} -j ACCEPT
 iptables -A INPUT -i br-mgmt -p tcp --dport 22 -m comment --comment "mgmt>host-ssh-denied" -j ZONE_DENY
 # --- mail ---
 iptables -A INPUT -i br-mail -s 10.89.128.168/29 -p udp --dport 53 -j ACCEPT
 iptables -A INPUT -i br-mail -s 10.89.128.168/29 -p tcp --dport 53 -j ACCEPT
-iptables -A INPUT -i br-mail -s 10.89.128.168/29 -p tcp --dport 3128 -j ACCEPT
-iptables -A INPUT -i br-mail -s 10.89.128.168/29 -p tcp --dport 3129 -j ACCEPT
+iptables -A INPUT -i br-mail -s 10.89.128.168/29 -p tcp --dport ${SQUID_HTTP_PORT:-3128} -j ACCEPT
+iptables -A INPUT -i br-mail -s 10.89.128.168/29 -p tcp --dport ${SQUID_HTTPS_PORT:-3129} -j ACCEPT
 iptables -A INPUT -i br-mail -p tcp --dport 22 -m comment --comment "mail>host-ssh-denied" -j ZONE_DENY
