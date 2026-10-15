@@ -100,7 +100,6 @@ zones:
       recall-pod: {ip: 10.89.128.115, replaces: [session-recall-mcp]}
       graph-mcp-pod: {ip: 10.89.128.116, replaces: [neo4j-mcp-server, knowledge-mcp, timeline-context-api]}
       reports-pod: {ip: 10.89.128.117, replaces: [reports-pod, grafana-reports]}
-      mailkit-pod: {ip: 10.89.128.118, replaces: [mailkit-pod, mailkit-mcp-read, mailkit-mcp-send]}
   fintech:
     name: net-fintech
     bridge: br-fintech
@@ -125,3 +124,11 @@ zones:
     purpose: ops dashboard only; host-root-equivalent control plane (spec section 4A)
     pods:
       management-pod: {ip: 10.89.128.162, replaces: [management-pod, ops-dashboard]}
+  mail:
+    name: net-mail
+    bridge: br-mail
+    cidr: 10.89.128.168/29
+    single_pod: true
+    purpose: Mail Kit MCP connectors only; can read and send mail, so nothing else shares its network (spec section 4B)
+    pods:
+      mailkit-pod: {ip: 10.89.128.170, replaces: [mailkit-pod, mailkit-mcp-read, mailkit-mcp-send]}
