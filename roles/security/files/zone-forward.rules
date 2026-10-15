@@ -2,13 +2,26 @@
 # Do not edit by hand: run scripts/lint-zones.sh --update.
 # FORWARD half: chains, anti-spoofing, jumps, flows. Appends to FORWARD.
 iptables -N ZONE_FWD 2>/dev/null || iptables -F ZONE_FWD
-iptables -N ZONE_AUDIT 2>/dev/null || iptables -F ZONE_AUDIT
-iptables -N ZONE_DENY 2>/dev/null || iptables -F ZONE_DENY
-iptables -A ZONE_AUDIT -m limit --limit 20/min --limit-burst 50 -j LOG --log-prefix "zone-would-deny "
-iptables -A ZONE_AUDIT -j ACCEPT
-iptables -A ZONE_DENY -m limit --limit 20/min --limit-burst 50 -j LOG --log-prefix "zone-deny "
-iptables -A ZONE_DENY -j DROP
-# anti-spoofing: nothing may enter a zone bridge with a source outside that zone
+iptables -N ZONE_PUBLIC 2>/dev/null || iptables -F ZONE_PUBLIC
+# a destination counts as the internet only if it is none of the non-public ranges
+iptables -A ZONE_PUBLIC -d 0.0.0.0/8 -j RETURN
+iptables -A ZONE_PUBLIC -d 10.0.0.0/8 -j RETURN
+iptables -A ZONE_PUBLIC -d 100.64.0.0/10 -j RETURN
+iptables -A ZONE_PUBLIC -d 127.0.0.0/8 -j RETURN
+iptables -A ZONE_PUBLIC -d 169.254.0.0/16 -j RETURN
+iptables -A ZONE_PUBLIC -d 172.16.0.0/12 -j RETURN
+iptables -A ZONE_PUBLIC -d 192.168.0.0/16 -j RETURN
+iptables -A ZONE_PUBLIC -d 224.0.0.0/3 -j RETURN
+iptables -A ZONE_PUBLIC -j ACCEPT
+if iptables -N ZONE_AUDIT 2>/dev/null; then
+    iptables -A ZONE_AUDIT -m limit --limit 20/min --limit-burst 50 -j LOG --log-prefix "zone-would-deny "
+    iptables -A ZONE_AUDIT -j ACCEPT
+fi
+if iptables -N ZONE_DENY 2>/dev/null; then
+    iptables -A ZONE_DENY -m limit --limit 20/min --limit-burst 50 -j LOG --log-prefix "zone-deny "
+    iptables -A ZONE_DENY -j DROP
+fi
+# anti-spoofing: nothing may enter a zone bridge with a source outside that zone, and a zone's addresses may not arrive on any other interface
 iptables -A FORWARD -i br-tunnel ! -s 10.89.128.0/29 -j ZONE_DENY
 iptables -A FORWARD -i br-edge ! -s 10.89.128.8/29 -j ZONE_DENY
 iptables -A FORWARD -i br-web ! -s 10.89.128.16/28 -j ZONE_DENY
@@ -22,14 +35,27 @@ iptables -A FORWARD -i br-fintech ! -s 10.89.128.128/28 -j ZONE_DENY
 iptables -A FORWARD -i br-scrape ! -s 10.89.128.144/28 -j ZONE_DENY
 iptables -A FORWARD -i br-mgmt ! -s 10.89.128.160/29 -j ZONE_DENY
 iptables -A FORWARD -i br-mail ! -s 10.89.128.168/29 -j ZONE_DENY
+iptables -A FORWARD -s 10.89.128.0/29 ! -i br-tunnel -j ZONE_DENY
+iptables -A FORWARD -s 10.89.128.8/29 ! -i br-edge -j ZONE_DENY
+iptables -A FORWARD -s 10.89.128.16/28 ! -i br-web -j ZONE_DENY
+iptables -A FORWARD -s 10.89.128.32/28 ! -i br-frontend -j ZONE_DENY
+iptables -A FORWARD -s 10.89.128.48/28 ! -i br-svc -j ZONE_DENY
+iptables -A FORWARD -s 10.89.128.64/28 ! -i br-data -j ZONE_DENY
+iptables -A FORWARD -s 10.89.128.80/28 ! -i br-identity -j ZONE_DENY
+iptables -A FORWARD -s 10.89.128.96/28 ! -i br-observe -j ZONE_DENY
+iptables -A FORWARD -s 10.89.128.112/28 ! -i br-agent -j ZONE_DENY
+iptables -A FORWARD -s 10.89.128.128/28 ! -i br-fintech -j ZONE_DENY
+iptables -A FORWARD -s 10.89.128.144/28 ! -i br-scrape -j ZONE_DENY
+iptables -A FORWARD -s 10.89.128.160/29 ! -i br-mgmt -j ZONE_DENY
+iptables -A FORWARD -s 10.89.128.168/29 ! -i br-mail -j ZONE_DENY
 # every packet touching the zone supernet is decided in ZONE_FWD, ahead of the legacy per-network accepts
 iptables -A FORWARD -s 10.89.128.0/24 -j ZONE_FWD
 iptables -A FORWARD -d 10.89.128.0/24 -j ZONE_FWD
 # zones whose traffic into legacy networks is dropped even in audit
 # allowed flows
-iptables -A ZONE_FWD -s 10.89.128.0/29 -d 10.89.128.10/32 -p tcp --dport 443 -m comment --comment "tunnel>edge-pod" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.0/29 ! -d 10.89.0.0/16 -p tcp --dport 7844 -m comment --comment "tunnel>internet" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.0/29 ! -d 10.89.0.0/16 -p udp --dport 7844 -m comment --comment "tunnel>internet" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.2/32 -d 10.89.128.10/32 -p tcp --dport 443 -m comment --comment "cloudflared-pod>edge-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.0/29 -p tcp --dport 7844 -m comment --comment "tunnel>internet" -j ZONE_PUBLIC
+iptables -A ZONE_FWD -s 10.89.128.0/29 -p udp --dport 7844 -m comment --comment "tunnel>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.16/28 -p tcp --dport 80 -m comment --comment "edge>web" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.32/28 -p tcp -m multiport --dports 80,5173,8080,8081 -m comment --comment "edge>frontend" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.50/32 -p tcp --dport 4000 -m comment --comment "edge>ai-gateway-pod" -j ACCEPT
@@ -37,32 +63,33 @@ iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.80/28 -p tcp --dport 9000 -m
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.98/32 -p tcp --dport 3000 -m comment --comment "edge>metrics-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.131/32 -p tcp --dport 3080 -m comment --comment "edge>charts-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.114/32 -p tcp --dport 7555:7557 -m comment --comment "edge>gateway-pod" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.162/32 -p tcp --dport 8090 -m comment --comment "edge>management-pod" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.170/32 -p tcp -m multiport --dports 8790,8791 -m comment --comment "edge>mailkit-pod" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.8/29 ! -d 10.89.0.0/16 -p tcp --dport 443 -m comment --comment "edge>internet" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.10/32 -d 10.89.128.162/32 -p tcp --dport 8090 -m comment --comment "edge-pod>management-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.10/32 -d 10.89.128.170/32 -p tcp -m multiport --dports 8790,8791 -m comment --comment "edge-pod>mailkit-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.8/29 -p tcp --dport 443 -m comment --comment "edge>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.48/28 -p tcp -m multiport --dports 4000,8080 -m comment --comment "frontend>svc" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "frontend>shared-db-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.80/28 -p tcp --dport 9000 -m comment --comment "frontend>identity" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.114/32 -p tcp --dport 7557 -m comment --comment "frontend>gateway-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.48/28 -d 10.89.128.64/28 -p tcp --dport 5432 -m comment --comment "svc>data" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.48/28 ! -d 10.89.0.0/16 -p tcp --dport 443 -m comment --comment "svc>internet" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.48/28 -p tcp --dport 443 -m comment --comment "svc>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.112/28 -d 10.89.128.64/28 -p tcp --dport 5432 -m comment --comment "agent>data" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.112/28 -d 10.89.128.68/32 -p tcp --dport 7687 -m comment --comment "agent>neo4j-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.112/28 -d 10.89.128.50/32 -p tcp --dport 4000 -m comment --comment "agent>ai-gateway-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.112/28 -d 10.89.128.144/28 -p tcp --dport 8888 -m comment --comment "agent>scrape" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.112/28 -d 10.89.128.130/32 -p tcp --dport 5002 -m comment --comment "agent>trading-pod" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.112/28 ! -d 10.89.0.0/16 -p tcp --dport 443 -m comment --comment "agent>internet" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.112/28 -p tcp --dport 443 -m comment --comment "agent>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "mgmt>shared-db-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.68/32 -p tcp --dport 7687 -m comment --comment "mgmt>neo4j-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.50/32 -p tcp --dport 4000 -m comment --comment "mgmt>ai-gateway-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.80/28 -p tcp --dport 9000 -m comment --comment "mgmt>identity" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.160/29 ! -d 10.89.0.0/16 -p tcp -m multiport --dports 22,443 -m comment --comment "mgmt>internet" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.168/29 ! -d 10.89.0.0/16 -p tcp --dport 443 -m comment --comment "mail>internet" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.160/29 -p tcp --dport 443 -m comment --comment "mgmt>internet" -j ZONE_PUBLIC
+iptables -A ZONE_FWD -s 10.89.128.160/29 -d 100.64.0.0/10 -p tcp --dport 22 -m comment --comment "mgmt>tailnet" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.168/29 -p tcp --dport 443 -m comment --comment "mail>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.128/28 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "fintech>shared-db-pod" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.128/28 ! -d 10.89.0.0/16 -p tcp --dport 443 -m comment --comment "fintech>internet" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.128/28 -p tcp --dport 443 -m comment --comment "fintech>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.96/28 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "observe>shared-db-pod" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.96/28 ! -d 10.89.0.0/16 -p tcp --dport 443 -m comment --comment "observe>internet" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.144/28 ! -d 10.89.0.0/16 -p tcp -m multiport --dports 80,443 -m comment --comment "scrape>internet" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.96/28 -p tcp --dport 443 -m comment --comment "observe>internet" -j ZONE_PUBLIC
+iptables -A ZONE_FWD -s 10.89.128.144/28 -p tcp -m multiport --dports 80,443 -m comment --comment "scrape>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.98/32 -p tcp --dport 8428 -m comment --comment "edge>metrics-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.98/32 -p tcp --dport 8428 -m comment --comment "frontend>metrics-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.48/28 -d 10.89.128.98/32 -p tcp --dport 8428 -m comment --comment "svc>metrics-pod" -j ACCEPT
