@@ -282,3 +282,6 @@ site-packages/
 !roles/management/files/ops-dashboard/frontend-svelte/public/*.png
 !roles/management/files/ops-dashboard/frontend-svelte/public/*.svg
 !roles/management/files/ops-dashboard/frontend-svelte/package-lock.json
+# Network segmentation tooling must be version-controlled (the *.sh rule above would hide it).
+!scripts/lint-zones.sh
+!tools/netseg/rig.sh
