@@ -13,8 +13,9 @@
 # costs 31% throughput. So the lever is a restart, not --parallel.
 # The threshold must sit ABOVE the 890MB warm baseline or this restarts healthy
 # containers; 1500MB means roughly 600MB of real leak is waiting to be reclaimed.
-# The model reloads in 1.3s and LiteLLM's `timeout: 15` on the laptop primary
-# falls through to the VPS CPU deployment, so the blip is not user-visible.
+# The model reloads in 1.3s and LiteLLM's laptop-primary timeout (25s, num_retries 0;
+# it was 15 when this was written, then 60 until 2026-10-14) falls through to the VPS
+# CPU deployment, so the blip is not user-visible.
 #
 #   llama-embed-recycle             restart if it is both safe and worth doing
 #   llama-embed-recycle --dry-run   report the decision, change nothing
