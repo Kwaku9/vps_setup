@@ -40,3 +40,13 @@
   listen: reload alloy
   changed_when: false
   failed_when: false
+
+- name: restart loki
+  tags: ['always']
+  # Same single-file bind mount as alloy above: a template write gives
+  # loki-config.yml a new inode and the running container keeps the old one.
+  # Found 2026-10-21: the 60d DNS retention deployed "changed" while Loki kept
+  # serving 30d lookback / 14d retention from a 2-day-old start. Restart, not
+  # reload. Ingestion pauses for seconds; Alloy retries and loses nothing.
+  command: podman restart loki
+  changed_when: false
