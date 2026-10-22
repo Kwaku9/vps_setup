@@ -40,8 +40,13 @@ unbound:
   # The box's tailnet IPv6. The IPv4 side reuses tailscale.ip above.
   tailnet_ip6: "fd7a:115c:a1e0::bb3b:fc26"
   logfile: "/var/log/unbound.log"
-  # Every query is logged; the logrotate rule in this role keeps it bounded.
-  log_queries: true
+  # Every lookup is logged once, as its reply (rcode, latency, cache hit).
+  # Query lines would only duplicate it. logrotate keeps the file bounded.
+  log_queries: false
+  log_replies: true
+  control_socket: "/run/unbound.ctl"
+  # unbound-stats writes unbound.prom here for node-exporter (monitoring role).
+  textfile_dir: "/opt/compose/textfile-collector"
   msg_cache_size: "16m"
   rrset_cache_size: "32m"
   num_threads: 2
@@ -51,3 +56,22 @@ unbound:
     - "9.9.9.9@853#dns.quad9.net"
     - "2606:4700:4700::1111@853#cloudflare-dns.com"
     - "2620:fe::fe@853#dns.quad9.net"
+
+# ── Host resolver: unbound primary, dnscrypt-proxy encrypted fallback ───────
+# /etc/resolv.conf points at both. musl asks every nameserver at once and takes
+# the first answer, so a plaintext fallback (the provider's 153.92.2.6, which
+# offers no DoT/DoH) would see EVERY lookup in the clear, not just when unbound
+# is down. dnscrypt-proxy keeps the fallback path encrypted (DoH). Servers are
+# pinned by IP stamp, so it never needs DNS to find its own upstreams.
+host_dns:
+  enabled: true
+  fallback_listen: "127.0.0.2:53"
+  fallback_query_log: "/var/log/dnscrypt-proxy/query.log"
+  # sdns:// DoH stamps: props (1=DNSSEC 2=no-log 4=no-filter), IP, host, path.
+  fallback_servers:
+    - name: "cloudflare-doh"
+      stamp: "sdns://AgcAAAAAAAAABzEuMS4xLjEAEmNsb3VkZmxhcmUtZG5zLmNvbQovZG5zLXF1ZXJ5"
+    - name: "cloudflare-doh-2"
+      stamp: "sdns://AgcAAAAAAAAABzEuMC4wLjEAEmNsb3VkZmxhcmUtZG5zLmNvbQovZG5zLXF1ZXJ5"
+    - name: "quad9-doh"
+      stamp: "sdns://AgMAAAAAAAAABzkuOS45LjkADWRucy5xdWFkOS5uZXQKL2Rucy1xdWVyeQ"

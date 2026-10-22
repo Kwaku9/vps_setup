@@ -8,3 +8,8 @@
   service:
     name: unbound
     state: restarted
+
+- name: restart dnscrypt-proxy
+  service:
+    name: dnscrypt-proxy
+    state: restarted
