@@ -47,6 +47,31 @@ unbound:
   control_socket: "/run/unbound.ctl"
   # unbound-stats writes unbound.prom here for node-exporter (monitoring role).
   textfile_dir: "/opt/compose/textfile-collector"
+
+  # Ad/tracker blocking (RPZ), owner decision 2026-10-21: block obvious ad and
+  # tracker names for TAILNET DEVICES ONLY. The VPS's own services (loopback)
+  # are never filtered: they legitimately call analytics/telemetry endpoints.
+  # Blocked names get NXDOMAIN; each block is logged ("rpz: applied") to Loki.
+  adblock:
+    enabled: true
+    clients: ["100.64.0.0/10", "fd7a:115c::/48"]   # must match access-control lines
+    # HaGeZi Multi LIGHT (~136k entries, "shouldn't cause any real restrictions").
+    # unbound downloads it itself and refreshes on the zone's SOA (8h); the
+    # zonefile keeps the last copy so a restart works with GitHub unreachable.
+    list_name: "hagezi-light"
+    list_url: "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/rpz/light.txt"
+    zone_dir: "/var/lib/unbound/rpz"
+    # Obvious ad/tracker names that HaGeZi deliberately leaves out (even Normal)
+    # because blocking them breaks sponsored-result clicks or site tag loaders.
+    # Each also blocks every subdomain. Remove a line to unblock.
+    extra_block:
+      - ad.doubleclick.net
+      - googleadservices.com
+      - adservice.google.com
+      - googletagmanager.com
+      - adobedtm.com
+    # Never blocked, overrides both lists (and their subdomains).
+    allow: []
   msg_cache_size: "16m"
   rrset_cache_size: "32m"
   num_threads: 2
