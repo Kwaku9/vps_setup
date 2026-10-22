@@ -55,11 +55,13 @@ unbound:
   adblock:
     enabled: true
     clients: ["100.64.0.0/10", "fd7a:115c::/48"]   # must match access-control lines
-    # HaGeZi Multi LIGHT (~136k entries, "shouldn't cause any real restrictions").
-    # unbound downloads it itself and refreshes on the zone's SOA (8h); the
-    # zonefile keeps the last copy so a restart works with GitHub unreachable.
-    list_name: "hagezi-light"
-    list_url: "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/rpz/light.txt"
+    # HaGeZi Multi NORMAL (~341k entries); stepped up from Light by owner
+    # decision 2026-10-22 (Light: ~136k, blocked ~4% of device lookups, no
+    # breakage). unbound downloads it itself and refreshes on the zone's SOA
+    # (8h); the zonefile keeps the last copy so a restart works with GitHub
+    # unreachable. Memory: Light took unbound from 21M to 105M RSS.
+    list_name: "hagezi-normal"
+    list_url: "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/rpz/multi.txt"
     zone_dir: "/var/lib/unbound/rpz"
     # Obvious ad/tracker names that HaGeZi deliberately leaves out (even Normal)
     # because blocking them breaks sponsored-result clicks or site tag loaders.
