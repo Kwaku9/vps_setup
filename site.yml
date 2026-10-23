@@ -184,10 +184,6 @@
       tags: ['flyer-generator']
       when: flyer_generator.enabled | default(true)
 
-    - role: github-runner
-      tags: ['github-runner', 'cicd']
-      when: deploy_github_runner | default(false)
-
     - role: hermes
       tags: ['hermes', 'agent']
       when: hermes.enabled | default(true)
