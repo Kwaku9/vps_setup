@@ -80,7 +80,6 @@ zones:
     pods:
       authentication-pod: {ip: 10.89.128.82, replaces: [authentication-pod, authentik-server, authentik-postgres, redis]}
       authentication-worker-pod: {ip: 10.89.128.83, replaces: [authentication-worker-pod, authentik-worker]}
-      outpost-pod: {ip: 10.89.128.84, replaces: [authentik-workshop-outpost]}
   observe:
     name: net-observe
     bridge: br-observe
