@@ -1,0 +1,92 @@
+---
+# AWS account-level baseline. Account 523069754952, us-east-1.
+#
+# Security Hub standards are NOT set here: they are CDK-managed in
+# buildfolio-bff-cdk/security_hub_stack.py (stack BuildfolioSecurityHubStack).
+# The AWS Config recorder is the one piece of account governance that no
+# CloudFormation stack owns, which is why it lives in Ansible.
+
+aws_account_baseline:
+  region: us-east-1
+  recorder_name: default
+  # The recorder borrows this role from BuildfolioSecurityFoundationsStack.
+  # The stack owns the role; it does NOT own the recorder.
+  recorder_role_arn: "arn:aws:iam::523069754952:role/BuildfolioSecurityFoundationsSta-ConfigRoleF94F46B6-LaY3mXpmuFER"
+
+# Why exclusion and not inclusion: an inclusion list silently stops recording any
+# NEW resource type, so a service adopted later is invisible until someone
+# remembers to add it. Exclusion only ever drops what is named here.
+#
+# Config has two jobs, and a type must fail BOTH tests before it is excluded:
+#   1. Does any enabled Config rule evaluate it?  Verified 2026-10-22 against all
+#      386 enabled rules, so excluding these breaks no Security Hub control:
+#      aws configservice describe-config-rules \
+#        --query 'ConfigRules[].Scope.ComplianceResourceTypes'
+#   2. Would its history matter while investigating an incident?
+# Counts are configuration items held at measurement (1,121 total).
+#
+# IAM::Role (151 items) and IAM::Policy (39) are the single largest churn source
+# on a CDK deploy and are deliberately KEPT: for a least-privilege estate the
+# permission history is the most valuable thing Config holds.
+aws_config_excluded_types:
+  # Config recording its own rule results, then charging per item. 42% of
+  # everything recorded, and derived data: current state and findings both live
+  # in Security Hub. The real trade is that Config's timeline no longer answers
+  # "when did this first go non-compliant", and Security Hub keeps findings for
+  # about 90 days. Accepted 2026-10-22; that query has never been needed.
+  # If the API rejects this type the task fails loudly; drop this one line and
+  # the remaining exclusions still apply.
+  - AWS::Config::ResourceCompliance           # 472
+
+  # AWS-managed and immutable. All 17 are CodeDeployDefault.* predefined configs.
+  - AWS::CodeDeploy::DeploymentConfig         # 17
+
+  # All four are AWS system keyspaces (system, system_schema,
+  # system_multiregion_info, system_schema_mcs). Keyspaces is not used.
+  - AWS::Cassandra::Keyspace                  # 4
+
+  # Group membership only, no security configuration.
+  - AWS::Cognito::UserPoolGroup               # 5
+
+  # Recreated on every API deploy. The RestApi and Stage stay recorded.
+  - AWS::ApiGateway::Method                   # 4
+
+  # Container object with no meaningful configuration of its own.
+  - AWS::Scheduler::ScheduleGroup             # 2
+
+# ---------------------------------------------------------------------------
+# Considered and deliberately NOT excluded, 2026-10-22.
+#
+# These pass test 1 (no rule evaluates them) but fail test 2: their history is
+# what you read after something breaks. Together they are 73 items, about 22
+# cents a month at the steady-state rate, which is not a sensible price for
+# losing this history. Reviewed with the owner before the first apply.
+#
+#   AWS::KMS::Alias                        17  10 are alias/aws/*, but SEVEN are
+#                                              ours (buildfolio-cloudtrail,
+#                                              larouge-oauth-signing,
+#                                              buildfol-io-dnssec-ksk,
+#                                              secure-ai/bedrock-invocation-logs,
+#                                              ecr, openai_1, a CodePipeline one).
+#                                              Repointing an alias to a different
+#                                              key is a security event, and the
+#                                              Mailkit suite alias vanishing in
+#                                              the 10-15 teardown is this exact
+#                                              class of problem.
+#   AWS::CloudWatch::Alarm                 12  Losing the record of a deleted
+#                                              alarm IS the silent-monitoring-gap
+#                                              failure mode we already track.
+#   AWS::EC2::RouteTable                    4  A route table or NACL change can
+#   AWS::EC2::SubnetRouteTableAssociation   7  expose a private subnet. For a
+#   AWS::EC2::SubnetNetworkAclAssociation   8  micro-segmented design this is the
+#                                              history most worth keeping.
+#   AWS::Cognito::UserPoolClient            7  Callback URLs, allowed scopes and
+#                                              OAuth flows live here, including
+#                                              the Mailkit agent clients with
+#                                              separated read and send scopes.
+#   AWS::Cognito::IdentityPoolRoleAttachment 4 Maps identities to IAM roles, so it
+#                                              is permission configuration, which
+#                                              is why IAM itself is kept.
+#   AWS::Events::Rule                      14  An automation rule being disabled
+#                                              can break alerting silently.
+# ---------------------------------------------------------------------------

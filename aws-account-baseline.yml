@@ -1,0 +1,25 @@
+---
+# Account-level AWS governance that no CloudFormation stack owns.
+# Runs locally against AWS APIs — no VPS access needed.
+#
+#   ansible-playbook aws-account-baseline.yml --check
+#   ansible-playbook aws-account-baseline.yml
+#   ansible-playbook aws-account-baseline.yml --tags aws-config
+#
+# NEVER add --diff (see CLAUDE.md). No vault values are used here, but the rule
+# is unconditional.
+#
+# What this does NOT manage, on purpose:
+#   Security Hub standards and automation rules are CDK-managed in
+#   buildfolio-bff-cdk/security_hub_stack.py (stack BuildfolioSecurityHubStack).
+#   Changing them here would be reverted by the next cdk deploy.
+#
+# Verification: scripts/verify-aws-account-baseline.sh
+
+- name: AWS account baseline
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  roles:
+    - role: aws_account_baseline
