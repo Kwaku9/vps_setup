@@ -18,4 +18,3 @@ roles/mcp-servers/tasks/telegram-gateway.yml::{{ _mcp.container_name }}
 roles/neo4j/tasks/timeline-context-api.yml::{{ neo4j.context_api.container_name }}
 roles/security/tasks/main.yml::tetragon
 roles/trading/tasks/lightweight-charts.yml::{{ trading.charts.container_name }}
-roles/worldview/tasks/main.yml::{{ worldview.container_name }}
