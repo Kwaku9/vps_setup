@@ -7,6 +7,8 @@ export interface VesselState {
   sog: number;       // speed over ground (knots)
   heading: number;   // true heading (degrees)
   category: string;  // cargo, tanker, passenger, fishing, military, hsc, special, other
+  /** Raw AIS ship-type code (ITU-R M.1371), when the relay sends it. */
+  shipType?: number | null;
   color: string;     // hex color for the category
   destination: string;
   navStatus: number;

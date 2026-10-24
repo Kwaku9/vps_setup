@@ -98,6 +98,7 @@ export class ThreatLayer {
   private missiles: ActiveMissile[] = [];
   private vpsMarker: Entity | null = null;
   private impactFlash: Entity | null = null;
+  private focusMarker: Entity | null = null;
   private _visible = true;
   private pollTimer: number | null = null;
   private lastPollTime = 0;
@@ -509,6 +510,65 @@ export class ThreatLayer {
 
   get count(): number {
     return this.groups.length;
+  }
+
+  /** Threat source entity closest to a point, within maxKm. Used to land a
+   *  Grafana deep link on the exact event the user clicked. */
+  findNearest(latitude: number, longitude: number, maxKm = 100): Entity | null {
+    const target = Cartesian3.fromDegrees(longitude, latitude);
+    let best: ThreatEntityGroup | null = null;
+    let bestDist = maxKm * 1000;
+    for (const g of this.groups) {
+      const d = Cartesian3.distance(
+        target,
+        Cartesian3.fromDegrees(g.event.longitude, g.event.latitude)
+      );
+      if (d <= bestDist) {
+        bestDist = d;
+        best = g;
+      }
+    }
+    return best ? best.source : null;
+  }
+
+  /** Threat source entity for an IP, if it is loaded. */
+  findByIp(ip: string): Entity | null {
+    return this.groups.find((g) => g.event.ip === ip)?.source ?? null;
+  }
+
+  /** Steady target ring at a deep-linked point, so it stays findable and
+   *  hoverable while the threat dots pulse. Replaces any previous ring. */
+  markFocus(
+    latitude: number,
+    longitude: number,
+    text: string,
+    threat: Entity | null = null
+  ): void {
+    if (this.focusMarker) this.viewer.entities.remove(this.focusMarker);
+    this.focusMarker = this.viewer.entities.add({
+      // The ring is drawn over the threat dot, so hover picks the ring:
+      // carry the threat's identity so it reads as that threat.
+      name: threat?.name,
+      properties: threat?.properties,
+      position: Cartesian3.fromDegrees(longitude, latitude, 600),
+      point: {
+        pixelSize: 26,
+        color: Color.TRANSPARENT,
+        outlineColor: Color.fromCssColorString("#ff3b3b"),
+        outlineWidth: 2,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+      label: {
+        text,
+        font: "12px monospace",
+        fillColor: Color.fromCssColorString("#ff3b3b"),
+        showBackground: true,
+        backgroundColor: Color.BLACK.withAlpha(0.7),
+        pixelOffset: new Cartesian3(0, -26, 0) as any,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+    });
+    this.viewer.scene.requestRender();
   }
 
 getLatestForCountry(country: string): { latitude: number; longitude: number; ip: string; scenario: string } | null {    const upper = country.toUpperCase();    let latest: ThreatEntityGroup | null = null;    for (const g of this.groups) {      if (g.event.country?.toUpperCase() !== upper) continue;      if (!latest || g.event.timestamp > latest.event.timestamp) latest = g;    }    if (!latest) return null;    return {      latitude: latest.event.latitude,      longitude: latest.event.longitude,      ip: latest.event.ip,      scenario: latest.event.scenario,    };  }

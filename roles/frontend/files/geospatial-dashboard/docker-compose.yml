@@ -1,23 +1,57 @@
+# Two profiles, deliberately separate.
+#
+#   dev  — Vite dev server, hot reload, source mounted. For working ON WorldView.
+#   prod — static build behind nginx. For running it.
+#
+# Pick one on purpose. The reference deployment served the DEV profile publicly
+# for months without realising, which meant the production nginx config was
+# never exercised and had quietly rotted out of sync. `docker compose ps` will
+# tell you which you are actually running.
+
 services:
   dev:
     build:
       context: .
       target: dev
+    # Bound to loopback on purpose. A bare "5173:5173" publishes on 0.0.0.0,
+    # putting a dev server with your source tree on every network you join.
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     volumes:
       - .:/app
-      - /app/node_modules
+      - /app/node_modules      # keep the container's install, not the host's
+    # Optional: compose does not fail if this file is absent.
     env_file:
-      - .env
-    profiles:
-      - dev
+      - path: .env
+        required: false
+    profiles: [dev]
 
   prod:
     build:
       context: .
       target: prod
+      # VITE_* values are inlined by Vite at BUILD time, so they must arrive as
+      # build args. Setting them only in the environment leaves them absent from
+      # the bundle and the matching layer silently degrades. Compose reads .env
+      # from this directory automatically; blank is a supported value for all.
+      args:
+        VITE_GOOGLE_MAPS_API_KEY: "${VITE_GOOGLE_MAPS_API_KEY:-}"
+        VITE_CESIUM_ION_TOKEN: "${VITE_CESIUM_ION_TOKEN:-}"
+        VITE_FIRMS_MAP_KEY: "${VITE_FIRMS_MAP_KEY:-}"
+        VITE_ACLED_PROXY_URL: "${VITE_ACLED_PROXY_URL:-}"
+        VITE_VPS_LAT: "${VITE_VPS_LAT:-}"
+        VITE_VPS_LON: "${VITE_VPS_LON:-}"
+    # Loopback by default: shipping a globe that answers the whole LAN on first
+    # run is not a decision to make on someone's behalf. To expose it, put a
+    # reverse proxy in front (see HOSTING.md) or change this deliberately.
     ports:
-      - "8080:80"
-    profiles:
-      - prod
+      - "127.0.0.1:8080:80"
+    # These two are read by nginx at RUN time and never reach the browser, which
+    # is the whole point of keeping them out of the VITE_* set above.
+    environment:
+      WIGLE_API_TOKEN: "${WIGLE_API_TOKEN:-}"
+      ABUSEIPDB_API_KEY: "${ABUSEIPDB_API_KEY:-}"
+      AIS_RELAY_URL: "${AIS_RELAY_URL:-}"
+      THREATS_URL: "${THREATS_URL:-}"
+    restart: unless-stopped
+    profiles: [prod]

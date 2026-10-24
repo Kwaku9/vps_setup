@@ -1,12 +1,11 @@
 import { POI_LIST, POI } from "@/globe/poi";
-import { CameraController } from "@/globe/camera";
 import { makeRetractable, PanelToggleState } from "@/ui/panel-base";
 
 export class LocationsBar {
   private container: HTMLDivElement;
   private panelState: PanelToggleState;
 
-  constructor(private camera: CameraController) {
+  constructor(private onSelect: (poi: POI) => void) {
     this.container = document.createElement("div");
     Object.assign(this.container.style, {
       position: "absolute",
@@ -20,20 +19,27 @@ export class LocationsBar {
       fontFamily: '"Courier New", monospace',
       fontSize: "10px",
       userSelect: "none",
-      flexWrap: "wrap",
-      justifyContent: "center",
-      maxWidth: "90vw",
+      // One scrolling row that stays clear of the side panels; wrapping
+      // made it spill three rows deep over the controls panel.
+      flexWrap: "nowrap",
+      overflowX: "auto",
+      whiteSpace: "nowrap",
+      maxWidth: "max(280px, calc(100vw - 720px))",
     });
 
     this.buildBar();
 
-    const { wrapper, state } = makeRetractable(this.container, 'up');
+    const { wrapper, state } = makeRetractable(this.container, 'up', 'wv_panel_locations', true);
     this.panelState = state;
     document.body.appendChild(wrapper);
   }
 
   toggle(): void {
     this.panelState.toggle();
+  }
+
+  setCollapsed(collapsed: boolean): void {
+    this.panelState.setCollapsed(collapsed);
   }
 
   private buildBar(): void {
@@ -104,7 +110,7 @@ export class LocationsBar {
       btn.style.borderColor = "#1a3a1a";
     });
     btn.addEventListener("click", () => {
-      this.camera.flyTo(poi.target);
+      this.onSelect(poi);
     });
     this.container.appendChild(btn);
   }

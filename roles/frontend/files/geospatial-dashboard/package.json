@@ -8,7 +8,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "docker:dev": "docker compose --profile dev up --build",
-    "docker:prod": "docker compose --profile prod up --build"
+    "docker:prod": "docker compose --profile prod up --build",
+    "gen:nginx": "node scripts/gen-nginx.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "cesium": "^1.128.0",

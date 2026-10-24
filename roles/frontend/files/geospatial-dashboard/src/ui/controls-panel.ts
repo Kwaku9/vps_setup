@@ -27,6 +27,11 @@ export class ControlsPanel {
       color: "#33ff33",
       zIndex: "1000",
       minWidth: "200px",
+      // Without a cap the one-line key hints stretch the panel across a
+      // third of the screen.
+      maxWidth: "260px",
+      maxHeight: "calc(100vh - 140px)",
+      overflowY: "auto",
       userSelect: "none",
     });
 
@@ -39,6 +44,10 @@ export class ControlsPanel {
 
   toggle(): void {
     this.panelState.toggle();
+  }
+
+  setCollapsed(collapsed: boolean): void {
+    this.panelState.setCollapsed(collapsed);
   }
 
   private buildPanel(): void {
@@ -103,7 +112,6 @@ export class ControlsPanel {
       "ACLED",
       "Threats",
       "Maritime",
-      "Artemis",
       "Borders",
     ];
     for (const name of layers) {
@@ -118,6 +126,27 @@ export class ControlsPanel {
       this.container.appendChild(btn);
     }
 
+    // Keyboard help, folded away by default
+    const keysToggle = document.createElement("div");
+    keysToggle.textContent = "KEYS \u25B8";
+    Object.assign(keysToggle.style, {
+      fontSize: "9px",
+      letterSpacing: "2px",
+      opacity: "0.5",
+      marginTop: "8px",
+      cursor: "pointer",
+    });
+    this.container.appendChild(keysToggle);
+    const keysBox = document.createElement("div");
+    keysBox.hidden = true;
+    keysToggle.addEventListener("click", () => {
+      keysBox.hidden = !keysBox.hidden;
+      keysToggle.textContent = keysBox.hidden ? "KEYS \u25B8" : "KEYS \u25BE";
+    });
+    const helpRoot = this.container;
+    this.container.appendChild(keysBox);
+    this.container = keysBox;
+
     // POI hint
     this.addSectionLabel("POI KEYS");
     const poiHint = document.createElement("div");
@@ -130,7 +159,7 @@ export class ControlsPanel {
     // Layer keys hint
     this.addSectionLabel("LAYER KEYS");
     const layerHint = document.createElement("div");
-    layerHint.textContent = "B=Bloom C=CCTV V=Traffic G=WiGLE X=FIRMS Z=ACLED 9=Threats 6=Maritime A=Artemis 8=Borders";
+    layerHint.textContent = "B=Bloom C=CCTV V=Traffic G=WiGLE X=FIRMS Z=ACLED 9=Threats 6=Maritime 8=Borders";
     layerHint.style.opacity = "0.6";
     layerHint.style.lineHeight = "1.4";
     this.container.appendChild(layerHint);
@@ -142,6 +171,8 @@ export class ControlsPanel {
     panelHint.style.opacity = "0.6";
     panelHint.style.lineHeight = "1.4";
     this.container.appendChild(panelHint);
+
+    this.container = helpRoot;
   }
 
   private addSectionLabel(text: string): void {

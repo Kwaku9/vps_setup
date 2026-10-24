@@ -100,6 +100,10 @@ export class RightSidebar {
     this.panelState.toggle();
   }
 
+  setCollapsed(collapsed: boolean): void {
+    this.panelState.setCollapsed(collapsed);
+  }
+
   private buildPanel(): void {
     const title = document.createElement("div");
     title.textContent = "PRESETS";

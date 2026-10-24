@@ -10,16 +10,17 @@ import {
   HorizontalOrigin,
 } from "cesium";
 import { MilitaryAircraft, fetchMilitaryAircraft } from "./adsb-api";
+import { aircraftIcon, classifyAircraft, northAxis } from "@/globe/icons";
 
-const MILITARY_SVG = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <path d="M16 1 L13 14 L2 18 L13 16.5 L13 26 L9 29 L13 28 L16 31 L19 28 L23 29 L19 26 L19 16.5 L30 18 L19 14 Z"
-    fill="#FF8C00" stroke="#4a2800" stroke-width="0.7"/>
-</svg>`)}`;
+// Military tint (amber) over the white class silhouettes.
+const MILITARY_TINT = Color.fromCssColorString("#FF8C00");
 
 export class MilitaryLayer {
   private entities = new Map<string, Entity>();
   private pollInterval: number | null = null;
   private _visible = true;
+  // Latched so an unavailable upstream is explained once, not on every poll.
+  private warnedUnavailable = false;
 
   constructor(private viewer: Viewer) {
     const toRemove: Entity[] = [];
@@ -47,14 +48,14 @@ export class MilitaryLayer {
         seen.add(ac.icao);
 
         const existing = this.entities.get(ac.icao);
+        const position = Cartesian3.fromDegrees(ac.longitude, ac.latitude, ac.altitude);
         if (existing) {
-          (existing.position as any).setValue(
-            Cartesian3.fromDegrees(ac.longitude, ac.latitude, ac.altitude)
-          );
+          (existing.position as any).setValue(position);
           if (existing.billboard) {
             (existing.billboard.rotation as any).setValue(
               CesiumMath.toRadians(-(ac.heading || 0))
             );
+            (existing.billboard.alignedAxis as any).setValue(northAxis(position));
           }
           if (existing.properties) {
             (existing.properties as any).altitude = ac.altitude;
@@ -67,17 +68,15 @@ export class MilitaryLayer {
 
           const entity = this.viewer.entities.add({
             name: baseLabel,
-            position: Cartesian3.fromDegrees(
-              ac.longitude,
-              ac.latitude,
-              ac.altitude
-            ),
+            position,
             billboard: {
-              image: MILITARY_SVG,
+              // Military feed carries ICAO type codes, so the class is exact.
+              image: aircraftIcon(classifyAircraft({ typeCode: ac.type === "Unknown" ? "" : ac.type })),
+              color: MILITARY_TINT,
               width: 22,
               height: 22,
               rotation: CesiumMath.toRadians(-(ac.heading || 0)),
-              alignedAxis: Cartesian3.UNIT_Z,
+              alignedAxis: northAxis(position),
               verticalOrigin: VerticalOrigin.CENTER,
               horizontalOrigin: HorizontalOrigin.CENTER,
               scaleByDistance: new NearFarScalar(1e5, 1.5, 5e6, 0.3),
@@ -122,7 +121,17 @@ export class MilitaryLayer {
 
       this.viewer.scene.requestRender();
     } catch (e) {
-      console.warn("Military aircraft update failed:", e);
+      // An unavailable feed is expected for anyone without airplanes.live
+      // approval, so say why once rather than repeating a stack trace on every
+      // poll. The layer simply stays empty.
+      if ((e as Error)?.name === 'MilitaryFeedUnavailable') {
+        if (!this.warnedUnavailable) {
+          console.warn(`Military layer inactive — ${(e as Error).message}`);
+          this.warnedUnavailable = true;
+        }
+      } else {
+        console.warn("Military aircraft update failed:", e);
+      }
     }
   }
 

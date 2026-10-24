@@ -19,15 +19,7 @@ import {
 import { TLERecord, fetchAllGroups } from "./satellite-api";
 import { OrbitRenderer } from "./orbit-renderer";
 import { SCALE } from "@/layers/scale-constants";
-
-const GROUP_COLORS: Record<string, Color> = {
-  stations: Color.RED,
-  visual:   Color.fromCssColorString("#FFB300"),
-  weather:  Color.fromCssColorString("#42A5F5"),
-  "gps-ops":Color.fromCssColorString("#66BB6A"),
-  starlink: Color.fromCssColorString("#9E9E9E"),
-  galileo:  Color.fromCssColorString("#CE93D8"),
-};
+import { classifySatellite, satelliteIcon, SATELLITE_COLORS } from "@/globe/icons";
 
 interface SatelliteState {
   name: string;
@@ -65,7 +57,8 @@ export class SatelliteLayer {
       seen.add(noradId);
 
       const satrec = twoline2satrec(tle.line1, tle.line2);
-      const color = GROUP_COLORS[tle.group] || Color.CYAN;
+      const kind = classifySatellite(tle.group, noradId);
+      const color = Color.fromCssColorString(SATELLITE_COLORS[kind]);
       const isISS = noradId === "25544";
 
       let entity: Entity;
@@ -75,14 +68,12 @@ export class SatelliteLayer {
         entity = this.viewer.entities.add({
           name: "ISS (ZARYA)",
           position: Cartesian3.fromDegrees(0, 0, 0),
-          point: {
-            pixelSize: new CallbackProperty(() => {
-              return 8 + 2 * Math.sin(this.issPulsePhase);
-            }, false) as any,
-            color: Color.RED,
-            outlineColor: Color.GOLD,
-            outlineWidth: 2,
-            // No distanceDisplayCondition — always visible
+          billboard: {
+            image: satelliteIcon("station"),
+            color: Color.GOLD,
+            // Gentle pulse keeps the hero entity findable; always visible.
+            width: new CallbackProperty(() => 30 + 3 * Math.sin(this.issPulsePhase), false) as any,
+            height: new CallbackProperty(() => 30 + 3 * Math.sin(this.issPulsePhase), false) as any,
           },
           label: {
             text: "ISS [25544]",
@@ -104,9 +95,11 @@ export class SatelliteLayer {
         entity = this.viewer.entities.add({
           name: tle.name,
           position: Cartesian3.fromDegrees(0, 0, 0),
-          point: {
-            pixelSize: 4,
-            color: color,
+          billboard: {
+            image: satelliteIcon(kind),
+            color,
+            width: kind === "station" ? 26 : 18,
+            height: kind === "station" ? 26 : 18,
             scaleByDistance: SCALE.satellites.point,
             distanceDisplayCondition: SCALE.satellites.pointDisplay,
           },

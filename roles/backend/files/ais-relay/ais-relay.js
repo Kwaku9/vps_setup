@@ -29,15 +29,21 @@ const STALE_MS = parseInt(process.env.AIS_STALE_MINUTES || "15") * 60_000;
 /** @type {Map<string, object>} MMSI → vessel state */
 const vessels = new Map();
 
-// Ship type categories based on AIS type codes
+// Ship type categories from AIS type codes (ITU-R M.1371). 30-39 is NOT all
+// fishing and 20-29 is NOT military: 20-29 is wing-in-ground craft, and the
+// 30s split into fishing (30), towing (31-32), dredging (33), diving (34),
+// MILITARY (35), sailing (36) and pleasure craft (37). The old ranges drew
+// warships, sailboats and yachts as fishing boats. The raw code is also sent
+// as `shipType` so the map can pick a precise silhouette.
 function shipCategory(typeCode) {
   if (typeCode >= 70 && typeCode <= 79) return "cargo";
   if (typeCode >= 80 && typeCode <= 89) return "tanker";
   if (typeCode >= 60 && typeCode <= 69) return "passenger";
   if (typeCode >= 40 && typeCode <= 49) return "hsc"; // high-speed craft
   if (typeCode >= 50 && typeCode <= 59) return "special";
-  if (typeCode >= 30 && typeCode <= 39) return "fishing";
-  if (typeCode >= 20 && typeCode <= 29) return "military";
+  if (typeCode === 30) return "fishing";
+  if (typeCode === 35) return "military";
+  if (typeCode >= 31 && typeCode <= 39) return "special";
   return "other";
 }
 
@@ -208,6 +214,7 @@ const server = http.createServer((req, res) => {
         sog: v.sog,
         heading: v.heading,
         category: v.category || "other",
+        shipType: v.shipType ?? null,
         color: v.color || "#9E9E9E",
         destination: v.destination || "",
         navStatus: v.navStatus ?? -1,

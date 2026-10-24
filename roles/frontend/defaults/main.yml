@@ -30,6 +30,9 @@ worldview:
   memory: "640m"
   node_max_old_space: "448"
   domain: "geo.{{ domain_name }}"
+  # Companion targets for the threat and AIS proxy routes (this estate's pods).
+  threats_url: "http://metrics-pod:8428"
+  ais_relay_url: "http://backend-pod:9100"
 
   # Vite dev server config
   vite:
