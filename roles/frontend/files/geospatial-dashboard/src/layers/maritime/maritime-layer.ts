@@ -53,19 +53,45 @@ export class MaritimeLayer {
     this.pollInterval = window.setInterval(() => this.update(), 30_000);
   }
 
+  /** Area to request vessels for. computeViewRectangle() returns nothing
+   *  whenever sky is in view (any oblique angle), and an undefined box asked
+   *  the relay for EVERY ship worldwide: 2,000 entities, Danish trawlers
+   *  included, for a view of Nevada. Fall back to, and cap at, a box around
+   *  the camera sized by its altitude. */
   private getViewportBbox(): BoundingBox | undefined {
+    const cam = this.viewer.camera.positionCartographic;
+    const lat = CesiumMath.toDegrees(cam.latitude);
+    const lon = CesiumMath.toDegrees(cam.longitude);
+    // ~4x altitude in reach, 1°..30° half-span (1° ≈ 111 km).
+    const half = Math.min(30, Math.max(1, (cam.height * 4) / 111_000));
+    const halfLon = half / Math.max(0.2, Math.cos(cam.latitude));
+    // The relay takes -180..180 and reads minLon > maxLon as crossing the
+    // antimeridian, so wrap rather than let the box run past ±180.
+    const wrap = (d: number) => ((((d + 180) % 360) + 360) % 360) - 180;
+    const around: BoundingBox = {
+      minLat: Math.max(-90, lat - half),
+      maxLat: Math.min(90, lat + half),
+      minLon: halfLon >= 180 ? -180 : wrap(lon - halfLon),
+      maxLon: halfLon >= 180 ? 180 : wrap(lon + halfLon),
+    };
+    let rect;
     try {
-      const rect = this.viewer.camera.computeViewRectangle();
-      if (!rect) return undefined;
-      return {
-        minLat: CesiumMath.toDegrees(rect.south),
-        maxLat: CesiumMath.toDegrees(rect.north),
-        minLon: CesiumMath.toDegrees(rect.west),
-        maxLon: CesiumMath.toDegrees(rect.east),
-      };
+      rect = this.viewer.camera.computeViewRectangle();
     } catch {
-      return undefined;
+      rect = undefined;
     }
+    if (!rect) return around;
+    const view: BoundingBox = {
+      minLat: CesiumMath.toDegrees(rect.south),
+      maxLat: CesiumMath.toDegrees(rect.north),
+      minLon: CesiumMath.toDegrees(rect.west),
+      maxLon: CesiumMath.toDegrees(rect.east),
+    };
+    const spanLon = (view.maxLon - view.minLon + 360) % 360;
+    // A view rectangle wider than the camera box (oblique horizon) is capped.
+    return view.maxLat - view.minLat > 2 * half || spanLon > 2 * halfLon
+      ? around
+      : view;
   }
 
   private async update(): Promise<void> {
