@@ -22,6 +22,7 @@ from .routers import inventory as inventory_router
 from .routers import repo_radar as repo_radar_router
 from .routers import timeline_search as timeline_search_router
 from .routers import triage as triage_router
+from .routers import workstations as workstations_router
 from .routers.metrics import vm_client as router_vm_client
 from .victoria import VictoriaMetricsClient
 from .ws.metrics_stream import metrics_poll_loop
@@ -70,6 +71,9 @@ async def lifespan(app: FastAPI):
             app.state.db_pool = await create_pool()
             break
         except Exception as exc:  # noqa: BLE001 — any connect error is retryable here
+            if app.state.db_pool is not None:
+                await app.state.db_pool.close()
+                app.state.db_pool = None
             logger.warning(
                 "sessions DB pool init attempt %d/10 failed (%s); retrying in 2s",
                 attempt, exc,
@@ -139,6 +143,7 @@ app.include_router(stacks.router)
 app.include_router(actions.router)
 app.include_router(metrics.router)
 app.include_router(ingest_router.router)
+app.include_router(workstations_router.router)
 app.include_router(sessions_router.router)
 app.include_router(approvals_router.router)
 app.include_router(repo_radar_router.router)

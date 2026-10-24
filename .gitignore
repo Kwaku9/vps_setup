@@ -276,6 +276,7 @@ site-packages/
 !scripts/lint-secrets.sh
 !scripts/install-hooks.sh
 !scripts/pods-baseline.txt
+!OPS-SESSIONS.md
 
 # ops-dashboard phone app (frontend-svelte): its icons and lockfile are source.
 # The lockfile is committed so `npm ci` works from a fresh clone or worktree.

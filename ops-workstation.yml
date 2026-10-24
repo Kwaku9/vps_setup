@@ -1,0 +1,58 @@
+---
+# Scoped workstation deployment; leaves all other workstation services alone.
+# Provision the system-scoped TPM token first (see OPS-SESSIONS.md).
+- name: Deploy OPS desktop session bridge
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    ops_bridge_home: "{{ ansible_facts.user_dir }}"
+    ops_bridge_user: "{{ ansible_facts.user_id }}"
+    ops_bridge_url: "{{ lookup('ansible.builtin.env', 'OPS_BRIDGE_URL') }}"
+  tasks:
+    - name: Require the private bridge endpoint
+      ansible.builtin.assert:
+        that: ops_bridge_url is match('^https://[^/]+$')
+        fail_msg: Set OPS_BRIDGE_URL to the tailnet HTTPS listener origin (including port).
+    - name: Check encrypted bridge credential exists
+      ansible.builtin.stat:
+        path: /etc/credstore.encrypted/ops-session-token
+      become: true
+      register: ops_bridge_credential
+    - name: Require an encrypted credential before starting
+      ansible.builtin.assert:
+        that: ops_bridge_credential.stat.exists
+        fail_msg: Provision the system-scoped TPM credential described in OPS-SESSIONS.md first.
+    - name: Create bridge directories
+      ansible.builtin.file:
+        path: "{{ ops_bridge_home }}/{{ item }}"
+        state: directory
+        mode: '0700'
+      loop:
+        - .local/bin
+        - .local/share/ops-session-bridge
+    - name: Install isolated bridge transport dependency
+      ansible.builtin.pip:
+        name: websockets==15.0.1
+        virtualenv: "{{ ops_bridge_home }}/.local/share/ops-session-bridge/venv"
+        virtualenv_command: python3 -m venv
+    - name: Deploy bridge observer
+      ansible.builtin.copy:
+        src: roles/workstation/files/bin/ops-session-bridge.py
+        dest: "{{ ops_bridge_home }}/.local/bin/ops-session-bridge.py"
+        mode: '0700'
+      register: ops_bridge_script
+    - name: Deploy bridge system unit (runs as the desktop user)
+      ansible.builtin.template:
+        src: roles/workstation/templates/systemd/ops-session-bridge.service
+        dest: /etc/systemd/system/ops-session-bridge.service
+        mode: '0644'
+      register: ops_bridge_unit
+      become: true
+    - name: Enable and start bridge
+      ansible.builtin.systemd_service:
+        name: ops-session-bridge.service
+        daemon_reload: true
+        enabled: true
+        state: "{{ 'restarted' if ops_bridge_script.changed or ops_bridge_unit.changed else 'started' }}"
+      become: true

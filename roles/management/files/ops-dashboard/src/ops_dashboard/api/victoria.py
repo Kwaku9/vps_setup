@@ -1,12 +1,12 @@
 """Victoria Metrics HTTP API client for querying container metrics."""
 
+import math
 import os
 import time
 
 import httpx
 
 from .schemas import MetricsSnapshot
-
 
 # Map container names (podman) -> service names (profiles.yaml)
 # Names now match directly after profiles.yaml sync; keep map for future overrides
@@ -39,7 +39,6 @@ class VictoriaMetricsClient:
 
     async def query_all_containers(self) -> dict[str, MetricsSnapshot]:
         """Batch query all container metrics — CPU, memory, state."""
-        now = time.time()
         snapshots: dict[str, MetricsSnapshot] = {}
 
         def _map_name(container_name: str) -> str:
@@ -57,7 +56,7 @@ class VictoriaMetricsClient:
                 status = {2: "running", 3: "stopped", 4: "paused", 5: "exited"}.get(state_val, "unknown")
                 snapshots[name] = MetricsSnapshot(
                     service_name=name,
-                    timestamp=now,
+                    timestamp=0,
                     status=status,
                 )
         except Exception:
@@ -69,7 +68,7 @@ class VictoriaMetricsClient:
             for r in cpu_results:
                 name = _map_name(r["metric"].get("name", ""))
                 cpu = float(r["value"][1])
-                if name in snapshots:
+                if name in snapshots and math.isfinite(cpu) and cpu >= 0:
                     snapshots[name].cpu_percent = cpu
         except Exception:
             pass
@@ -81,14 +80,14 @@ class VictoriaMetricsClient:
             # on `__name__`, so the binary operator drops `__name__` from the match set.
             mem_pct_results = await self.query(
                 "100 * podman_container_mem_usage_bytes "
-                "/ ignoring(__name__) podman_container_mem_limit_bytes"
+                "/ ignoring(__name__) (podman_container_mem_limit_bytes > 0)"
             )
             # NOTE: containers with mem_limit_bytes == 0 (no limit set) won't have a percent
-            # series; memory_percent stays at its default (0.0) for those.
+            # series; memory_percent stays unknown for those.
             for r in mem_pct_results:
                 name = _map_name(r["metric"].get("name", ""))
                 mem = float(r["value"][1])
-                if name in snapshots:
+                if name in snapshots and math.isfinite(mem) and mem >= 0:
                     snapshots[name].memory_percent = round(mem, 2)
         except Exception:
             pass
@@ -99,11 +98,24 @@ class VictoriaMetricsClient:
             for r in mem_bytes_results:
                 name = _map_name(r["metric"].get("name", ""))
                 mem_bytes = float(r["value"][1])
-                if name in snapshots:
+                if name in snapshots and math.isfinite(mem_bytes) and mem_bytes >= 0:
                     snapshots[name].memory_usage_mb = round(mem_bytes / 1048576, 1)
         except Exception:
             pass
 
+        # Instant queries can reuse a last-known scrape. Use the source scrape
+        # timestamp so a dead exporter cannot make old readings appear live.
+        try:
+            ages = await self.query(
+                'min by (name) (timestamp({__name__=~"podman_container_(state|cpu_percent|mem_usage_bytes)"}))'
+            )
+            for r in ages:
+                name = _map_name(r["metric"].get("name", ""))
+                timestamp = float(r["value"][1])
+                if name in snapshots and math.isfinite(timestamp) and timestamp > 0:
+                    snapshots[name].timestamp = timestamp
+        except Exception:
+            pass
         return snapshots
 
     async def query_range(
