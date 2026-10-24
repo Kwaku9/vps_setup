@@ -41,13 +41,17 @@ export class ParametersPanel {
     this.buildPanel();
     this.initPostProcessStages();
 
-    const { wrapper, state } = makeRetractable(this.container, 'left');
+    const { wrapper, state } = makeRetractable(this.container, 'left', 'wv_panel_params', true);
     this.panelState = state;
     document.body.appendChild(wrapper);
   }
 
   toggle(): void {
     this.panelState.toggle();
+  }
+
+  setCollapsed(collapsed: boolean): void {
+    this.panelState.setCollapsed(collapsed);
   }
 
   private buildPanel(): void {

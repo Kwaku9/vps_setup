@@ -8,6 +8,7 @@ import {
   Math as CesiumMath,
 } from "cesium";
 import { makeRetractable, PanelToggleState } from "@/ui/panel-base";
+import { pickThreat } from "@/ui/pick";
 import {
   enrichIP,
   categoryName,
@@ -54,15 +55,62 @@ export class EntityInfoPanel {
       (click: { position: Cartesian2 }) => this.onClick(click),
       ScreenSpaceEventType.LEFT_CLICK
     );
+    this.handler.setInputAction(
+      (move: { endPosition: Cartesian2 }) => this.onHover(move.endPosition),
+      ScreenSpaceEventType.MOUSE_MOVE
+    );
   }
 
   toggle(): void {
     this.panelState.toggle();
   }
 
-  private onClick(click: { position: Cartesian2 }): void {
-    const picked = this.viewer.scene.pick(click.position);
+  /** Open the panel for an entity programmatically (e.g. a deep-link target). */
+  show(entity: Entity): void {
+    this.hoveredEntity = entity;
+    this.showEntity(entity);
+  }
 
+  // Hover reveals threat details without clicking. Threat dots are a few
+  // pixels wide and pulse, so pick with a padded window, and at most once a
+  // frame. The panel stays on the last hovered threat until a click elsewhere.
+  private hoverPending: Cartesian2 | null = null;
+  private hoveredEntity: Entity | null = null;
+
+  private onHover(position: Cartesian2): void {
+    if (this.hoverPending) {
+      this.hoverPending = Cartesian2.clone(position, this.hoverPending);
+      return;
+    }
+    this.hoverPending = Cartesian2.clone(position);
+    requestAnimationFrame(() => {
+      const pos = this.hoverPending!;
+      this.hoverPending = null;
+      const entity = pickThreat(this.viewer, pos);
+      this.viewer.scene.canvas.style.cursor = entity ? "pointer" : "";
+      if (entity && entity !== this.hoveredEntity) {
+        this.hoveredEntity = entity;
+        this.showEntity(entity);
+      }
+    });
+  }
+
+  private onThreatSelect: (entity: Entity) => void = () => {};
+
+  /** Called when the user clicks a threat (click-to-track). */
+  setOnThreatSelect(handler: (entity: Entity) => void): void {
+    this.onThreatSelect = handler;
+  }
+
+  private onClick(click: { position: Cartesian2 }): void {
+    const threat = pickThreat(this.viewer, click.position);
+    if (threat) {
+      this.show(threat);
+      this.onThreatSelect(threat);
+      return;
+    }
+
+    const picked = this.viewer.scene.pick(click.position);
     if (defined(picked) && picked.id instanceof Entity) {
       this.showEntity(picked.id);
     } else {
@@ -566,6 +614,7 @@ export class EntityInfoPanel {
   }
 
   hide(): void {
+    this.hoveredEntity = null;
     this.stopSnapshotRefresh();
     this.container.style.display = "none";
   }

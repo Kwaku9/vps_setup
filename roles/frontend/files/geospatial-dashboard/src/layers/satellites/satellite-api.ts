@@ -26,13 +26,47 @@ export async function fetchTLEs(
   const grp = SATELLITE_GROUPS.find((g) => g.name === group);
   if (!grp) throw new Error("Unknown satellite group: " + group);
 
-  const response = await fetch(grp.url);
-  if (!response.ok)
-    throw new Error("CelesTrak fetch failed: " + response.status);
-
-  const text = await response.text();
+  const text = await cachedTLEText(grp);
   const records = parseTLEText(text, group);
   return records.slice(0, grp.limit);
+}
+
+// CelesTrak refreshes element sets about every two hours and blocks clients
+// that download more often than that; every page load fetching six groups
+// got the browser refused (403/CORS errors and an empty layer). Cache each
+// group for that window, and fall back to the last good copy on failure.
+const TLE_TTL_MS = 2 * 60 * 60 * 1000;
+
+async function cachedTLEText(grp: SatelliteGroup): Promise<string> {
+  const key = `wv_tle_${grp.name}`;
+  let cached: { at: number; text: string } | null = null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) cached = JSON.parse(raw);
+  } catch { /* private mode or corrupt entry */ }
+
+  if (cached && Date.now() - cached.at < TLE_TTL_MS) return cached.text;
+
+  try {
+    const response = await fetch(grp.url);
+    if (!response.ok) throw new Error("CelesTrak fetch failed: " + response.status);
+    // Keep only the records the layer shows (3 lines each): the full
+    // Starlink set alone is ~1.7 MB against a ~5 MB storage quota.
+    const text = (await response.text())
+      .split("\n")
+      .filter((l) => l.trim().length > 0)
+      .slice(0, grp.limit * 3)
+      .join("\n");
+    try { localStorage.setItem(key, JSON.stringify({ at: Date.now(), text })); }
+    catch { /* quota or private mode: still use the fresh copy */ }
+    return text;
+  } catch (e) {
+    if (cached) {
+      console.warn(`Satellites: ${grp.name} refresh failed, using copy from ${new Date(cached.at).toISOString()}`);
+      return cached.text;
+    }
+    throw e;
+  }
 }
 
 export async function fetchAllGroups(): Promise<TLERecord[]> {

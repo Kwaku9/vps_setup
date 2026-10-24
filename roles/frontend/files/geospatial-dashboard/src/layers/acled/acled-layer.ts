@@ -114,7 +114,13 @@ export class ACLEDLayer {
         console.log("Loaded " + events.length + " ACLED conflict events");
       }
     } catch (e) {
-      console.warn("ACLED load failed:", e);
+      // "Not configured" is the normal state for a fresh clone, so say it once
+      // and plainly rather than logging a failure that looks like a defect.
+      if ((e as Error)?.name === 'AcledNotConfigured') {
+        console.warn((e as Error).message);
+      } else {
+        console.warn("ACLED load failed:", e);
+      }
     }
   }
 

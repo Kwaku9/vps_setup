@@ -1,12 +1,12 @@
 import "cesium/Build/Cesium/Widgets/widgets.css";
-import { Cartesian3 } from "cesium";
+import { Cartesian3, Cartographic, Entity, Math as CesiumMath, Viewer } from "cesium";
 import { installOrchestrator } from "@/net/orchestrator";
 import { createViewer } from "@/globe/viewer";
 import { CameraController } from "@/globe/camera";
-import { getPOIByKey } from "@/globe/poi";
+import { getPOIByKey, POI } from "@/globe/poi";
 import { ShaderManager, VisionMode } from "@/shaders/postprocess";
 import { EffectsManager } from "@/shaders/effects";
-import { LayerManager, LayerName } from "@/layers/layer-manager";
+import { LayerManager, LayerName, LAYER_NAMES } from "@/layers/layer-manager";
 import { ControlsPanel } from "@/ui/controls-panel";
 import { EntityInfoPanel } from "@/ui/entity-info";
 import { HUDOverlay } from "@/ui/hud-overlay";
@@ -14,6 +14,9 @@ import { LocationsBar } from "@/ui/locations-bar";
 import { ParametersPanel } from "@/ui/parameters-panel";
 import { RightSidebar } from "@/ui/right-sidebar";
 import { HUDDock } from "@/ui/hud-dock";
+import { TargetLock } from "@/globe/target-lock";
+import { installHorizonCulling } from "@/globe/horizon-cull";
+import { ShareLink, readShareParams } from "@/ui/share-link";
 import { worldAudio } from "@/audio/engine";
 
 // Cinematic hide-all: fade every HUD panel out for a clean globe.
@@ -36,16 +39,25 @@ async function init() {
 
   const viewer = await createViewer("cesiumContainer");
   const camera = new CameraController(viewer);
+  // Markers past the horizon would otherwise draw through the Earth.
+  installHorizonCulling(viewer);
   const shaders = new ShaderManager(viewer.scene);
   const effects = new EffectsManager(viewer.scene);
   const layers = new LayerManager(viewer);
   const controls = new ControlsPanel();
   const entityInfo = new EntityInfoPanel(viewer);
   const hud = new HUDOverlay(viewer);
-  const locationsBar = new LocationsBar(camera);
+  // Called at click time, after `lock` below exists.
+  const locationsBar = new LocationsBar((poi) => flyToPOI(lock, poi));
   const params = new ParametersPanel(viewer.scene);
   const rightSidebar = new RightSidebar(shaders, layers, controls);
   const hudDock = new HUDDock(layers);
+  const lock = new TargetLock(viewer);
+  // Flying to a POI or point ends any threat lock first.
+  camera.onBeforeFly(() => lock.unlock());
+  const share = new ShareLink(viewer, layers, shaders, lock);
+  hudDock.setOnShare(() => share.copy());
+  entityInfo.setOnThreatSelect((entity) => lockOnThreat(viewer, lock, layers, entity));
   hudDock.setOnHideAll((hidden) => {
     document.body.classList.toggle("wv-cinematic", hidden);
   });
@@ -105,8 +117,7 @@ async function init() {
     // POI keys
     const poi = getPOIByKey(key);
     if (poi) {
-      camera.flyTo(poi.target);
-      worldAudio.flyTo();
+      flyToPOI(lock, poi);
       return;
     }
 
@@ -154,12 +165,6 @@ async function init() {
     }
 if (key === "6") {
       layers.toggleLayer("maritime");
-      controls.updateLayers(layers.getStatus());
-      return;
-    }
-
-    if (key === "a") {
-      layers.toggleLayer("artemis");
       controls.updateLayers(layers.getStatus());
       return;
     }
@@ -215,6 +220,7 @@ if (key === "6") {
 
   // Earth rotation — one full revolution every 20 minutes
   const EARTH_ROTATION_RATE = (2 * Math.PI) / 1200;
+  const ROTATION_MIN_HEIGHT = 3_000_000; // metres
   let earthRotationEnabled = true; // user toggle (Spacebar)
   let earthRotationActive = true;  // auto-pause during interaction
   let lastRotateTime = Date.now();
@@ -232,6 +238,9 @@ if (key === "6") {
 
   viewer.scene.canvas.addEventListener("pointerdown", pauseEarthRotation);
   viewer.scene.canvas.addEventListener("wheel", pauseEarthRotation);
+  // Hovering counts as interaction: the globe must not slide out from under
+  // the cursor while the user is reading a threat.
+  viewer.scene.canvas.addEventListener("pointermove", pauseEarthRotation);
 
   // Spacebar toggles rotation on/off
   document.addEventListener("keydown", (e) => {
@@ -245,7 +254,17 @@ if (key === "6") {
   });
 
   viewer.clock.onTick.addEventListener(() => {
-    if (!earthRotationEnabled || !earthRotationActive) {
+    // While locked the camera is in the target's frame; rotating it would
+    // swing the view around the target instead of turning the Earth.
+    // Below orbital view the spin reads as the camera sliding sideways
+    // (~30 km a minute at city altitude), pulling whatever was flown to out
+    // of frame, so it only runs when zoomed out to the whole globe.
+    if (
+      !earthRotationEnabled ||
+      !earthRotationActive ||
+      lock.isLocked ||
+      viewer.camera.positionCartographic.height < ROTATION_MIN_HEIGHT
+    ) {
       lastRotateTime = Date.now();
       return;
     }
@@ -256,8 +275,19 @@ if (key === "6") {
     viewer.camera.rotate(Cartesian3.UNIT_Z, -EARTH_ROTATION_RATE * dt);
   });
 
-  // --- URL parameter handling (Grafana deep-link integration) ---
-  applyURLParams(camera, layers);
+  // --- URL parameter handling (Grafana deep-link and share links) ---
+  // A deep link lands on a point of interest, so hold the camera on it:
+  // rotation stays off until the user presses Space, and the side panels
+  // fold away for this visit so the target is not buried.
+  if (applyURLParams({ camera, layers, entityInfo, lock, shaders, controls, viewer })) {
+    earthRotationEnabled = false;
+    controls.setCollapsed(true);
+    params.setCollapsed(true);
+    rightSidebar.setCollapsed(true);
+    locationsBar.setCollapsed(true);
+    console.log("Earth rotation: PAUSED for deep-link focus (Space to resume)");
+  }
+  share.startSync();
 
   console.log("WorldView initialized");
 }
@@ -292,15 +322,76 @@ const COUNTRY_CENTROIDS: Record<string, [number, number, number]> = {
   TH: [15.87,  100.99, 1_200_000],
 };
 
-function applyURLParams(camera: CameraController, layers: LayerManager): void {
+/** Fly to a POI and hold on it (Orbit/Tilt/North Up apply). Its authored
+ *  height is the camera altitude to arrive at, so the orbit range is
+ *  height / sin(tilt). */
+function flyToPOI(lock: TargetLock, poi: POI, opts: Parameters<TargetLock["lockPoint"]>[3] = {}): void {
+  const t = poi.target;
+  // At least 10° of tilt keeps the range finite.
+  const pitch = Math.min(-10, t.pitch ?? -35);
+  lock.lockPoint(
+    Cartesian3.fromDegrees(t.longitude, t.latitude, 0),
+    poi.key,
+    poi.name,
+    {
+      range: t.height / Math.sin(CesiumMath.toRadians(-pitch)),
+      heading: t.heading ?? 0,
+      pitch,
+      tilt: "oblique",
+      ...opts,
+    }
+  );
+  worldAudio.flyTo();
+}
+
+/** Lock the camera on a threat and ring it. */
+function lockOnThreat(
+  viewer: Viewer,
+  lock: TargetLock,
+  layers: LayerManager,
+  entity: Entity,
+  opts: Parameters<TargetLock["lock"]>[2] = {}
+): void {
+  const time = viewer.clock.currentTime;
+  // IP is the stable id share links use.
+  const ip = entity.properties?.ip?.getValue(time) ?? "target";
+  const country = entity.properties?.country?.getValue(time) ?? "";
+  const pos = entity.position?.getValue(time);
+  if (pos) {
+    const carto = Cartographic.fromCartesian(pos);
+    layers.threats.markFocus(
+      CesiumMath.toDegrees(carto.latitude),
+      CesiumMath.toDegrees(carto.longitude),
+      `${country} ${ip}`.trim(),
+      entity
+    );
+  }
+  lock.lock(entity, ip, opts);
+}
+
+interface URLContext {
+  camera: CameraController;
+  layers: LayerManager;
+  entityInfo: EntityInfoPanel;
+  lock: TargetLock;
+  shaders: ShaderManager;
+  controls: ControlsPanel;
+  viewer: Viewer;
+}
+
+/** Returns true when the URL targets a point the camera should hold on. */
+function applyURLParams(ctx: URLContext): boolean {
+  const { camera, layers, entityInfo, lock } = ctx;
   const params = new URLSearchParams(window.location.search);
+  const share = readShareParams(window.location.search);
 
   const country = params.get("country")?.toUpperCase() ?? null;
   const lat = parseFloat(params.get("lat") ?? "");
   const lon = parseFloat(params.get("lon") ?? "");
   const height = parseFloat(params.get("height") ?? "");
+  const hasPoint = !isNaN(lat) && !isNaN(lon);
 
-  // Country filter — show only threats from this country + fly to attacker
+  // Country filter — show only threats from this country
   if (country) {
     layers.threats.setCountryFilter(country);
     layers.threats.setVisible(true);
@@ -316,35 +407,101 @@ function applyURLParams(camera: CameraController, layers: LayerManager): void {
     layers.wigle.setVisible(false);
     layers.firms.setVisible(false);
     layers.acled.setVisible(false);
+  }
 
-    // Try to fly to the most recent attacker's actual location
-    const latest = layers.threats.getLatestForCountry(country);
-    if (latest) {
-      camera.flyTo({
-        longitude: latest.longitude,
-        latitude: latest.latitude,
-        height: 500_000,
-        pitch: -35,
+  // A share link carries the exact layer set and vision mode; it wins over
+  // the country preset above.
+  if (share.layers) {
+    for (const name of LAYER_NAMES) layers[name].setVisible(share.layers.includes(name));
+  }
+  if (share.mode) {
+    ctx.shaders.setMode(share.mode);
+    ctx.controls.updateActiveMode(share.mode);
+  }
+
+  const lockOpts = {
+    range: Number.isFinite(share.range) ? share.range : undefined,
+    heading: Number.isFinite(share.heading) ? share.heading : undefined,
+    tilt: share.tilt ?? undefined,
+    // A share link reproduces the view, orbit included.
+    orbit: share.track || share.poi ? share.orbit : undefined,
+  };
+
+  // 0. Share link locked on a POI
+  if (share.poi) {
+    const poi = getPOIByKey(share.poi);
+    if (poi) {
+      flyToPOI(lock, poi, {
+        ...(lockOpts.range !== undefined ? { range: lockOpts.range } : {}),
+        ...(lockOpts.heading !== undefined ? { heading: lockOpts.heading } : {}),
+        ...(lockOpts.tilt ? { tilt: lockOpts.tilt } : {}),
+        orbit: share.orbit,
       });
-      console.log(
-        `WorldView: flying to latest ${country} threat — ${latest.ip} at [${latest.latitude.toFixed(2)}, ${latest.longitude.toFixed(2)}]`
-      );
-    } else {
-      const centroid = COUNTRY_CENTROIDS[country];
-      if (centroid) {
-        camera.flyTo({ longitude: centroid[1], latitude: centroid[0], height: centroid[2] });
-      } else if (!isNaN(lat) && !isNaN(lon)) {
-        camera.flyTo({ longitude: lon, latitude: lat, height: isNaN(height) ? 2_000_000 : height });
-      }
-      console.log(`WorldView: filtering threats to country=${country} (centroid fallback)`);
+      return true;
     }
-    return;
   }
 
-  // Explicit lat/lon/height fly-to (without country filter)
-  if (!isNaN(lat) && !isNaN(lon)) {
-    camera.flyTo({ longitude: lon, latitude: lat, height: isNaN(height) ? 2_000_000 : height });
+  // 1. Share link locked on a threat
+  if (share.track) {
+    const entity = layers.threats.findByIp(share.track);
+    if (entity) {
+      lockOnThreat(ctx.viewer, lock, layers, entity, lockOpts);
+      entityInfo.show(entity);
+      console.log(`WorldView: tracking ${share.track} from share link`);
+      return true;
+    }
+    console.log(`WorldView: ${share.track} is no longer in the threat feed`);
   }
+
+  // 2. Grafana marker: the exact point the user clicked
+  // 3. Country only: its most recent attacker
+  const point = hasPoint
+    ? { latitude: lat, longitude: lon }
+    : country && !share.cam
+      ? layers.threats.getLatestForCountry(country)
+      : null;
+  if (point) {
+    const target = layers.threats.findNearest(point.latitude, point.longitude);
+    if (target) {
+      lockOnThreat(ctx.viewer, lock, layers, target, {
+        range: isNaN(height) ? lockOpts.range : height,
+        ...(lockOpts.heading !== undefined ? { heading: lockOpts.heading } : {}),
+        ...(lockOpts.tilt ? { tilt: lockOpts.tilt } : {}),
+      });
+      entityInfo.show(target);
+    } else {
+      layers.threats.markFocus(point.latitude, point.longitude, `${country ?? ""} threat origin`.trim());
+      camera.flyToPoint(point.longitude, point.latitude, isNaN(height) ? 800_000 : height);
+    }
+    console.log(
+      `WorldView: focusing ${country ?? ""} threat at [${point.latitude.toFixed(2)}, ${point.longitude.toFixed(2)}]`
+    );
+    return true;
+  }
+
+  // 4. Share link with a free camera
+  if (share.cam) {
+    const c = share.cam;
+    ctx.viewer.camera.setView({
+      destination: Cartesian3.fromDegrees(c.lon, c.lat, c.height),
+      orientation: {
+        heading: CesiumMath.toRadians(c.heading),
+        pitch: CesiumMath.toRadians(c.pitch),
+        roll: 0,
+      },
+    });
+    return true;
+  }
+
+  if (country) {
+    const centroid = COUNTRY_CENTROIDS[country];
+    if (centroid) {
+      camera.flyTo({ longitude: centroid[1], latitude: centroid[0], height: centroid[2] });
+    }
+    console.log(`WorldView: filtering threats to country=${country} (centroid fallback)`);
+    return !!centroid;
+  }
+  return false;
 }
 
 init().catch((e) => console.error("WorldView init failed:", e));

@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import cesium from "vite-plugin-cesium-build";
 import { resolve } from "path";
+import { ROUTES } from "./proxy-routes.mjs";
 
 /**
  * WiGLE proxy as a middleware (replaces the raw proxy entry) so the server can
@@ -138,199 +139,58 @@ export default defineConfig(({ mode }) => {
     server: {
       host: true,
       port: 5173,
-      allowedHosts: ["geo.aicortex.cloud"],
+      // Hostnames the dev server will answer to when reverse-proxied. One
+      // deployment's domain does not belong in a package other people run, so
+      // this is configuration: DEV_ALLOWED_HOSTS="globe.example.com,foo.test".
+      allowedHosts: (env.DEV_ALLOWED_HOSTS || "")
+        .split(",").map((h) => h.trim()).filter(Boolean),
       watch: {
         usePolling: true,
         interval: 1000,
         ignored: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
       },
-      proxy: {
-        "/api/planes": {
-          target: "https://api.airplanes.live",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/planes/, ""),
-        },
-        "/api/cctv": {
-          target: "https://webcams.nyctmc.org",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/cctv/, ""),
-        },
-        "/api/caltrans": {
-          target: "https://cwwp2.dot.ca.gov",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/caltrans/, "/data"),
-          configure: (proxy) => {
-            proxy.on("proxyReq", (proxyReq) => {
-              for (const h of proxyReq.getHeaderNames()) {
-                const lower = h.toLowerCase();
-                if (lower.startsWith("cf-") || lower.startsWith("x-forwarded") ||
-                    lower === "origin" || lower === "referer" || lower === "cookie" ||
-                    lower.startsWith("sec-fetch")) {
-                  proxyReq.removeHeader(h);
-                }
-              }
-            });
-          },
-        },
-        "/api/fl511": {
-          target: "https://fl511.com",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/fl511/, ""),
-          configure: (proxy) => {
-            proxy.on("proxyReq", (proxyReq) => {
-              for (const h of proxyReq.getHeaderNames()) {
-                const lower = h.toLowerCase();
-                if (lower.startsWith("cf-") || lower.startsWith("x-forwarded") ||
-                    lower === "origin" || lower === "referer" || lower === "cookie" ||
-                    lower.startsWith("sec-fetch")) {
-                  proxyReq.removeHeader(h);
-                }
-              }
-            });
-          },
-        },
-
-        "/api/txdot": {
-          target: "https://its.txdot.gov",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/txdot/, "/its"),
-          configure: (proxy) => {
-            proxy.on("proxyReq", (proxyReq) => {
-              for (const h of proxyReq.getHeaderNames()) {
-                const lower = h.toLowerCase();
-                if (lower.startsWith("cf-") || lower.startsWith("x-forwarded") ||
-                    lower === "origin" || lower === "referer" || lower === "cookie" ||
-                    lower.startsWith("sec-fetch")) {
-                  proxyReq.removeHeader(h);
-                }
-              }
-            });
-          },
-        },
-        "/api/ilcams": {
-          target: "https://services2.arcgis.com",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/ilcams/, ""),
-          configure: (proxy) => {
-            proxy.on("proxyReq", (proxyReq) => {
-              for (const h of proxyReq.getHeaderNames()) {
-                const lower = h.toLowerCase();
-                if (lower.startsWith("cf-") || lower.startsWith("x-forwarded") ||
-                    lower === "origin" || lower === "referer" || lower === "cookie" ||
-                    lower.startsWith("sec-fetch")) {
-                  proxyReq.removeHeader(h);
-                }
-              }
-            });
-          },
-        },
-        "/api/dccams": {
-          target: "https://maps2.dcgis.dc.gov",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/dccams/, ""),
-          configure: (proxy) => {
-            proxy.on("proxyReq", (proxyReq) => {
-              for (const h of proxyReq.getHeaderNames()) {
-                const lower = h.toLowerCase();
-                if (lower.startsWith("cf-") || lower.startsWith("x-forwarded") ||
-                    lower === "origin" || lower === "referer" || lower === "cookie" ||
-                    lower.startsWith("sec-fetch")) {
-                  proxyReq.removeHeader(h);
-                }
-              }
-            });
-          },
-        },
-        "/api/ga511": {
-          target: "https://511ga.org",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/ga511/, ""),
-          configure: (proxy) => {
-            proxy.on("proxyReq", (proxyReq) => {
-              for (const h of proxyReq.getHeaderNames()) {
-                const lower = h.toLowerCase();
-                if (lower.startsWith("cf-") || lower.startsWith("x-forwarded") ||
-                    lower === "origin" || lower === "referer" || lower === "cookie" ||
-                    lower.startsWith("sec-fetch")) {
-                  proxyReq.removeHeader(h);
-                }
-              }
-            });
-          },
-        },
-
-        "/api/overpass": {
-          target: "https://overpass-api.de",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/overpass/, ""),
-        },
-        // /api/wigle is handled by the wigleProxy() middleware above
-        // (shared rate budget + cache + server-side auth).
-        "/api/ais": {
-          target: "http://backend-pod:9100",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/ais/, ""),
-        },
-        "/api/threats/": {
-          target: "http://metrics-pod:8428",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/threats/, "/api/v1"),
-        },
-        "/api/osint/ipinfo/": {
-          target: "https://ipinfo.io",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/osint\/ipinfo/, ""),
-        },
-        "/api/osint/greynoise/": {
-          target: "https://api.greynoise.io",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/osint\/greynoise/, "/v3/community"),
-        },
-        "/api/osint/rdns": {
-          target: "https://cloudflare-dns.com",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/osint\/rdns/, "/dns-query"),
-          configure: (proxy) => {
-            proxy.on("proxyReq", (proxyReq) => {
-              proxyReq.setHeader("Accept", "application/dns-json");
-            });
-          },
-        },
-        "/api/horizons": {
-          target: "https://ssd.jpl.nasa.gov",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/horizons/, "/api/horizons.api"),
-          configure: (proxy) => {
-            proxy.on("proxyReq", (proxyReq) => {
-              for (const h of proxyReq.getHeaderNames()) {
-                const lower = h.toLowerCase();
-                if (lower.startsWith("cf-") || lower.startsWith("x-forwarded") ||
-                    lower === "origin" || lower === "referer" || lower === "cookie" ||
-                    lower.startsWith("sec-fetch")) {
-                  proxyReq.removeHeader(h);
-                }
-              }
-            });
-          },
-        },
-        "/api/firms": {
-          target: "https://firms.modaps.eosdis.nasa.gov",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/firms/, ""),
-          configure: (proxy) => {
-            proxy.on("proxyReq", (proxyReq) => {
-              for (const h of proxyReq.getHeaderNames()) {
-                const lower = h.toLowerCase();
-                if (lower.startsWith("cf-") || lower.startsWith("x-forwarded") ||
-                    lower === "origin" || lower === "referer" || lower === "cookie" ||
-                    lower.startsWith("sec-fetch")) {
-                  proxyReq.removeHeader(h);
-                }
-              }
-            });
-          },
-        },
-      },
+      // GENERATED FROM proxy-routes.mjs — do not hand-edit entries here.
+      // This block and nginx.conf used to be maintained independently, which is
+      // how the container ended up serving a third of the routes the dev server
+      // did. Both now read the same table: add a route there and both get it.
+      proxy: Object.fromEntries(
+        ROUTES.map((r: any) => {
+          const prefix = r.path.replace(/\/$/, "");
+          return [
+            r.path,
+            {
+              // Companion hostnames differ per deployment; .env wins.
+              target: (r.env && env[r.env]) || r.target,
+              changeOrigin: true,
+              // An empty result would be an invalid request line, so a bare
+              // prefix maps to "/" — matching the nginx rule for the same route.
+              rewrite: (path: string) =>
+                path.replace(new RegExp(`^${prefix}`), r.rewriteTo || "") || "/",
+              configure: (proxy: any) => {
+                proxy.on("proxyReq", (proxyReq: any) => {
+                  // Several public endpoints 403 when they can tell the request
+                  // arrived via a proxy or CDN.
+                  if (r.strip) {
+                    for (const h of proxyReq.getHeaderNames()) {
+                      const l = h.toLowerCase();
+                      if (
+                        l.startsWith("cf-") || l.startsWith("x-forwarded") ||
+                        l === "origin" || l === "referer" || l === "cookie" ||
+                        l.startsWith("sec-fetch")
+                      ) {
+                        proxyReq.removeHeader(h);
+                      }
+                    }
+                  }
+                  for (const [k, v] of Object.entries(r.headers || {})) {
+                    proxyReq.setHeader(k, v as string);
+                  }
+                });
+              },
+            },
+          ];
+        })
+      ),
     },
   };
 });

@@ -11,12 +11,11 @@ import {
   HorizontalOrigin,
 } from "cesium";
 import { FlightState, fetchFlightStates } from "./opensky-api";
+import { fetchAircraftNear } from "./adsb-api";
+import { aircraftIcon, classifyAircraft, northAxis } from "@/globe/icons";
 
-// Top-down airplane silhouette SVG (pointing up / north)
-const AIRPLANE_SVG = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <path d="M16 2 L14 12 L4 16 L14 15 L14 26 L10 28 L14 27.5 L16 30 L18 27.5 L22 28 L18 26 L18 15 L28 16 L18 12 Z"
-    fill="#00ff41" stroke="#003300" stroke-width="0.5"/>
-</svg>`)}`;
+// Civil traffic tint (HUD green) over the white class silhouettes.
+const FLIGHT_TINT = Color.fromCssColorString("#3dff7a");
 
 export class FlightLayer {
   private entities = new Map<string, Entity>();
@@ -66,26 +65,34 @@ export class FlightLayer {
       // Cap radius to 150nm to reduce data and avoid rate limits
       const radiusNm = Math.min(150, Math.max(25, alt / 10000));
 
-      const flights = await fetchFlightStates(lat, lon, radiusNm);
+      // adsb.lol first: it carries the aircraft type that picks the icon.
+      // OpenSky (untyped, category only) keeps the layer alive if it fails.
+      let flights: FlightState[];
+      try {
+        flights = await fetchAircraftNear(lat, lon, radiusNm);
+      } catch (e) {
+        console.warn("adsb.lol unavailable, falling back to OpenSky:", e);
+        flights = await fetchFlightStates(lat, lon, radiusNm);
+      }
       const seen = new Set<string>();
 
       for (const flight of flights) {
         seen.add(flight.icao24);
 
         const existing = this.entities.get(flight.icao24);
+        const position = Cartesian3.fromDegrees(
+          flight.longitude,
+          flight.latitude,
+          flight.altitude
+        );
         if (existing) {
-          (existing.position as any).setValue(
-            Cartesian3.fromDegrees(
-              flight.longitude,
-              flight.latitude,
-              flight.altitude
-            )
-          );
-          // Update heading rotation
+          (existing.position as any).setValue(position);
+          // Update heading rotation, relative to local north
           if (existing.billboard) {
             (existing.billboard.rotation as any).setValue(
               CesiumMath.toRadians(-(flight.heading || 0))
             );
+            (existing.billboard.alignedAxis as any).setValue(northAxis(position));
           }
           // Update label with current flight level
           const flLabel = flight.callsign
@@ -113,17 +120,16 @@ export class FlightLayer {
 
           const entity = this.viewer.entities.add({
             name: label + typeTag,
-            position: Cartesian3.fromDegrees(
-              flight.longitude,
-              flight.latitude,
-              flight.altitude
-            ),
+            position,
             billboard: {
-              image: AIRPLANE_SVG,
-              width: 20,
-              height: 20,
+              image: aircraftIcon(
+                classifyAircraft({ typeCode: flight.aircraftType, category: flight.category })
+              ),
+              color: FLIGHT_TINT,
+              width: 22,
+              height: 22,
               rotation: CesiumMath.toRadians(-(flight.heading || 0)),
-              alignedAxis: Cartesian3.UNIT_Z,
+              alignedAxis: northAxis(position),
               verticalOrigin: VerticalOrigin.CENTER,
               horizontalOrigin: HorizontalOrigin.CENTER,
               scaleByDistance: new NearFarScalar(1e5, 1.5, 5e6, 0.3),

@@ -14,7 +14,7 @@ const store = {
 };
 
 const MAG_STEPS = [0, 2.5, 4, 5, 6];
-const FLIGHT_MODES = ["all", "civil", "mil"] as const;
+const FLIGHT_MODES = ["off", "all", "civil", "mil"] as const;
 
 export class HUDDock {
   private dock: HTMLDivElement;
@@ -36,7 +36,56 @@ export class HUDDock {
     });
     this.build();
     document.body.appendChild(this.dock);
+
+    // Clean view hides every panel, including this dock, so it needs its own
+    // way back that is visible without knowing the ` shortcut. Not a
+    // .wv-hud-panel, so the cinematic hide-all leaves it alone.
+    this.restoreBtn = document.createElement("button");
+    this.restoreBtn.textContent = "⛶ SHOW CONTROLS";
+    this.restoreBtn.title = "Show controls (`)";
+    Object.assign(this.restoreBtn.style, {
+      position: "absolute",
+      bottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
+      left: "50%",
+      transform: "translateX(-50%)",
+      display: "none",
+      background: "rgba(0,0,0,0.6)",
+      border: "1px solid #1a3a1a",
+      color: "#33ff33",
+      fontFamily: '"Courier New", monospace',
+      fontSize: "10px",
+      letterSpacing: "1px",
+      padding: "4px 10px",
+      borderRadius: "3px",
+      cursor: "pointer",
+      opacity: "0.45",
+      zIndex: "1001",
+      transition: "opacity 200ms ease",
+    });
+    this.restoreBtn.addEventListener("mouseenter", () => (this.restoreBtn.style.opacity = "1"));
+    this.restoreBtn.addEventListener("mouseleave", () => (this.restoreBtn.style.opacity = "0.45"));
+    this.restoreBtn.addEventListener("click", () => {
+      worldAudio.ui();
+      if (this.hidden) this.toggleHideAll();
+    });
+    document.body.appendChild(this.restoreBtn);
+
+    // The peeking edge of the hidden dock restores too. Capture phase, so
+    // the CLEAN click that just hid the dock never reaches this as "hidden",
+    // and a click on the peek restores without also pressing the button
+    // under it.
+    this.dock.addEventListener(
+      "click",
+      (e) => {
+        if (!this.hidden) return;
+        e.stopPropagation();
+        this.toggleHideAll();
+      },
+      true
+    );
   }
+
+  private restoreBtn: HTMLButtonElement;
 
   setOnHideAll(fn: (hidden: boolean) => void): void { this.onHideAll = fn; }
 
@@ -133,11 +182,11 @@ export class HUDDock {
     ));
 
     // ── Flight class filter ─────────────────────────────────────────────
-    const savedFlight = store.get<typeof FLIGHT_MODES[number]>("wv_flight_mode", "all");
+    const savedFlight = store.get<typeof FLIGHT_MODES[number]>("wv_flight_mode", "off");
     this.applyFlightMode(savedFlight);
     this.dock.appendChild(this.segmented(
       "FLIGHTS",
-      [{ value: "all" as const, text: "ALL" }, { value: "civil" as const, text: "CIVIL" },
+      [{ value: "off" as const, text: "OFF" }, { value: "all" as const, text: "ALL" }, { value: "civil" as const, text: "CIVIL" },
        { value: "mil" as const, text: "MIL" }],
       savedFlight,
       (v) => { store.set("wv_flight_mode", v); this.applyFlightMode(v); },
@@ -157,12 +206,15 @@ export class HUDDock {
     // ── Cinematic hide-all ──────────────────────────────────────────────
     const hideGroup = this.group("VIEW");
     hideGroup.appendChild(this.btn("⛶ CLEAN", () => this.toggleHideAll()));
+    hideGroup.appendChild(this.btn("⧉ SHARE", () => this.onShare()));
     this.dock.appendChild(hideGroup);
   }
 
   private applyFlightMode(mode: typeof FLIGHT_MODES[number]): void {
     // mil layer is a separate layer; civil = flights on, military off.
-    if (mode === "all") { this.layers.flights.setVisible(true); this.layers.military.setVisible(true); }
+    // Default "off" keeps both layers unloaded until chosen (lazy loading).
+    if (mode === "off") { this.layers.flights.setVisible(false); this.layers.military.setVisible(false); }
+    else if (mode === "all") { this.layers.flights.setVisible(true); this.layers.military.setVisible(true); }
     else if (mode === "civil") { this.layers.flights.setVisible(true); this.layers.military.setVisible(false); }
     else { this.layers.flights.setVisible(false); this.layers.military.setVisible(true); }
   }
@@ -175,7 +227,11 @@ export class HUDDock {
       ? "translateX(-50%) translateY(calc(100% - 6px))"
       : "translateX(-50%)";
     this.dock.style.opacity = this.hidden ? "0.15" : "1";
+    this.restoreBtn.style.display = this.hidden ? "block" : "none";
   }
 
   get isHidden(): boolean { return this.hidden; }
+
+  private onShare: () => void = () => {};
+  setOnShare(handler: () => void): void { this.onShare = handler; }
 }

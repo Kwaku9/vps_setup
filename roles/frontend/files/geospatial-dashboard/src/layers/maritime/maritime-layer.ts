@@ -13,18 +13,12 @@ import {
 } from "cesium";
 import { VesselState, BoundingBox, fetchVessels } from "./maritime-api";
 import { SCALE } from "@/layers/scale-constants";
+import { classifyVessel, northAxis, vesselIcon, vesselPixelSize } from "@/globe/icons";
 
-function shipSvg(hexColor: string): string {
-  return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-    <path d="M16 2 L12 10 L10 10 L8 24 L12 28 L16 30 L20 28 L24 24 L22 10 L20 10 Z"
-      fill="${hexColor}" stroke="#111" stroke-width="0.7"/>
-  </svg>`)}`;
-}
-
-const SHIP_SVGS: Record<string, string> = {};
-function getShipSvg(category: string, hexColor: string): string {
-  if (!SHIP_SVGS[category]) SHIP_SVGS[category] = shipSvg(hexColor);
-  return SHIP_SVGS[category];
+/** Direction to point a vessel: true heading, or course over ground when
+ *  AIS reports heading as unavailable (511). */
+function vesselCourse(v: VesselState): number {
+  return v.heading != null && v.heading >= 0 && v.heading < 360 ? v.heading : v.cog || 0;
 }
 
 const CATEGORY_COLORS: Record<string, Color> = {
@@ -87,14 +81,14 @@ export class MaritimeLayer {
         const speedLabel = v.sog > 0.5 ? ` ${v.sog.toFixed(1)}kn` : "";
 
         const existing = this.entities.get(v.mmsi);
+        const position = Cartesian3.fromDegrees(v.lon, v.lat, 0);
         if (existing) {
-          (existing.position as any).setValue(
-            Cartesian3.fromDegrees(v.lon, v.lat, 0)
-          );
+          (existing.position as any).setValue(position);
           if (existing.billboard) {
             (existing.billboard.rotation as any).setValue(
-              CesiumMath.toRadians(-(v.heading || 0))
+              CesiumMath.toRadians(-vesselCourse(v))
             );
+            (existing.billboard.alignedAxis as any).setValue(northAxis(position));
           }
           if (existing.label) {
             (existing.label.text as any).setValue(label + speedLabel);
@@ -108,13 +102,14 @@ export class MaritimeLayer {
         } else {
           const entity = this.viewer.entities.add({
             name: label,
-            position: Cartesian3.fromDegrees(v.lon, v.lat, 0),
+            position,
             billboard: {
-              image: getShipSvg(v.category, v.color),
-              width: 18,
-              height: 18,
-              rotation: CesiumMath.toRadians(-(v.heading || 0)),
-              alignedAxis: Cartesian3.UNIT_Z,
+              image: vesselIcon(classifyVessel(v.shipType, v.category)),
+              color: Color.fromCssColorString(v.color),
+              width: vesselPixelSize(v.length),
+              height: vesselPixelSize(v.length),
+              rotation: CesiumMath.toRadians(-vesselCourse(v)),
+              alignedAxis: northAxis(position),
               verticalOrigin: VerticalOrigin.CENTER,
               horizontalOrigin: HorizontalOrigin.CENTER,
               scaleByDistance: SCALE.maritime.point,

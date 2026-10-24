@@ -3,6 +3,8 @@ export type CollapseDirection = 'left' | 'right' | 'up';
 export interface PanelToggleState {
   collapsed: boolean;
   toggle(): void;
+  /** Set without persisting, e.g. focus mode clearing the view. */
+  setCollapsed(collapsed: boolean): void;
 }
 
 /**
@@ -13,7 +15,8 @@ export interface PanelToggleState {
 export function makeRetractable(
   container: HTMLDivElement,
   direction: CollapseDirection,
-  persistKey?: string
+  persistKey?: string,
+  defaultCollapsed = false
 ): { wrapper: HTMLDivElement; state: PanelToggleState } {
   const chars = getChars(direction);
 
@@ -110,20 +113,29 @@ export function makeRetractable(
         catch { /* private mode */ }
       }
     },
+    setCollapsed(collapsed: boolean) {
+      if (this.collapsed === collapsed) return;
+      this.collapsed = collapsed;
+      apply(collapsed);
+    },
   };
 
-  // Restore prior collapse state (persisted per panel across reloads).
+  // Restore prior collapse state (persisted per panel across reloads);
+  // panels with no saved choice start in their default state.
+  let startCollapsed = defaultCollapsed;
   if (persistKey) {
     try {
-      if (localStorage.getItem(persistKey) === '1') {
-        state.collapsed = true;
-        // Skip the 200ms slide on initial restore.
-        const prev = container.style.transition;
-        container.style.transition = 'none';
-        apply(true);
-        requestAnimationFrame(() => { container.style.transition = prev; });
-      }
+      const saved = localStorage.getItem(persistKey);
+      if (saved !== null) startCollapsed = saved === '1';
     } catch { /* private mode */ }
+  }
+  if (startCollapsed) {
+    state.collapsed = true;
+    // Skip the 200ms slide on initial restore.
+    const prev = container.style.transition;
+    container.style.transition = 'none';
+    apply(true);
+    requestAnimationFrame(() => { container.style.transition = prev; });
   }
 
   btn.addEventListener('click', () => state.toggle());
