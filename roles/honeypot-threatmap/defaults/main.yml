@@ -54,6 +54,10 @@ honeypot_threatmap:
 
   honeypot:
     container_name: honeypot
+    # Each service gets its OWN pod: pod members share a network namespace, and the honeypot is hostile-facing
+    # while threat-map holds the CrowdSec bouncer key and the reports token. A pod member's own name does not
+    # resolve, so Traefik addresses the pod name (with the container's own port).
+    pod_name: honeypot-pod
     image: localhost/honeypot:latest
     memory: 256m
     port: 8099
@@ -103,6 +107,7 @@ honeypot_threatmap:
 
   threat_map:
     container_name: threat-map
+    pod_name: threat-map-pod
     image: localhost/threat-map:latest
     memory: 256m
     port: 8097
