@@ -65,6 +65,11 @@ boot_services:
     # needs its OWN unit: podman-prune-safe protects a pod member only if the pod has a unit, and a
     # reboot restarts only registered pods. Ordered after the ingress pod like the container it replaces.
     - { name: web-public-pod,            enabled: true,  depends_on: [security-infra-pod] }
+    # honeypot-pod and threat-map-pod (phase 2, docs/superpowers/plans/2026-10-25-...): one pod per service, each
+    # with its own unit so a reboot and podman-prune-safe both keep it. security-infra-pod is Traefik + CrowdSec,
+    # the two things these depend on (threat-map streams CrowdSec decisions).
+    - { name: honeypot-pod,              enabled: true,  depends_on: [security-infra-pod] }
+    - { name: threat-map-pod,            enabled: true,  depends_on: [security-infra-pod] }
     # security-pod DOES NOT EXIST (Trivy/Fail2ban/Tetragon intentionally down, pod
     # removed). Generating a unit for a missing pod means a guaranteed boot-time
     # failure for something that can never start. Same phantom removed from the
@@ -140,8 +145,10 @@ boot_services:
     # honeypot (apex sink) + threat-map (threat. viewer) — hand-deployed until
     # 2026-07-03, so they had no OpenRC unit and vanished on reboot / prune. Both
     # reachable only via traefik; threat-map also streams crowdsec decisions.
-    - { name: honeypot,         enabled: true, depends_on: [traefik] }
-    - { name: threat-map,       enabled: true, depends_on: [traefik, crowdsec] }
+    # RETIRED as standalone units: both live in their own pods (units above). enabled: false makes the role remove
+    # the init script, runlevel link and OpenRC runtime state.
+    - { name: honeypot,         enabled: false, depends_on: [traefik] }
+    - { name: threat-map,       enabled: false, depends_on: [traefik, crowdsec] }
     # dsm5.aicortex.cloud — static study tool; same shape as decks/lab (standalone
     # nginx behind traefik). Wired into the play 2026-08-12 but missed here.
     - { name: dsm5-nginx,       enabled: true, depends_on: [traefik] }
