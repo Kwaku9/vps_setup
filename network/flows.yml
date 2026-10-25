@@ -12,6 +12,8 @@ flows:
 
   # --- edge (Traefik) to everything it routes to ---
   - {from: edge, to: web, ports: [80], reason: "public static sites"}
+  - {from: edge, to: web, to_pod: honeypot-pod, ports: [8099], reason: "honeypot bait paths and burned canaries on the apex", unverified: true}
+  - {from: edge, to: observe, to_pod: threat-map-pod, ports: [8097], reason: "threat.<domain> live threat map", unverified: true}
   - {from: edge, to: frontend, ports: [80, 5173, 8080, 8081], reason: "apps behind Cloudflare Access", unverified: true}
   - {from: edge, to: svc, to_pod: ai-gateway-pod, ports: [4000], reason: "litellm host route"}
   - {from: edge, to: identity, ports: [9000], reason: "Authentik forward-auth"}
@@ -59,6 +61,8 @@ flows:
   # --- observe ---
   - {from: observe, to: data, to_pod: shared-db-pod, ports: [5432], reason: "Grafana grafana_ro datasource"}
   - {from: observe, to: internet, ports: [443], reason: "alert delivery"}
+  - {from: observe, from_pod: threat-map-pod, to: edge, to_pod: edge-pod, ports: [8180], reason: "threat-map streams CrowdSec LAPI decisions", unverified: true}
+  - {from: observe, from_pod: threat-map-pod, to: agent, to_pod: reports-pod, ports: [8765], reason: "threat-map to grafana-reports render engine", unverified: true}
 
   # --- scrape ---
   - {from: scrape, to: internet, ports: [80, 443], reason: "crawling (via Squid)"}

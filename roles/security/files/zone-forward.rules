@@ -70,6 +70,8 @@ iptables -A ZONE_FWD -s 10.89.128.2/32 -d 10.89.128.10/32 -p tcp --dport 443 -m 
 iptables -A ZONE_FWD -s 10.89.128.0/29 -p tcp --dport 7844 -m comment --comment "tunnel>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.0/29 -p udp --dport 7844 -m comment --comment "tunnel>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.16/28 -p tcp --dport 80 -m comment --comment "edge>web" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.19/32 -p tcp --dport 8099 -m comment --comment "edge>honeypot-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.101/32 -p tcp --dport 8097 -m comment --comment "edge>threat-map-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.32/28 -p tcp -m multiport --dports 80,5173,8080,8081 -m comment --comment "edge>frontend" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.50/32 -p tcp --dport 4000 -m comment --comment "edge>ai-gateway-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.80/28 -p tcp --dport 9000 -m comment --comment "edge>identity" -j ACCEPT
@@ -102,6 +104,8 @@ iptables -A ZONE_FWD -s 10.89.128.128/28 -d 10.89.128.66/32 -p tcp --dport 5432 
 iptables -A ZONE_FWD -s 10.89.128.128/28 -p tcp --dport 443 -m comment --comment "fintech>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.96/28 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "observe>shared-db-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.96/28 -p tcp --dport 443 -m comment --comment "observe>internet" -j ZONE_PUBLIC
+iptables -A ZONE_FWD -s 10.89.128.101/32 -d 10.89.128.10/32 -p tcp --dport 8180 -m comment --comment "threat-map-pod>edge-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.101/32 -d 10.89.128.117/32 -p tcp --dport 8765 -m comment --comment "threat-map-pod>reports-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.144/28 -p tcp -m multiport --dports 80,443 -m comment --comment "scrape>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.98/32 -p tcp --dport 8428 -m comment --comment "edge>metrics-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.98/32 -p tcp --dport 8428 -m comment --comment "frontend>metrics-pod" -j ACCEPT

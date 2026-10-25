@@ -43,7 +43,7 @@ zones:
     purpose: anonymous and untrusted; reachable, reaches nothing
     pods:
       web-public-pod: {ip: 10.89.128.18, replaces: [decks-nginx, dsm5-nginx, lab-nginx, legal-nginx]}
-      honeypot-pod: {ip: 10.89.128.19, replaces: [honeypot, threat-map]}
+      honeypot-pod: {ip: 10.89.128.19, replaces: [honeypot]}
   frontend:
     name: net-frontend
     bridge: br-frontend
@@ -89,6 +89,9 @@ zones:
       metrics-pod: {ip: 10.89.128.98, replaces: [metrics-pod, victoriametrics, vmalert, grafana, renderer]}
       logs-pod: {ip: 10.89.128.99, replaces: [logs-pod, loki, alloy]}
       tempo-pod: {ip: 10.89.128.100, replaces: [tempo-pod, tempo]}
+      # threat-map reads Loki, VM, CrowdSec and grafana-reports and holds their credentials, so it is NOT in the
+      # honeypot's pod (shared netns) and not in the web zone (which reaches nothing).
+      threat-map-pod: {ip: 10.89.128.101, replaces: [threat-map]}
   agent:
     name: net-agent
     bridge: br-agent
