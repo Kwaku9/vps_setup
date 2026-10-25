@@ -104,10 +104,10 @@ else
     fail A2 "$ctr pod='${ctr_pod:-none}' expected ${pod_id:0:12}"
 fi
 
-if podman exec traefik wget -q -T 5 -O - "http://$pod:$port/" 2>/dev/null | grep -qF -- "$marker"; then
-    pass A3 "http://$pod:$port/ serves the marker from the traefik container"
+if podman exec traefik wget -q -T 5 -U check-pod-wrap-probe -O - "http://$pod:$port$path" 2>/dev/null | grep -qF -- "$marker"; then
+    pass A3 "http://$pod:$port$path serves the marker from the traefik container"
 else
-    fail A3 "http://$pod:$port/ did not serve the marker from the traefik container"
+    fail A3 "http://$pod:$port$path did not serve the marker from the traefik container"
 fi
 
 if e2e_ok "$host"; then
