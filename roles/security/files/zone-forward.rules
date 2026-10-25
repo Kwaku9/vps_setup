@@ -65,6 +65,20 @@ iptables -A FORWARD -d 10.89.128.168/29 ! -o br-mail -j ZONE_DENY
 iptables -A FORWARD -s 10.89.128.0/24 -j ZONE_FWD
 iptables -A FORWARD -d 10.89.128.0/24 -j ZONE_FWD
 # zones whose traffic into legacy networks is dropped even in audit
+# traffic inside a zone is free (spec). Same-bridge frames reach FORWARD once br_netfilter is on (the capture needs it), so each zone accepts its own addresses before any flow, catch-all or audit
+iptables -A ZONE_FWD -s 10.89.128.0/29 -d 10.89.128.0/29 -m comment --comment "same-zone" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.8/29 -m comment --comment "same-zone" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.16/28 -d 10.89.128.16/28 -m comment --comment "same-zone" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.32/28 -m comment --comment "same-zone" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.48/28 -d 10.89.128.48/28 -m comment --comment "same-zone" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.64/28 -d 10.89.128.64/28 -m comment --comment "same-zone" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.80/28 -d 10.89.128.80/28 -m comment --comment "same-zone" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.96/28 -d 10.89.128.96/28 -m comment --comment "same-zone" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.112/28 -d 10.89.128.112/28 -m comment --comment "same-zone" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.128/28 -d 10.89.128.128/28 -m comment --comment "same-zone" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.144/28 -d 10.89.128.144/28 -m comment --comment "same-zone" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.160/29 -m comment --comment "same-zone" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.168/29 -d 10.89.128.168/29 -m comment --comment "same-zone" -j ACCEPT
 # allowed flows
 iptables -A ZONE_FWD -s 10.89.128.2/32 -d 10.89.128.10/32 -p tcp --dport 443 -m comment --comment "cloudflared-pod>edge-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.0/29 -p tcp --dport 7844 -m comment --comment "tunnel>internet" -j ZONE_PUBLIC
@@ -104,6 +118,8 @@ iptables -A ZONE_FWD -s 10.89.128.128/28 -d 10.89.128.66/32 -p tcp --dport 5432 
 iptables -A ZONE_FWD -s 10.89.128.128/28 -p tcp --dport 443 -m comment --comment "fintech>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.96/28 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "observe>shared-db-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.96/28 -p tcp --dport 443 -m comment --comment "observe>internet" -j ZONE_PUBLIC
+iptables -A ZONE_FWD -s 10.89.128.98/32 -d 10.89.128.19/32 -p tcp --dport 8099 -m comment --comment "metrics-pod>honeypot-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.99/32 -d 10.89.128.19/32 -p tcp --dport 8099 -m comment --comment "logs-pod>honeypot-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.101/32 -d 10.89.128.10/32 -p tcp --dport 8180 -m comment --comment "threat-map-pod>edge-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.101/32 -d 10.89.128.117/32 -p tcp --dport 8765 -m comment --comment "threat-map-pod>reports-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.144/28 -p tcp -m multiport --dports 80,443 -m comment --comment "scrape>internet" -j ZONE_PUBLIC
