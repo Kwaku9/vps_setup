@@ -64,8 +64,12 @@ e2e_ok() { [ "$(e2e "$1")" = "200 1" ]; }
 restart_pod() { podman pod exists "$pod" && podman pod start "$pod" >/dev/null 2>&1; }
 
 # ---- controls --------------------------------------------------------------------------------
-# K1: the container's own name must not resolve from the traefik container.
-if podman exec traefik nslookup "$ctr" >/dev/null 2>&1; then
+# K1: the container's own name must not resolve from the traefik container. A missing nslookup fails the
+# same way as NXDOMAIN, so first require that a known pod name DOES resolve; otherwise K1 would pass
+# vacuously and prove nothing.
+if ! podman exec traefik nslookup security-infra-pod >/dev/null 2>&1; then
+    ctl_broken K1 "nslookup cannot resolve the known pod name security-infra-pod from traefik; K1 would pass vacuously"
+elif podman exec traefik nslookup "$ctr" >/dev/null 2>&1; then
     ctl_broken K1 "container name '$ctr' resolves from traefik (not behind a pod, or the probe cannot see DNS failure)"
 else
     ctl_ok K1 "container name '$ctr' does not resolve from traefik"
