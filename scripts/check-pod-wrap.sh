@@ -7,6 +7,12 @@
 #       --host decks.aicortex.cloud --marker "Decks · aicortex" \
 #       --route-file /opt/compose/traefik/dynamic/decks.yml [--with-outage]
 #
+# Optional, for pods whose service is not on :80 or whose route file holds several services:
+#   --port N       the container's own port (default 80); A3 dials it, A5 requires the route to use it
+#   --service S    the Traefik service name whose backend URL A5 checks (default: the first url: in the file)
+#   --path P       the request path for A4/K2 (default /); use a bait path for a honeypot
+#   Requests carry User-Agent check-pod-wrap-probe so they can be filtered out of honeypot evidence.
+#
 # Assertions (PASS/FAIL):
 #   A1 the pod exists and is Running          A2 the container is a member of that pod
 #   A3 the pod NAME serves the marker, from the traefik container (what Traefik will dial)
@@ -27,7 +33,7 @@
 #       2 usage error
 set -u
 
-pod= ctr= host= marker= route_file= outage=0
+pod= ctr= host= marker= route_file= outage=0 port=80 service= path=/
 while [ $# -gt 0 ]; do
     case "$1" in
         --pod) pod=$2; shift 2 ;;
@@ -36,6 +42,9 @@ while [ $# -gt 0 ]; do
         --marker) marker=$2; shift 2 ;;
         --route-file) route_file=$2; shift 2 ;;
         --with-outage) outage=1; shift ;;
+        --port) port=$2; shift 2 ;;
+        --service) service=$2; shift 2 ;;
+        --path) path=$2; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -54,7 +63,7 @@ ctl_broken() { echo "CONTROL-BROKEN $1  $2"; broken=$((broken + 1)); }
 e2e() {
     local h=$1 body code found=0
     body=$(mktemp)
-    code=$(curl -sk -m 10 --resolve "$h:443:127.0.0.1" -o "$body" -w '%{http_code}' "https://$h/" 2>/dev/null)
+    code=$(curl -sk -m 10 -A check-pod-wrap-probe --resolve "$h:443:127.0.0.1" -o "$body" -w '%{http_code}' "https://$h$path" 2>/dev/null)
     grep -qF -- "$marker" "$body" && found=1
     rm -f "$body"
     echo "${code:-000} $found"
@@ -95,21 +104,34 @@ else
     fail A2 "$ctr pod='${ctr_pod:-none}' expected ${pod_id:0:12}"
 fi
 
-if podman exec traefik wget -q -T 5 -O - "http://$pod:80/" 2>/dev/null | grep -qF -- "$marker"; then
-    pass A3 "http://$pod:80/ serves the marker from the traefik container"
+if podman exec traefik wget -q -T 5 -O - "http://$pod:$port/" 2>/dev/null | grep -qF -- "$marker"; then
+    pass A3 "http://$pod:$port/ serves the marker from the traefik container"
 else
-    fail A3 "http://$pod:80/ did not serve the marker from the traefik container"
+    fail A3 "http://$pod:$port/ did not serve the marker from the traefik container"
 fi
 
 if e2e_ok "$host"; then
-    pass A4 "https://$host/ -> 200 with marker through Traefik"
+    pass A4 "https://$host$path -> 200 with marker through Traefik"
 else
-    fail A4 "https://$host/ -> $(e2e "$host") (want '200 1')"
+    fail A4 "https://$host$path -> $(e2e "$host") (want '200 1')"
 fi
 
 if [ -n "$route_file" ]; then
-    backend=$(grep -m1 'url:' "$route_file" 2>/dev/null | sed 's|.*://||; s|[:"/].*||')
-    [ "$backend" = "$pod" ] && pass A5 "route backend is $pod" || fail A5 "route backend='${backend:-none}' want $pod"
+    # The backend URL of --service (no YAML library needed: the files are generated with a fixed layout), or
+    # the first url: in the file.
+    if [ -n "$service" ]; then
+        line=$(awk -v svc="$service" '/^  services:/{s=1} s && $0 ~ "^    "svc":[ ]*$" {f=1; next} f && /^    [A-Za-z0-9_-]+:[ ]*$/ {f=0} f && /url:/ {print; exit}' "$route_file" 2>/dev/null)
+    else
+        line=$(grep -m1 'url:' "$route_file" 2>/dev/null)
+    fi
+    hostport=$(echo "$line" | sed 's|.*://||; s|[/"].*||')
+    backend=${hostport%%:*}
+    case "$hostport" in *:*) bport=${hostport##*:} ;; *) bport=80 ;; esac
+    if [ "$backend" = "$pod" ] && [ "$bport" = "$port" ]; then
+        pass A5 "route backend is $pod:$port"
+    else
+        fail A5 "route backend='${backend:-none}:${bport}' want $pod:$port"
+    fi
 else
     fail A5 "no --route-file given"
 fi
