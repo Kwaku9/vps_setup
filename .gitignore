@@ -286,3 +286,5 @@ site-packages/
 !scripts/lint-zones.sh
 !tools/netseg/rig.sh
 !scripts/check-firewall-netns.sh
+# Phase 2 pod-wrap probe (same reason).
+!scripts/check-pod-wrap.sh
