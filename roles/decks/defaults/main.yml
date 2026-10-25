@@ -1,7 +1,7 @@
 ---
 # decks.aicortex.cloud — static reveal.js slide-deck gallery.
 #
-# A standalone nginx container on enterprise_network, routed by Traefik's file
+# An nginx container in web-public-pod on enterprise_network, routed by Traefik's file
 # provider (behind Cloudflare Access). This role owns the INFRASTRUCTURE and the
 # landing page (index.html, shipped in files/). The decks themselves are DATA:
 # publish them by scp-ing <name>-deck.html (+ <name>-narration.md) into data_dir,
@@ -10,6 +10,10 @@
 decks:
   enabled: true
   container_name: "decks-nginx"
+  # The pod owns the network namespace and the DNS name; a pod member's own name does NOT resolve, so
+  # Traefik addresses pod_name. It holds exactly one workload container: every static nginx binds :80,
+  # so dsm5/lab/legal join later as server blocks of this nginx, not as extra containers.
+  pod_name: "web-public-pod"
   image: "docker.io/library/nginx:1.29-alpine"
   data_dir: "/opt/compose/decks"
   domain: "decks"

@@ -61,6 +61,10 @@ boot_services:
     # empty on purpose: Traefik must come up before the services it fronts, and it
     # tolerates missing backends.
     - { name: security-infra-pod,        enabled: true,  depends_on: [] }
+    # web-public-pod holds decks-nginx (phase 2 pod wrap, docs/superpowers/plans/2026-10-23-...). It
+    # needs its OWN unit: podman-prune-safe protects a pod member only if the pod has a unit, and a
+    # reboot restarts only registered pods. Ordered after the ingress pod like the container it replaces.
+    - { name: web-public-pod,            enabled: true,  depends_on: [security-infra-pod] }
     # security-pod DOES NOT EXIST (Trivy/Fail2ban/Tetragon intentionally down, pod
     # removed). Generating a unit for a missing pod means a guaranteed boot-time
     # failure for something that can never start. Same phantom removed from the
@@ -113,10 +117,10 @@ boot_services:
     # netns (loopback only) so the pod must exist first; queries neo4j-pod and
     # shared-db-pod at request time (not at start), so those are not hard deps.
     - { name: timeline-api,     enabled: true, depends_on: [frontend-pod] }
-    # decks.aicortex.cloud — static slide-deck gallery; standalone nginx, routed
-    # by traefik's file provider. Only reachable once traefik is up, so order it
-    # after traefik (same as cloudflared).
-    - { name: decks-nginx,      enabled: true, depends_on: [traefik] }
+    # decks.aicortex.cloud — static slide-deck gallery. RETIRED as a standalone unit: decks-nginx now
+    # lives in web-public-pod, which has its own unit above. `enabled: false` makes the role delete
+    # /etc/init.d/decks-nginx; a leftover unit would start the container outside its pod.
+    - { name: decks-nginx,      enabled: false, depends_on: [traefik] }
     # media.aicortex.cloud: public static video host; same shape as decks
     # (standalone nginx behind traefik), so same boot ordering.
     - { name: media-nginx,      enabled: true, depends_on: [traefik] }
