@@ -27,6 +27,10 @@
 dsm5:
   enabled: true
   container_name: "dsm5-nginx"
+  # Each static site gets its own pod: every nginx binds :80 and pod members share one network namespace, so the
+  # sites cannot share a pod without per-site listen ports. A pod member's own name does not resolve, so Traefik
+  # addresses the pod name.
+  pod_name: "dsm5-pod"
   image: "docker.io/library/nginx:1.29-alpine"
   data_dir: "/opt/compose/dsm5"
   # A DIRECTORY, not a single file. Ansible's template module writes atomically
