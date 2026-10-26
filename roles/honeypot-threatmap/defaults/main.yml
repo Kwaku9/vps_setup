@@ -131,5 +131,6 @@ honeypot_threatmap:
   # box is constrained on container/process count, not RAM.
   legal:
     container_name: "legal-nginx"
+    pod_name: "legal-pod"
     image: "docker.io/library/nginx:1.29-alpine"
     data_dir: "/opt/compose/legal"

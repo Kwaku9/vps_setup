@@ -42,8 +42,12 @@ zones:
     cidr: 10.89.128.16/28
     purpose: anonymous and untrusted; reachable, reaches nothing
     pods:
-      web-public-pod: {ip: 10.89.128.18, replaces: [decks-nginx, dsm5-nginx, lab-nginx, legal-nginx]}
+      web-public-pod: {ip: 10.89.128.18, replaces: [decks-nginx]}
       honeypot-pod: {ip: 10.89.128.19, replaces: [honeypot]}
+      # one pod per static site: every nginx binds :80 and pod members share a network namespace
+      dsm5-pod: {ip: 10.89.128.20, replaces: [dsm5-nginx]}
+      lab-pod: {ip: 10.89.128.21, replaces: [lab-nginx]}
+      legal-pod: {ip: 10.89.128.22, replaces: [legal-nginx]}
   frontend:
     name: net-frontend
     bridge: br-frontend

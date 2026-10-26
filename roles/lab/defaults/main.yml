@@ -13,6 +13,8 @@
 lab:
   enabled: true
   container_name: "lab-nginx"
+  # Own pod (see roles/dsm5/defaults): :80 collides inside a shared pod. Traefik addresses the pod name.
+  pod_name: "lab-pod"
   image: "docker.io/library/nginx:1.29-alpine"
   data_dir: "/opt/compose/lab"
   domain: "lab"
