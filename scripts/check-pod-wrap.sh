@@ -11,6 +11,8 @@
 #   --port N       the container's own port (default 80); A3 dials it, A5 requires the route to use it
 #   --service S    the Traefik service name whose backend URL A5 checks (default: the first url: in the file)
 #   --path P       the request path for A4/K2 (default /); use a bait path for a honeypot
+#   --backend-path P  the path the BACKEND sees for A3 when Traefik rewrites it (default: --path), e.g. a
+#                  replacePathRegex that turns /privacy into /privacy.html
 #   Requests carry User-Agent check-pod-wrap-probe so they can be filtered out of honeypot evidence.
 #
 # Assertions (PASS/FAIL):
@@ -33,7 +35,7 @@
 #       2 usage error
 set -u
 
-pod= ctr= host= marker= route_file= outage=0 port=80 service= path=/
+pod= ctr= host= marker= route_file= outage=0 port=80 service= path=/ backend_path=
 while [ $# -gt 0 ]; do
     case "$1" in
         --pod) pod=$2; shift 2 ;;
@@ -45,6 +47,7 @@ while [ $# -gt 0 ]; do
         --port) port=$2; shift 2 ;;
         --service) service=$2; shift 2 ;;
         --path) path=$2; shift 2 ;;
+        --backend-path) backend_path=$2; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -104,10 +107,10 @@ else
     fail A2 "$ctr pod='${ctr_pod:-none}' expected ${pod_id:0:12}"
 fi
 
-if podman exec traefik wget -q -T 5 -U check-pod-wrap-probe -O - "http://$pod:$port$path" 2>/dev/null | grep -qF -- "$marker"; then
-    pass A3 "http://$pod:$port$path serves the marker from the traefik container"
+if podman exec traefik wget -q -T 5 -U check-pod-wrap-probe -O - "http://$pod:$port${backend_path:-$path}" 2>/dev/null | grep -qF -- "$marker"; then
+    pass A3 "http://$pod:$port${backend_path:-$path} serves the marker from the traefik container"
 else
-    fail A3 "http://$pod:$port$path did not serve the marker from the traefik container"
+    fail A3 "http://$pod:$port${backend_path:-$path} did not serve the marker from the traefik container"
 fi
 
 if e2e_ok "$host"; then
