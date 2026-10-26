@@ -33,7 +33,7 @@ def _dec(pipe_id: str) -> str:
 class Pipe:
     class Valves(BaseModel):
         OWUI_CODER_URL: str = Field(
-            default="http://owui-coder:7557",
+            default="http://gateway-pod:7557",
             description="owui-coder service base URL (enterprise_network)")
         OWUI_CODER_TOKEN: str = Field(
             default="", description="Bearer token for owui-coder")

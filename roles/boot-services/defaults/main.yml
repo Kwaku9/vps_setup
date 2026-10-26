@@ -75,6 +75,13 @@ boot_services:
     - { name: dsm5-pod,                  enabled: true,  depends_on: [security-infra-pod] }
     - { name: lab-pod,                   enabled: true,  depends_on: [security-infra-pod] }
     - { name: legal-pod,                 enabled: true,  depends_on: [security-infra-pod] }
+    # Agent batch (phase 2). gateway-pod = telegram-gateway + telegram-coder + owui-coder (the bots share it and the loopback
+    # ports it publishes); recall-pod = session-recall-mcp; graph-mcp-pod = timeline-context-api. Each needs its OWN
+    # unit: a reboot restarts only registered pods and podman-prune-safe protects a member only if its pod has one. The
+    # bots and recall use Postgres (gateway / recall schemas); the bots are reached through Traefik, hence the ingress dep.
+    - { name: gateway-pod,               enabled: true,  depends_on: [security-infra-pod, ai-stack-pod, shared-db-pod] }
+    - { name: recall-pod,                enabled: true,  depends_on: [security-infra-pod, ai-stack-pod, shared-db-pod] }
+    - { name: graph-mcp-pod,             enabled: true,  depends_on: [security-infra-pod, neo4j-pod] }
     # security-pod DOES NOT EXIST (Trivy/Fail2ban/Tetragon intentionally down, pod
     # removed). Generating a unit for a missing pod means a guaranteed boot-time
     # failure for something that can never start. Same phantom removed from the
@@ -112,17 +119,17 @@ boot_services:
     - { name: crowdsec,         enabled: true, depends_on: [] }
     - { name: traefik,          enabled: true, depends_on: [crowdsec] }
     - { name: cloudflared,      enabled: true, depends_on: [traefik] }
-    - { name: telegram-gateway, enabled: true, depends_on: [ai-stack-pod] }
+    - { name: telegram-gateway, enabled: false, depends_on: [ai-stack-pod] }   # retired: gateway-pod owns it
     # telegram-coder + owui-coder are the BOT_MODE=coder / =owui siblings built
     # from the same telegram-gateway image. Without their own OpenRC service they
     # don't auto-start after a reboot, so they sit Exited and the weekly
     # `podman system prune -f` reaps them — which is exactly how they vanished
     # (the owui-coder pipe backend disappeared, breaking the OWUI CC-Sessions
     # pipe). They depend on postgres (gateway schema) like telegram-gateway.
-    - { name: telegram-coder,   enabled: true, depends_on: [ai-stack-pod] }
-    - { name: owui-coder,       enabled: true, depends_on: [ai-stack-pod] }
+    - { name: telegram-coder,   enabled: false, depends_on: [ai-stack-pod] }   # retired: gateway-pod owns it
+    - { name: owui-coder,       enabled: false, depends_on: [ai-stack-pod] }   # retired: gateway-pod owns it
     # graph-RAG service for the buildfol.io chat widget; needs neo4j-pod up first.
-    - { name: timeline-context-api, enabled: true, depends_on: [neo4j-pod] }
+    - { name: timeline-context-api, enabled: false, depends_on: [neo4j-pod] }   # retired: graph-mcp-pod owns it
     # timeline.aicortex.cloud graph + semantic search API; joins frontend-pod's
     # netns (loopback only) so the pod must exist first; queries neo4j-pod and
     # shared-db-pod at request time (not at start), so those are not hard deps.
@@ -141,7 +148,7 @@ boot_services:
     # (recall_ro on shared-db-pod) and ai-stack-pod (litellm embeddings) up first.
     # Without its own OpenRC service it sits Exited after a reboot and the weekly
     # `podman system prune -f` reaps it (same failure mode as telegram/owui-coder).
-    - { name: session-recall-mcp, enabled: true, depends_on: [ai-stack-pod, shared-db-pod] }
+    - { name: session-recall-mcp, enabled: false, depends_on: [ai-stack-pod, shared-db-pod] }   # retired: recall-pod owns it
     # scrapy-mcp was the ONLY MCP container with no boot unit, which is exactly
     # why it was the one that stayed gone: no unit meant nothing restarted it and
     # podman-prune-safe had no reason to protect it. Its image was pruned too, so

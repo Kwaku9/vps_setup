@@ -115,5 +115,7 @@ neo4j:
     # hash behaviour is `replace`, so that would clobber pod_name, network, db, mcp, …
     enabled: true
     container_name: "timeline-context-api"
+    # Own pod (graph-mcp-pod in the zone model). A pod member's own name does not resolve, so Traefik addresses the pod.
+    pod_name: "graph-mcp-pod"
     image: "localhost/timeline-context-api:latest"
     memory: "256m"

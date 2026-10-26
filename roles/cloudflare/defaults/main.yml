@@ -245,7 +245,7 @@ cloudflare_exposed_services:
     enabled: true
   - name: telegram-bot
     host: "telegram-bot.{{ cf_domain }}"
-    service_url: "http://telegram-gateway:7555"
+    service_url: "http://gateway-pod:7555"
     enabled: "{{ mcp_servers.servers.telegram_gateway.enabled | default(false) }}"
   - name: worldview
     host: "geo.{{ cf_domain }}"
