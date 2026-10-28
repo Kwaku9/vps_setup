@@ -104,3 +104,6 @@ domain_baseline:
         - { flags: 0, tag: issue,     value: "amazon.com" }
         - { flags: 0, tag: issue,     value: "letsencrypt.org" }
         - { flags: 0, tag: issuewild, value: "amazon.com" }
+        # Live since Aug, never codified until 2026-10-28; without it this
+        # role's overwrite would silently revoke LE wildcard issuance.
+        - { flags: 0, tag: issuewild, value: "letsencrypt.org" }
