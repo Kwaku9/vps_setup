@@ -80,7 +80,7 @@ iptables -A ZONE_FWD -s 10.89.128.144/28 -d 10.89.128.144/28 -m comment --commen
 iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.160/29 -m comment --comment "same-zone" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.168/29 -d 10.89.128.168/29 -m comment --comment "same-zone" -j ACCEPT
 # allowed flows
-iptables -A ZONE_FWD -s 10.89.128.2/32 -d 10.89.128.10/32 -p tcp --dport 443 -m comment --comment "cloudflared-pod>edge-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.2/32 -d 10.89.128.10/32 -p tcp --dport 443 -m comment --comment "cloudflared-pod>security-infra-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.0/29 -p tcp --dport 7844 -m comment --comment "tunnel>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.0/29 -p udp --dport 7844 -m comment --comment "tunnel>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.16/28 -p tcp --dport 80 -m comment --comment "edge>web" -j ACCEPT
@@ -92,8 +92,8 @@ iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.80/28 -p tcp --dport 9000 -m
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.98/32 -p tcp --dport 3000 -m comment --comment "edge>metrics-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.131/32 -p tcp --dport 3080 -m comment --comment "edge>charts-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.114/32 -p tcp --dport 7555:7557 -m comment --comment "edge>gateway-pod" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.10/32 -d 10.89.128.162/32 -p tcp --dport 8090 -m comment --comment "edge-pod>management-pod" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.10/32 -d 10.89.128.170/32 -p tcp -m multiport --dports 8790,8791 -m comment --comment "edge-pod>mailkit-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.10/32 -d 10.89.128.162/32 -p tcp --dport 8090 -m comment --comment "security-infra-pod>management-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.10/32 -d 10.89.128.170/32 -p tcp -m multiport --dports 8790,8791 -m comment --comment "security-infra-pod>mailkit-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.8/29 -p tcp --dport 443 -m comment --comment "edge>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.48/28 -p tcp -m multiport --dports 4000,8080 -m comment --comment "frontend>svc" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "frontend>shared-db-pod" -j ACCEPT
@@ -122,7 +122,7 @@ iptables -A ZONE_FWD -s 10.89.128.96/28 -p tcp --dport 443 -m comment --comment 
 iptables -A ZONE_FWD -s 10.89.128.98/32 -d 10.89.128.114/32 -p tcp --dport 7555 -m comment --comment "metrics-pod>gateway-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.98/32 -d 10.89.128.19/32 -p tcp --dport 8099 -m comment --comment "metrics-pod>honeypot-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.99/32 -d 10.89.128.19/32 -p tcp --dport 8099 -m comment --comment "logs-pod>honeypot-pod" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.101/32 -d 10.89.128.10/32 -p tcp --dport 8180 -m comment --comment "threat-map-pod>edge-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.101/32 -d 10.89.128.10/32 -p tcp --dport 8180 -m comment --comment "threat-map-pod>security-infra-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.101/32 -d 10.89.128.117/32 -p tcp --dport 8765 -m comment --comment "threat-map-pod>reports-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.144/28 -p tcp -m multiport --dports 80,443 -m comment --comment "scrape>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.98/32 -p tcp --dport 8428 -m comment --comment "edge>metrics-pod" -j ACCEPT

@@ -35,7 +35,7 @@ zones:
     single_pod: true
     purpose: Traefik and CrowdSec only; reachable only from the tunnel pod
     pods:
-      edge-pod: {ip: 10.89.128.10, replaces: [traefik, crowdsec, security-infra-pod]}
+      security-infra-pod: {ip: 10.89.128.10, replaces: [traefik, crowdsec, security-infra-pod]}
   web:
     name: net-web
     bridge: br-web
