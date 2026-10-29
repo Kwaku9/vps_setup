@@ -41,6 +41,7 @@ flows:
   - {from: agent, to: scrape, ports: [8888], reason: "scraper calls"}
   - {from: agent, to: fintech, to_pod: trading-pod, ports: [5002], reason: "IB MCP; order tools stay gated by ib_mcp_allow_trading"}
   - {from: agent, to: internet, ports: [443], reason: "Telegram and APIs (via Squid)"}
+  - {from: agent, from_pod: gateway-pod, to: observe, to_pod: logs-pod, ports: [4318], reason: "OTLP telemetry push to Alloy (seen by the capture 2026-10-27)"}
 
   # --- mgmt (ops dashboard: host-root-equivalent, spec section 4A) ---
   - {from: mgmt, from_pod: management-pod, to: host, ports: [22], reason: "SSH to the host; the dashboard's control path"}
@@ -61,6 +62,7 @@ flows:
   # --- observe ---
   - {from: observe, to: data, to_pod: shared-db-pod, ports: [5432], reason: "Grafana grafana_ro datasource"}
   - {from: observe, to: internet, ports: [443], reason: "alert delivery"}
+  - {from: observe, from_pod: metrics-pod, to: agent, to_pod: gateway-pod, ports: [7555], reason: "VictoriaMetrics scrapes the telegram-gateway metrics (seen by the capture 2026-10-27)"}
   - {from: observe, from_pod: metrics-pod, to: web, to_pod: honeypot-pod, ports: [8099], reason: "VictoriaMetrics scrapes the honeypot hit counters", unverified: true}
   - {from: observe, from_pod: logs-pod, to: web, to_pod: honeypot-pod, ports: [8099], reason: "Alloy scrapes the honeypot hit counters", unverified: true}
   - {from: observe, from_pod: threat-map-pod, to: edge, to_pod: edge-pod, ports: [8180], reason: "threat-map streams CrowdSec LAPI decisions", unverified: true}

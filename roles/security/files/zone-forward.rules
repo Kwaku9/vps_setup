@@ -107,6 +107,7 @@ iptables -A ZONE_FWD -s 10.89.128.112/28 -d 10.89.128.50/32 -p tcp --dport 4000 
 iptables -A ZONE_FWD -s 10.89.128.112/28 -d 10.89.128.144/28 -p tcp --dport 8888 -m comment --comment "agent>scrape" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.112/28 -d 10.89.128.130/32 -p tcp --dport 5002 -m comment --comment "agent>trading-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.112/28 -p tcp --dport 443 -m comment --comment "agent>internet" -j ZONE_PUBLIC
+iptables -A ZONE_FWD -s 10.89.128.114/32 -d 10.89.128.99/32 -p tcp --dport 4318 -m comment --comment "gateway-pod>logs-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "mgmt>shared-db-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.68/32 -p tcp --dport 7687 -m comment --comment "mgmt>neo4j-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.50/32 -p tcp --dport 4000 -m comment --comment "mgmt>ai-gateway-pod" -j ACCEPT
@@ -118,6 +119,7 @@ iptables -A ZONE_FWD -s 10.89.128.128/28 -d 10.89.128.66/32 -p tcp --dport 5432 
 iptables -A ZONE_FWD -s 10.89.128.128/28 -p tcp --dport 443 -m comment --comment "fintech>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.96/28 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "observe>shared-db-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.96/28 -p tcp --dport 443 -m comment --comment "observe>internet" -j ZONE_PUBLIC
+iptables -A ZONE_FWD -s 10.89.128.98/32 -d 10.89.128.114/32 -p tcp --dport 7555 -m comment --comment "metrics-pod>gateway-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.98/32 -d 10.89.128.19/32 -p tcp --dport 8099 -m comment --comment "metrics-pod>honeypot-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.99/32 -d 10.89.128.19/32 -p tcp --dport 8099 -m comment --comment "logs-pod>honeypot-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.101/32 -d 10.89.128.10/32 -p tcp --dport 8180 -m comment --comment "threat-map-pod>edge-pod" -j ACCEPT
