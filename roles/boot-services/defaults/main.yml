@@ -86,6 +86,10 @@ boot_services:
     - { name: graph-mcp-pod,             enabled: true,  depends_on: [security-infra-pod, neo4j-pod] }
     # scrape-pod = scrapy-mcp (both of its networks and its loopback port move onto the pod).
     - { name: scrape-pod,                enabled: true,  depends_on: [security-infra-pod] }
+    # Fintech, wrapped STOPPED (owner, 2026-10-29): excluded so a reboot never starts ibeam, which is an automated
+    # IBKR login needing IBKR Mobile approval. Start by hand: podman pod start trading-pod / charts-pod.
+    - { name: trading-pod,               enabled: false, depends_on: [] }
+    - { name: charts-pod,                enabled: false, depends_on: [] }
     # security-pod DOES NOT EXIST (Trivy/Fail2ban/Tetragon intentionally down, pod
     # removed). Generating a unit for a missing pod means a guaranteed boot-time
     # failure for something that can never start. Same phantom removed from the
