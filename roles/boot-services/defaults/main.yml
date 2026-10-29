@@ -82,6 +82,8 @@ boot_services:
     - { name: gateway-pod,               enabled: true,  depends_on: [security-infra-pod, ai-stack-pod, shared-db-pod] }
     - { name: recall-pod,                enabled: true,  depends_on: [security-infra-pod, ai-stack-pod, shared-db-pod] }
     - { name: graph-mcp-pod,             enabled: true,  depends_on: [security-infra-pod, neo4j-pod] }
+    # scrape-pod = scrapy-mcp (both of its networks and its loopback port move onto the pod).
+    - { name: scrape-pod,                enabled: true,  depends_on: [security-infra-pod] }
     # security-pod DOES NOT EXIST (Trivy/Fail2ban/Tetragon intentionally down, pod
     # removed). Generating a unit for a missing pod means a guaranteed boot-time
     # failure for something that can never start. Same phantom removed from the
@@ -153,7 +155,7 @@ boot_services:
     # why it was the one that stayed gone: no unit meant nothing restarted it and
     # podman-prune-safe had no reason to protect it. Its image was pruned too, so
     # recovery needed a rebuild rather than a restart.
-    - { name: scrapy-mcp,       enabled: true, depends_on: [] }
+    - { name: scrapy-mcp,       enabled: false, depends_on: [] }   # retired: scrape-pod owns it
     # honeypot (apex sink) + threat-map (threat. viewer) — hand-deployed until
     # 2026-07-03, so they had no OpenRC unit and vanished on reboot / prune. Both
     # reachable only via traefik; threat-map also streams crowdsec decisions.
