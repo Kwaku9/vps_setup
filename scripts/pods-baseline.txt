@@ -4,6 +4,5 @@ roles/cloudflare/tasks/tunnel.yml::{{ cloudflare_tunnel.container_name }}
 roles/gpu_inference/tasks/main.yml::{{ gpu_fleet_podman.container_name_prefix }}-{{ gi_member.name }}
 roles/mcp-servers/tasks/ib-mcp.yml::ibeam
 roles/mcp-servers/tasks/ib-mcp.yml::{{ _mcp.container_name }}
-roles/mcp-servers/tasks/scrapy-mcp.yml::{{ _mcp.container_name }}
 roles/security/tasks/main.yml::tetragon
 roles/trading/tasks/lightweight-charts.yml::{{ trading.charts.container_name }}
