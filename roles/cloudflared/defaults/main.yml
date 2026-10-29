@@ -5,6 +5,12 @@
 cloudflared:
   enabled: true
   container_name: "cloudflared"
+  # Its own pod (phase 2). The POD holds the pinned address: traefik_internal_sources in
+  # roles/shared-services/defaults/main.yml lists it, and the deploy asserts the two agree.
+  pod_name: "cloudflared-pod"
+  static_ip: "10.89.0.235"
+  # vmscrape dials cloudflared:2000; the alias keeps that name resolving until the zone move.
+  network_alias: "cloudflared"
   # Single source of truth is cloudflare.tunnel.image in all.yml (pinned tag).
   image: "{{ cloudflare.tunnel.image | default('docker.io/cloudflare/cloudflared:2026.9.3') }}"
   network: "enterprise_network"

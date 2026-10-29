@@ -61,6 +61,8 @@ boot_services:
     # empty on purpose: Traefik must come up before the services it fronts, and it
     # tolerates missing backends.
     - { name: security-infra-pod,        enabled: true,  depends_on: [] }
+    # cloudflared-pod: the tunnel (phase 2 ingress wrap). After the edge pod, which it dials.
+    - { name: cloudflared-pod,           enabled: true,  depends_on: [security-infra-pod] }
     # web-public-pod holds decks-nginx (phase 2 pod wrap, docs/superpowers/plans/2026-10-23-...). It
     # needs its OWN unit: podman-prune-safe protects a pod member only if the pod has a unit, and a
     # reboot restarts only registered pods. Ordered after the ingress pod like the container it replaces.
@@ -102,11 +104,11 @@ boot_services:
     # aicortex.cloud apex: Capability Marketplace (frontend + catalog API in
     # one pod; the API needs the enterprise DB, the frontend needs traefik).
     # Added with roles/marketplace.
-    - { name: marketplace-pod,           enabled: true,  depends_on: [traefik, shared-db-pod] }
+    - { name: marketplace-pod,           enabled: true,  depends_on: [security-infra-pod, shared-db-pod] }
     # mailkit-pod (mailkit-mcp-read + -send): claude.ai Mail Kit connectors.
     # Registered with the pod so it survives reboot and is never a prune-reap
     # candidate. Stateless; Traefik tolerates it being absent.
-    - { name: mailkit-pod,               enabled: true,  depends_on: [traefik] }
+    - { name: mailkit-pod,               enabled: true,  depends_on: [security-infra-pod] }
     # hermes-pod intentionally not auto-started — disabled in app config and
     # marked as "stopped on purpose" in project memory.
     - { name: hermes-pod,                enabled: false, depends_on: [] }
@@ -118,9 +120,10 @@ boot_services:
     # google-docs-mcp: REMOVED 2026-10-02. enabled: false deletes the orphan init
     # script; drop this line once no host carries /etc/init.d/google-docs-mcp.
     - { name: google-docs-mcp,  enabled: false, depends_on: [] }
-    - { name: crowdsec,         enabled: true, depends_on: [] }
-    - { name: traefik,          enabled: true, depends_on: [crowdsec] }
-    - { name: cloudflared,      enabled: true, depends_on: [traefik] }
+    # RETIRED by the ingress wrap: the edge pod (Traefik + CrowdSec) and cloudflared-pod own them.
+    - { name: crowdsec,         enabled: false, depends_on: [] }
+    - { name: traefik,          enabled: false, depends_on: [] }
+    - { name: cloudflared,      enabled: false, depends_on: [] }
     - { name: telegram-gateway, enabled: false, depends_on: [ai-stack-pod] }   # retired: gateway-pod owns it
     # telegram-coder + owui-coder are the BOT_MODE=coder / =owui siblings built
     # from the same telegram-gateway image. Without their own OpenRC service they
@@ -142,7 +145,7 @@ boot_services:
     - { name: decks-nginx,      enabled: false, depends_on: [traefik] }
     # media.aicortex.cloud: public static video host; same shape as decks
     # (standalone nginx behind traefik), so same boot ordering.
-    - { name: media-nginx,      enabled: true, depends_on: [traefik] }
+    - { name: media-nginx,      enabled: true, depends_on: [security-infra-pod] }
     # lab.aicortex.cloud — public client-review static hosting; same shape as
     # decks (standalone nginx behind traefik), so same boot ordering.
     - { name: lab-nginx,        enabled: false, depends_on: [traefik] }   # retired: lab-pod owns it

@@ -22,6 +22,24 @@ shared_services:
 # Base domain for all services (subdomains: grafana., chat., auth., etc.)
 domain: "{{ domain_name }}"
 
+# The edge pod (phase 2 pod wrap): Traefik + CrowdSec in security-infra-pod, which now publishes the three loopback
+# ports Traefik used to publish itself. network_alias keeps the name `traefik` resolving to the pod, because cloudflared
+# (https://traefik:443), vmscrape (traefik:8080) and others dial it by name; the alias goes at the zone move.
+ingress:
+  edge_pod_ports:
+    - "127.0.0.1:80:80"
+    - "127.0.0.1:443:443"
+    - "127.0.0.1:8082:8080"
+  traefik:
+    container_name: traefik
+    pod_name: security-infra-pod
+    network_alias: traefik
+    # A name Traefik routes to; the canary restarts Traefik when aardvark-dns lost its registration.
+    dns_canary: authentication-pod
+  crowdsec:
+    container_name: crowdsec
+    pod_name: security-infra-pod
+
 # Will be overridden by vault
 postgres_password: "VAULT_OVERRIDE"
 crowdsec_bouncer_api_key: "VAULT_OVERRIDE"

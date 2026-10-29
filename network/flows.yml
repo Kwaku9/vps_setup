@@ -5,7 +5,7 @@
 # Spec section 5.
 flows:
   # --- tunnel: strict access to Traefik ---
-  - {from: tunnel, from_pod: cloudflared-pod, to: edge, to_pod: edge-pod, ports: [443], reason: "Cloudflare tunnel to Traefik"}
+  - {from: tunnel, from_pod: cloudflared-pod, to: edge, to_pod: security-infra-pod, ports: [443], reason: "Cloudflare tunnel to Traefik"}
   - {from: tunnel, from_pod: cloudflared-pod, to: host, ports: [22], reason: "ssh.<domain> tunnel origin"}
   - {from: tunnel, to: internet, proto: tcp, ports: [7844], reason: "tunnel to Cloudflare edge"}
   - {from: tunnel, to: internet, proto: udp, ports: [7844], reason: "tunnel to Cloudflare edge (QUIC)"}
@@ -20,8 +20,8 @@ flows:
   - {from: edge, to: observe, to_pod: metrics-pod, ports: [3000], reason: "Grafana"}
   - {from: edge, to: fintech, to_pod: charts-pod, ports: [3080], reason: "charts UI"}
   - {from: edge, to: agent, to_pod: gateway-pod, ports: ["7555-7557"], reason: "Telegram and OWUI webhooks"}
-  - {from: edge, from_pod: edge-pod, to: mgmt, to_pod: management-pod, ports: [8090], reason: "ops dashboard; only the edge pod may connect"}
-  - {from: edge, from_pod: edge-pod, to: mail, to_pod: mailkit-pod, ports: [8790, 8791], reason: "Mail Kit MCP connectors for claude.ai (read, send); only the edge pod may connect"}
+  - {from: edge, from_pod: security-infra-pod, to: mgmt, to_pod: management-pod, ports: [8090], reason: "ops dashboard; only the edge pod may connect"}
+  - {from: edge, from_pod: security-infra-pod, to: mail, to_pod: mailkit-pod, ports: [8790, 8791], reason: "Mail Kit MCP connectors for claude.ai (read, send); only the edge pod may connect"}
   - {from: edge, to: internet, ports: [443], reason: "CrowdSec lists, ACME DNS challenge (via Squid)"}
 
   # --- frontend ---
@@ -65,7 +65,7 @@ flows:
   - {from: observe, from_pod: metrics-pod, to: agent, to_pod: gateway-pod, ports: [7555], reason: "VictoriaMetrics scrapes the telegram-gateway metrics (seen by the capture 2026-10-27)"}
   - {from: observe, from_pod: metrics-pod, to: web, to_pod: honeypot-pod, ports: [8099], reason: "VictoriaMetrics scrapes the honeypot hit counters", unverified: true}
   - {from: observe, from_pod: logs-pod, to: web, to_pod: honeypot-pod, ports: [8099], reason: "Alloy scrapes the honeypot hit counters", unverified: true}
-  - {from: observe, from_pod: threat-map-pod, to: edge, to_pod: edge-pod, ports: [8180], reason: "threat-map streams CrowdSec LAPI decisions", unverified: true}
+  - {from: observe, from_pod: threat-map-pod, to: edge, to_pod: security-infra-pod, ports: [8180], reason: "threat-map streams CrowdSec LAPI decisions", unverified: true}
   - {from: observe, from_pod: threat-map-pod, to: agent, to_pod: reports-pod, ports: [8765], reason: "threat-map to grafana-reports render engine", unverified: true}
 
   # --- scrape ---

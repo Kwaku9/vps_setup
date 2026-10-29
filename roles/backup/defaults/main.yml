@@ -218,6 +218,7 @@ backup:
   # All pods to restart after restore
   all_pods:
     - security-infra-pod
+    - cloudflared-pod
     - metrics-pod
     - logs-pod
     - tempo-pod
