@@ -253,5 +253,5 @@ cloudflare_exposed_services:
     enabled: true
   - name: atlas-charts
     host: "charts.{{ cf_domain }}"
-    service_url: "http://atlas-charts:3080"
+    service_url: "http://charts-pod:3080"
     enabled: "{{ trading.charts.enabled | default(true) }}"

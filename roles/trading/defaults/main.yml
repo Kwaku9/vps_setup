@@ -17,6 +17,9 @@ trading:
     image: "atlas-charts:latest"
     container_name: "atlas-charts"
     port: 3080
+    # charts-pod (phase 2), wrapped STOPPED with the rest of fintech (owner, 2026-10-29): created, not started, and
+    # excluded from boot. This role is its only owner (roles/frontend used to create a second, different copy).
+    pod_name: "charts-pod"
 
   # Data ingestion
   ingestion:
