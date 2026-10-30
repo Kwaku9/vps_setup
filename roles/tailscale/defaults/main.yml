@@ -102,3 +102,15 @@ host_dns:
       stamp: "sdns://AgcAAAAAAAAABzEuMC4wLjEAEmNsb3VkZmxhcmUtZG5zLmNvbQovZG5zLXF1ZXJ5"
     - name: "quad9-doh"
       stamp: "sdns://AgMAAAAAAAAABzkuOS45LjkADWRucy5xdWFkOS5uZXQKL2Rucy1xdWVyeQ"
+
+# Zone Network Map on the tailnet: tools/netseg/zonemap.py renders the page from network/zones.yml, network/flows.yml
+# and live podman; an hourly cron keeps it current, and `tailscale serve` publishes the directory at
+# https://<host>.<tailnet>.ts.net:<https_port><path>/ (tailnet only, never funnel). The page holds no secrets; it does
+# hold internal addresses and the security posture, which is why it stays on the tailnet.
+zone_map:
+  enabled: true
+  repo: "/workspace/vscode-projects/vps_setup"
+  dir: "/opt/podman-data/zone-map"
+  https_port: 8443       # shares the existing tailnet HTTPS server (it also serves /api/workstations)
+  path: "/zone-map"
+  cron_minute: "17"
