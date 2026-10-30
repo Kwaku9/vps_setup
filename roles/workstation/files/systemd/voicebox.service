@@ -1,0 +1,16 @@
+[Unit]
+Description=Voicebox (Qwen3-TTS clones + the owner's trained voice, port 17493): Claude Code reply voice and voice.demo laptop route
+After=podman.socket network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/podman stop voicebox
+ExecStartPre=-/usr/bin/podman rm voicebox
+ExecStart=/usr/bin/podman compose -f /home/general/Projects/VScdeProjects/voicebox/docker-compose.yml up --no-color
+ExecStop=/usr/bin/podman compose -f /home/general/Projects/VScdeProjects/voicebox/docker-compose.yml down
+# always, not on-failure: when the container is OOM-killed, `podman compose up` exits 0, so on-failure never fires (2026-10-30)
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=default.target

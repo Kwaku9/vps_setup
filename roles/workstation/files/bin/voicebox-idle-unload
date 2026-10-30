@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+"""Free the GPU memory Voicebox holds once no Claude Code session has run for 15 minutes (owner, 2026-10-29).
+
+Why: after the first spoken reply the owner's trained voice stays resident (~2.5 GB of the laptop's 6 GB). With
+push-to-talk's Whisper (+2.1 GB while transcribing) and the embedder, that leaves under 1 GB, and nothing else
+(Ollama, reranker, UI-TARS) fits. Releasing when Claude Code is closed gives that back; the next reply reloads (~6 s).
+
+Run every 5 minutes by voicebox-idle-unload.timer. A Claude Code session = a process named `claude`.
+  --dry-run   say what would happen, change nothing
+"""
+import json, os, subprocess, sys, time, urllib.request
+from pathlib import Path
+
+IDLE_S = int(os.environ.get("VOICEBOX_IDLE_S", "900"))
+URL = os.environ.get("VOICEBOX_URL", "http://127.0.0.1:17493").rstrip("/")
+STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "voicebox-idle" / "last_session"
+DRY = "--dry-run" in sys.argv
+
+
+def say(msg):
+    print(f"voicebox-idle-unload: {msg}", flush=True)
+
+
+def sessions():
+    r = subprocess.run(["pgrep", "-x", "claude"], capture_output=True, text=True)
+    return [p for p in r.stdout.split() if p]
+
+
+def loaded():
+    """What Voicebox holds: trained voice name and whether the base clone model is loaded. None if Voicebox is down."""
+    try:
+        with urllib.request.urlopen(f"{URL}/realtime/trained_voices", timeout=5) as r:
+            trained = json.load(r).get("loaded")
+        with urllib.request.urlopen(f"{URL}/health", timeout=5) as r:
+            base = bool(json.load(r).get("model_loaded"))
+        return {"trained": trained, "base": base}
+    except Exception:
+        return None
+
+
+now = time.time()
+STATE.parent.mkdir(parents=True, exist_ok=True)
+live = sessions()
+if live:
+    if not DRY:
+        STATE.write_text(str(int(now)))
+    say(f"{len(live)} Claude Code session(s) running ({', '.join(live)}): keep the voice loaded")
+    sys.exit(0)
+last = float(STATE.read_text()) if STATE.exists() else None
+if last is None:
+    if not DRY:
+        STATE.write_text(str(int(now)))      # first run with no session: start the clock now
+    say("no session and no record yet: starting the 15-minute clock")
+    sys.exit(0)
+idle = now - last
+held = loaded()
+if held is None:
+    say("Voicebox is not answering: nothing to release")
+    sys.exit(0)
+if not held["trained"] and not held["base"]:
+    say(f"no Claude Code session for {idle / 60:.0f} min, but Voicebox holds no model: nothing to release")
+    sys.exit(0)
+if idle < IDLE_S:
+    say(f"no Claude Code session for {idle / 60:.0f} min (< {IDLE_S // 60}): keep {held}")
+    sys.exit(0)
+if DRY:
+    say(f"WOULD release {held} after {idle / 60:.0f} min with no Claude Code session")
+    sys.exit(0)
+req = urllib.request.Request(f"{URL}/realtime/release", data=b"", method="POST")
+with urllib.request.urlopen(req, timeout=60) as r:
+    say(f"released after {idle / 60:.0f} min with no Claude Code session: {json.load(r)}")

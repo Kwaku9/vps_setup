@@ -1,4 +1,14 @@
 ---
+# ---- Claude Code reply voice: where owner-v1 renders --------------------------------------------------------
+# THE LEVER. `debian`: renders on the Debian GPU (voice-tts, needs Debian voice mode, which pauses Strata) over
+# debian-voice-tunnel.service, laptop Voicebox as automatic fallback. Measured 2026-10-30 on one 41-sentence reply:
+# first sound 3.6 s vs 10.8 s, 0.3 s waiting vs 48 s. `laptop`: Voicebox on this machine only, tunnel stopped.
+# Flip everything (this line, the apply, Debian voice mode) with: tools/ansible-workstation.sh voice debian|laptop
+speech_voice_backend: debian
+# The ssh target lives in all.yml (git-crypt): this repo is public. Empty here so a run without all.yml fails loudly.
+speech_voice_debian_ssh: ""
+speech_voice_debian_local_port: 18095
+
 # Workstation role defaults — Fedora laptop, NOT the VPS.
 #
 # This role manages the *user-level* (systemd --user) side of the laptop: the
@@ -36,6 +46,8 @@ workstation:
     # Daily recycle for llama-embed-gpu's per-request memory leak (~85KB per
     # embedding, no plateau). Invoked by llama-embed-recycle.service.
     - { src: bin/llama-embed-recycle,         dest_dir: bin }
+    # Releases Voicebox's GPU models once no Claude Code session has run for 15 min. voicebox-idle-unload.timer.
+    - { src: bin/voicebox-idle-unload,        dest_dir: bin }
     - { src: scripts/neo4j-sync.sh,           dest_dir: scripts }
     - { src: scripts/pg-sync.sh,              dest_dir: scripts }
 
@@ -122,9 +134,11 @@ workstation:
       manage: false
 
     # --- VPS -> laptop data sync -------------------------------------------
+    # DISABLED on purpose since 2026-09-20, pending the owner's decision (VPS backups were aborting on low disk;
+    # see memory vps-backup-pull-timer). Recorded as it is, so a converge cannot silently start it again.
     - name: vps-backup-pull.timer
-      enabled: true
-      state: started
+      enabled: false
+      state: stopped
     - name: vps-backup-pull.service
       manage: false            # oneshot, fired by the timer
 
@@ -168,6 +182,22 @@ workstation:
     - name: vps-tts-tunnel.service
       enabled: true
       state: started
+    # Voicebox: the Claude Code Stop hook speaks replies in the owner's trained voice through it (2026-10-29), and the
+    # voice.demo studio's laptop route uses it. It did NOT come back after a reboot (compose, not a quadlet), so the hook
+    # silently fell back to Kokoro. Idle it holds no model; the trained voice loads on first use (~2.5 GB VRAM).
+    # On only while speech_voice_backend=debian (see the lever at the top of this file).
+    - name: debian-voice-tunnel.service
+      enabled: "{{ speech_voice_backend == 'debian' }}"
+      state: "{{ 'started' if speech_voice_backend == 'debian' else 'stopped' }}"
+    - name: voicebox.service
+      enabled: true
+      state: started
+    - name: voicebox-idle-unload.timer
+      enabled: true
+      state: started
+    # static (no [Install]): triggered by the timer only.
+    - name: voicebox-idle-unload.service
+      manage: false
     # Enabled but not currently running — started on demand, not at boot.
     - name: kokoro-tts.service
       enabled: true

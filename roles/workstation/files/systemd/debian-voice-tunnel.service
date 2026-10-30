@@ -1,0 +1,16 @@
+[Unit]
+Description=Tunnel to the Debian voice server (voice-tts :8095) for the Claude Code reply voice; on when speech_voice_backend=debian
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Loopback only on both ends (no 0.0.0.0). Key-only, no prompts; ServerAlive drops a dead link so systemd reconnects.
+ExecStart=/usr/bin/ssh -N -i %h/.ssh/claude-debian -o BatchMode=yes -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+  -L 127.0.0.1:{{ speech_voice_debian_local_port }}:127.0.0.1:8095 {{ speech_voice_debian_ssh }}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

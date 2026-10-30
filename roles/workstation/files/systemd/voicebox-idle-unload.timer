@@ -1,0 +1,12 @@
+[Unit]
+Description=Check every 5 minutes whether Voicebox can give its GPU memory back (no Claude Code session for 15 min)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=30s
+# A missed check while the laptop was off does not matter: the next one runs 5 minutes after boot.
+Persistent=false
+
+[Install]
+WantedBy=timers.target

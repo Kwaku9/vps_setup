@@ -1,0 +1,9 @@
+[Unit]
+Description=Free Voicebox's GPU memory once no Claude Code session has run for 15 minutes
+Documentation=file:///home/general/.local/bin/voicebox-idle-unload
+After=voicebox.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/general/.local/bin/voicebox-idle-unload
+TimeoutStartSec=90
