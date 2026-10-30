@@ -32,6 +32,7 @@ flows:
 
   # --- svc ---
   - {from: svc, to: data, ports: [5432], reason: "LiteLLM and APIs to Postgres"}
+  - {from: svc, from_pod: backend-pod, to: data, to_pod: neo4j-pod, ports: [7687], reason: "timeline-api graph queries (moved from frontend-pod 2026-10-30)"}
   - {from: svc, to: internet, ports: [443], reason: "model providers (via Squid)"}
 
   # --- agent ---

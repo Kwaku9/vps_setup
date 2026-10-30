@@ -51,7 +51,7 @@ boot_services:
     - { name: llama-embed-pod,           enabled: true,  depends_on: [] }
     - { name: ai-stack-pod,              enabled: true,  depends_on: [authentication-pod, shared-db-pod] }
     - { name: management-pod,            enabled: true,  depends_on: [authentication-pod] }
-    - { name: backend-pod,               enabled: true,  depends_on: [shared-db-pod] }
+    - { name: backend-pod,               enabled: true,  depends_on: [security-infra-pod, shared-db-pod] }
     - { name: frontend-pod,              enabled: true,  depends_on: [backend-pod] }
     - { name: dev-pod,                    enabled: true,  depends_on: [] }
     # security-infra-pod is Traefik + CrowdSec: the ONLY ingress path into this
@@ -139,10 +139,8 @@ boot_services:
     - { name: owui-coder,       enabled: false, depends_on: [ai-stack-pod] }   # retired: gateway-pod owns it
     # graph-RAG service for the buildfol.io chat widget; needs neo4j-pod up first.
     - { name: timeline-context-api, enabled: false, depends_on: [neo4j-pod] }   # retired: graph-mcp-pod owns it
-    # timeline.aicortex.cloud graph + semantic search API; joins frontend-pod's
-    # netns (loopback only) so the pod must exist first; queries neo4j-pod and
-    # shared-db-pod at request time (not at start), so those are not hard deps.
-    - { name: timeline-api,     enabled: true, depends_on: [frontend-pod] }
+    # RETIRED: timeline-api lives in backend-pod (phase 2 split), which has its own unit above.
+    - { name: timeline-api,     enabled: false, depends_on: [] }
     # decks.aicortex.cloud — static slide-deck gallery. RETIRED as a standalone unit: decks-nginx now
     # lives in web-public-pod, which has its own unit above. `enabled: false` makes the role delete
     # /etc/init.d/decks-nginx; a leftover unit would start the container outside its pod.

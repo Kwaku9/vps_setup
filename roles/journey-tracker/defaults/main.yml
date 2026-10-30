@@ -19,8 +19,12 @@ journey_tracker:
     image: "localhost/timeline-api:latest"
     internal_port: 8080
     memory: "192m"
-    pod: "frontend-pod"
+    # backend-pod (svc zone; phase 2 split, owner 2026-10-30). journey-tracker's nginx in frontend-pod reaches it by pod
+    # name, so it listens on the pod interface: a recorded EXCEPTION to the no-0.0.0.0 rule (the image itself still
+    # defaults to 127.0.0.1); the zone rules limit who may connect (frontend -> svc 8080).
+    pod_name: "backend-pod"
     env:
+      API_HOST: "0.0.0.0"
       API_PORT: "8080"
       PGHOST: "shared-db-pod"
       PGPORT: "5432"
