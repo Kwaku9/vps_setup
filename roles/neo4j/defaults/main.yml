@@ -78,7 +78,11 @@ neo4j:
     enabled: true
     script_dir: "/opt/compose/sessions-graph"
     cron_hour: "3"
-    cron_minute: "30"          # after the 03:00 session-ingestion cron
+    cron_minute: "30"
+    # OFF: daily-ingest.sh (roles/monitoring) already runs sync.sh right after the
+    # 03:00 ingest. This second run at 03:30 doubled the neo4j load and, on
+    # 2026-10-31, piled onto a swap-exhausted box and took neo4j (and the host) down.
+    cron_enabled: false
     run_on_deploy: false       # set true (or use --tags sessions-graph-run) to load during deploy
 
   # Load docs/service-map.cypher into the graph after the DB is ready.
