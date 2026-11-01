@@ -28,7 +28,7 @@
   let summary = $state<InventorySummary | null>(null);
   api.summary().then((s) => (summary = s)).catch(() => {});
   const SUMMARY_KEY: Record<string, string> = {
-    jobs: 'jobs', databases: 'datastores', tables: 'tables', mcp: 'mcp', credentials: 'credentials', endpoints: 'endpoints',
+    jobs: 'jobs', databases: 'datastores', tables: 'tables', mcp: 'mcp', knowledge: 'knowledge', credentials: 'credentials', endpoints: 'endpoints',
     pipelines: 'pipelines', alerts: 'alert_rules', scripts: 'scripts', apis: 'apis', hosts: 'hosts',
   };
   const count = (v: View) => cache[v.key]?.items?.length ?? (summary?.[SUMMARY_KEY[v.key]] as number | undefined);

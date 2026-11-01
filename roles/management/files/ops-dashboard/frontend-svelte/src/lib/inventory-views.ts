@@ -28,7 +28,17 @@ const list = (xs: unknown[] | null | undefined, n = 3) => {
 const join = (...parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(' · ');
 
 // McpServer.status from the collector: ok, or why it cannot run.
-const MCP_TONE: Record<string, Tone> = { ok: 'ok', remote: 'info', 'account-connector': 'info', disabled: 'off' };
+// not-configured = called in some session but no longer in any config we see.
+const MCP_TONE: Record<string, Tone> = {
+  ok: 'ok', remote: 'info', 'account-connector': 'info', disabled: 'off', 'not-configured': 'off',
+};
+const DAY = 86400e3;
+const idleDays = (iso: string | null | undefined) => (iso ? (Date.now() - Date.parse(iso)) / DAY : Infinity);
+const used = (m: Item) => (m.last_used ? `used ${ago(m.last_used)}` : 'never used');
+
+// KnowledgeStore.status from /api/inventory/knowledge (stale = no writes for 60 days).
+const KB_TONE: Record<string, Tone> = { ok: 'ok', stale: 'warn', broken: 'bad', stopped: 'off' };
+const KB_KIND: Record<string, string> = { graph: 'Graph', vector: 'Vector table', collection: 'Collection' };
 
 const JOB_GROUP: Record<string, string> = {
   'in-ansible': 'In Ansible', unmanaged: 'Not in Ansible', 'missing-live': 'In Ansible, missing live', remote: 'Other hosts',
@@ -122,15 +132,48 @@ export const VIEWS: View[] = [
     label: 'MCP',
     load: async () => (await api.inventory<Item[]>('mcp')).map((r) => ({ ...r.server, runs_in: r.runs_in })),
     row: (m) => ({
-      title: m.name, right: m.transport, tone: MCP_TONE[m.status] ?? 'warn',
-      sub: join(m.status, m.scope, m.runs_in || m.where),
+      title: m.name, right: used(m), tone: MCP_TONE[m.status] ?? 'warn',
+      sub: join(m.status, m.host, m.scope, m.runs_in || m.where, m.calls_30d ? `${num(m.calls_30d)} calls in 30d` : false),
     }),
     filters: [
       { label: 'Broken', test: (m) => (MCP_TONE[m.status] ?? 'warn') === 'warn', tone: 'warn' },
       { label: 'OK', test: (m) => m.status === 'ok' },
+      { label: 'Unused 30d', test: (m) => m.status !== 'not-configured' && idleDays(m.last_used) > 30, tone: 'off' },
+      { label: 'No longer configured', test: (m) => m.status === 'not-configured', tone: 'off' },
     ],
-    detail: (m) => [{ rows: [['Status', m.status], ['Scope', m.scope], ['Where', m.where], ['Transport', m.transport],
-      ['Runs in', m.runs_in], ['URL', m.url], ['Command', m.command]] }],
+    detail: (m) => [{ rows: [['Status', m.status], ['Host', m.host], ['Scope', m.scope], ['Where', m.where],
+      ['Transport', m.transport], ['Runs in', m.runs_in], ['URL', m.url], ['Command', m.command]] },
+    { title: 'Usage', rows: [['Last used', m.last_used ? `${clock(m.last_used)} (${ago(m.last_used)})` : 'never, in the session corpus'],
+      ['Calls, last 30 days', num(m.calls_30d)], ['Calls, all time', num(m.calls)], ['Used from', m.used_from],
+      ['Last request in server log', m.last_request ? `${clock(m.last_request)} (${ago(m.last_request)})` : null]] }],
+  },
+  {
+    key: 'knowledge',
+    label: 'Knowledge',
+    load: () => api.inventory<Item[]>('knowledge'),
+    row: (k) => ({
+      title: k.name, right: k.last_written ? `written ${ago(k.last_written)}` : k.engine,
+      tone: KB_TONE[k.status] ?? 'info',
+      sub: join(k.host, KB_KIND[k.kind] ?? k.kind, k.engine, k.items != null && `${num(k.items)} ${k.unit ?? ''}`,
+        k.bytes != null && bytes(k.bytes), k.status !== 'ok' && k.status),
+    }),
+    filters: [
+      { label: 'Stale >60d', test: (k) => k.status === 'stale', tone: 'warn' },
+      { label: 'Broken', test: (k) => k.status === 'broken' || k.status === 'stopped', tone: 'bad' },
+      { label: 'Graphs', test: (k) => k.kind === 'graph' },
+      { label: 'Vectors', test: (k) => k.kind === 'vector' },
+      { label: 'Collections', test: (k) => k.kind === 'collection' },
+      { label: 'VPS', test: (k) => k.host === 'alpine-vps' },
+      { label: 'Laptop', test: (k) => k.host !== 'alpine-vps' },
+    ],
+    detail: (k) => [
+      { rows: [['Purpose', k.purpose], ['Kind', KB_KIND[k.kind] ?? k.kind], ['Engine', k.engine], ['Host', k.host],
+        ['Container', k.container], ['Status', k.status], ['Error', k.error]] },
+      { title: 'Size', rows: [['Items', k.items != null ? `${num(k.items)} ${k.unit ?? ''}` : null],
+        ['Relationships', num(k.relationships)], ['On disk', bytes(k.bytes)], ['Biggest parts', k.composition]] },
+      { title: 'Last written', rows: [['When', k.last_written ? `${clock(k.last_written)} (${ago(k.last_written)})` : 'unknown'],
+        ['Measured by', k.last_written_how], ['Key', k.key]] },
+    ],
   },
   {
     key: 'credentials',

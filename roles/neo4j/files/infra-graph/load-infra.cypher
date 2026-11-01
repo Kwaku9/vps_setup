@@ -10,7 +10,7 @@
 //
 // Owned labels (deleted when unseen): Host Network Pod Container Datastore
 // Database Table ScheduledJob Route Middleware Datasource Dashboard McpServer
-// Script Api Credential PublicEndpoint Pipeline AlertRule.
+// Script Api Credential PublicEndpoint Pipeline AlertRule KnowledgeStore.
 // External is shared: nodes this loader created (src set) are reconciled like
 // owned labels; hand-curated ones (no src) are enriched but never deleted.
 // Not owned, never touched: Risk, Role, the code graph (CodeFile, Endpoint, ...)
@@ -270,12 +270,52 @@ UNWIND d.mcp_servers AS m
 MERGE (x:McpServer {key: m.key})
 SET x.name = m.name, x.scope = m.scope, x.where = m.where, x.transport = m.transport,
     x.command = m.command, x.args = m.args, x.url = m.url, x.env_keys = m.env_keys,
-    x.header_keys = m.header_keys, x.status = m.status, x.src = 'mcp', x.seen = datetime(d.run)
+    x.header_keys = m.header_keys, x.status = m.status, x.host = m.host,
+    x.last_used = CASE WHEN m.last_used IS NULL THEN null ELSE datetime(m.last_used) END,
+    x.last_request = CASE WHEN m.last_request IS NULL THEN null ELSE datetime(m.last_request) END,
+    x.calls = m.calls, x.calls_30d = m.calls_30d, x.used_from = m.used_from,
+    x.src = 'mcp', x.seen = datetime(d.run)
 WITH d, m, x
 OPTIONAL MATCH (c:Container {name: m.container})
 OPTIONAL MATCH (p:Pod {name: m.pod})
 WITH d, x, coalesce(c, p) AS t WHERE t IS NOT NULL
 MERGE (x)-[r:RUNS_IN]->(t) SET r.src = 'mcp', r.seen = datetime(d.run);
+
+// Laptop-configured servers (from its pushed snapshot), reconciled as src 'remote'.
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.remote.ok
+UNWIND coalesce(d.remote_mcp_servers, []) AS m
+MERGE (x:McpServer {key: m.key})
+SET x.name = m.name, x.scope = m.scope, x.where = m.where, x.transport = m.transport,
+    x.command = m.command, x.url = m.url, x.status = m.status, x.host = m.host,
+    x.last_used = CASE WHEN m.last_used IS NULL THEN null ELSE datetime(m.last_used) END,
+    x.calls = coalesce(m.calls, 0), x.calls_30d = coalesce(m.calls_30d, 0), x.used_from = coalesce(m.used_from, []),
+    x.src = 'remote', x.seen = datetime(d.run);
+
+// ---------- knowledge: graphs, vector tables, knowledge collections ----------
+CREATE CONSTRAINT knowledge_key IF NOT EXISTS FOR (n:KnowledgeStore) REQUIRE n.key IS UNIQUE;
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.knowledge.ok
+UNWIND d.knowledge AS k
+MERGE (x:KnowledgeStore {key: k.key})
+SET x += apoc.map.clean(k, ['key', 'last_written', 'container'], []),
+    x.last_written = CASE WHEN k.last_written IS NULL THEN null ELSE datetime(k.last_written) END,
+    x.container = k.container, x.src = 'knowledge', x.seen = datetime(d.run)
+WITH d, k, x
+MATCH (c:Container {name: k.container})
+MERGE (x)-[r:STORED_IN]->(c) SET r.src = 'knowledge', r.seen = datetime(d.run);
+
+CALL apoc.load.json('file:///infra.json') YIELD value AS d
+WITH d WHERE d.sources.remote.ok
+UNWIND coalesce(d.remote_knowledge, []) AS k
+MERGE (x:KnowledgeStore {key: k.key})
+SET x += apoc.map.clean(k, ['key', 'last_written'], []),
+    x.last_written = CASE WHEN k.last_written IS NULL THEN null ELSE datetime(k.last_written) END,
+    x.src = 'remote', x.seen = datetime(d.run)
+WITH d, k, x
+MATCH (h:Host {name: k.host})
+MERGE (x)-[r:ON_HOST]->(h) SET r.src = 'remote', r.seen = datetime(d.run);
 
 // ---------- scripts: what cron runs, and what those scripts touch ----------
 CALL apoc.load.json('file:///infra.json') YIELD value AS d
@@ -628,6 +668,7 @@ WITH d, datetime(d.run) AS run,
      {Host:'podman', Network:'podman', Pod:'podman', Container:'podman',
       Datastore:'db', Database:'db', Table:'db', ScheduledJob:'cron',
       Route:'traefik', Middleware:'traefik', Datasource:'grafana', Dashboard:'grafana', McpServer:'mcp',
+      KnowledgeStore:'knowledge',
       Script:'scripts', Api:'ingress', Credential:'creds', PublicEndpoint:'exposure', Pipeline:'pipelines', AlertRule:'alerts'} AS owner
 UNWIND keys(owner) AS label
 WITH run, label, owner[label] AS src, d WHERE d.sources[owner[label]].ok

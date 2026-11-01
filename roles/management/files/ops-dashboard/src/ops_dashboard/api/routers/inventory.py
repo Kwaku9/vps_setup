@@ -71,6 +71,7 @@ async def summary() -> dict:
         CALL { MATCH (n:Database) RETURN count(n) AS databases }
         CALL { MATCH (n:Table) RETURN count(n) AS tables }
         CALL { MATCH (n:McpServer) RETURN count(n) AS mcp }
+        CALL { MATCH (n:KnowledgeStore) RETURN count(n) AS knowledge }
         CALL { MATCH (n:Credential) RETURN count(n) AS credentials }
         CALL { MATCH (n:PublicEndpoint) RETURN count(n) AS endpoints }
         CALL { MATCH (n:Pipeline) RETURN count(n) AS pipelines }
@@ -248,8 +249,34 @@ async def mcp() -> list[dict]:
     return await _q("""
         MATCH (m:McpServer)
         OPTIONAL MATCH (m)-[:RUNS_IN]->(t)
-        RETURN m {.name, .scope, .where, .transport, .command, .url, .status} AS server, t.name AS runs_in
+        RETURN m {.name, .scope, .where, .host, .transport, .command, .url, .status, .last_used, .last_request,
+                  .calls, .calls_30d, .used_from} AS server, t.name AS runs_in
         ORDER BY server.status, server.name""")
+
+
+KNOWLEDGE_STALE_DAYS = 60
+
+
+def knowledge_status(state: str | None, last_written: str | None, now: datetime | None = None) -> str:
+    """ok | stale | broken | stopped. Stale = nothing written for KNOWLEDGE_STALE_DAYS;
+    a store with no write clock (no timestamp column) is never called stale."""
+    if state in ("broken", "stopped"):
+        return state
+    if last_written:
+        now = now or datetime.now(timezone.utc)
+        t = datetime.fromisoformat(last_written.replace("Z", "+00:00"))
+        if (now - t).days > KNOWLEDGE_STALE_DAYS:
+            return "stale"
+    return "ok"
+
+
+async def knowledge() -> list[dict]:
+    rows = await _q("""
+        MATCH (k:KnowledgeStore)
+        RETURN k {.key, .name, .kind, .engine, .host, .container, .bytes, .items, .unit, .relationships,
+                  .composition, .purpose, .last_written, .last_written_how, .state, .error} AS k
+        ORDER BY k.host, k.kind, k.bytes DESC""")
+    return [{**r["k"], "status": knowledge_status(r["k"].get("state"), r["k"].get("last_written"))} for r in rows]
 
 
 async def credentials() -> list[dict]:
@@ -373,6 +400,10 @@ async def findings() -> list[dict]:
         if r["rule"].get("state") == "firing":
             out.append({"severity": "bad", "kind": "alert", "title": f"{r['rule']['name']} is firing",
                         "detail": ", ".join(r["watches"])})
+    for k in await knowledge():
+        if k["status"] == "broken":
+            out.append({"severity": "warn", "kind": "knowledge", "title": f"{k['name']} on {k['host']} is unreadable",
+                        "detail": k.get("error") or ""})
     remote_unwatched = [j["name"] for j in await jobs() if j["status"] == "unwatched"]
     if remote_unwatched:
         out.append({"severity": "info", "kind": "coverage",
@@ -382,7 +413,8 @@ async def findings() -> list[dict]:
     return sorted(out, key=lambda f: order[f["severity"]])
 
 
-VIEWS = {"summary": summary, "jobs": jobs, "databases": databases, "mcp": mcp, "credentials": credentials,
+VIEWS = {"summary": summary, "jobs": jobs, "databases": databases, "mcp": mcp, "knowledge": knowledge,
+         "credentials": credentials,
          "endpoints": endpoints, "alerts": alert_rules, "scripts": scripts, "apis": apis, "hosts": hosts,
          "findings": findings}
 

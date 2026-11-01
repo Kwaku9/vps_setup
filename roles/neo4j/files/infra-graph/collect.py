@@ -686,7 +686,315 @@ def collect_mcp(out):
                         "header_keys": [], "status": "account-connector", "container": None})
     if not servers:
         raise RuntimeError("implausible: no MCP servers configured")
+    for s in servers:
+        s["host"] = HOST
+    # Laptop servers arrive in its snapshot (collect_remote runs first).
+    remote = out.get("remote_mcp_servers", [])
+    usage = mcp_usage(containers.get(CORPUS_PG[0]))
+    for s in servers + remote:
+        u = usage.get(mcp_norm(s["name"]))
+        s["last_used"], s["calls"], s["calls_30d"], s["used_from"] = (
+            (u["last_used"], u["calls"], u["calls_30d"], u["hosts"]) if u else (None, 0, 0, []))
+        if s["host"] == HOST:
+            s["last_request"] = _mcp_last_request(s, out)
+    # Called in some session but configured nowhere we can see: retired servers,
+    # or ones configured only on a host that has not pushed a snapshot.
+    for k in sorted(set(usage) - {mcp_norm(s["name"]) for s in servers + remote}):
+        u = usage[k]
+        servers.append({"key": f"history:{k}", "name": u["name"], "scope": "history", "where": None, "host": None,
+                        "transport": None, "command": None, "args": [], "url": "", "env_keys": [], "header_keys": [],
+                        "status": "not-configured", "container": None, "last_used": u["last_used"],
+                        "calls": u["calls"], "calls_30d": u["calls_30d"], "used_from": u["hosts"], "last_request": None})
     out["mcp_servers"] = servers
+
+
+def mcp_norm(name):
+    """Match key between a configured name and the <server> in mcp__<server>__tool.
+    Claude Code folds punctuation inconsistently (claude.ai Google Drive ->
+    claude_ai_Google_Drive, but L.A. Rouge -> LA_Rouge; session-recall and
+    session_recall both occur), so compare on letters and digits only."""
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+
+
+# Every Claude Code session (VPS and laptop) is ingested into enterprise.sessions,
+# so the corpus is the one place that knows when each server was really called.
+MCP_USAGE_SQL = """
+SELECT split_part(t.tool_name, '__', 2), count(*),
+       count(*) FILTER (WHERE t.timestamp > now() - interval '30 days'),
+       to_char(max(t.timestamp) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+       string_agg(DISTINCT coalesce(s.host, '?'), ',')
+FROM sessions.tool_calls t JOIN sessions.sessions s ON s.id = t.session_id
+WHERE t.tool_name LIKE 'mcp\\_\\_%' GROUP BY 1;"""
+CORPUS_PG = ("postgres", "enterprise")
+
+
+def mcp_usage(pg):
+    if not pg or pg["state"] != "running":
+        return {}
+    try:
+        rows = psql(pg["name"], env_of(pg).get("POSTGRES_USER", "postgres"), CORPUS_PG[1], MCP_USAGE_SQL)
+    except Exception:
+        return {}  # no corpus: servers still load, with no last-used
+    usage = {}
+    for srv, calls, c30, last, hosts in rows:
+        u = usage.setdefault(mcp_norm(srv), {"name": srv, "calls": 0, "calls_30d": 0, "last_used": None,
+                                             "hosts": set()})
+        u["calls"] += int(calls)
+        u["calls_30d"] += int(c30)
+        u["last_used"] = max(filter(None, [u["last_used"], last]), default=None)
+        u["hosts"] |= {h for h in hosts.split(",") if h != "?"}
+    for u in usage.values():
+        u["hosts"] = sorted(u["hosts"])
+    return usage
+
+
+MCP_REQ_RE = re.compile(r"^(\S+)\s.*\b(?:POST|GET) /(?:mcp|sse|messages)\b")
+
+
+def _mcp_last_request(srv, out):
+    """Newest MCP request line in the serving container's log (HTTP servers only log them)."""
+    names = [srv.get("container")] if srv.get("container") else [
+        c["name"] for c in out.get("containers", []) if srv.get("pod") and c["pod"] == srv["pod"] and "mcp" in c["name"]]
+    best = None
+    for n in filter(None, names):
+        r = subprocess.run(["podman", "logs", "-t", "--tail", "5000", n], capture_output=True, text=True, timeout=60)
+        for line in reversed((r.stdout + r.stderr).splitlines()):
+            m = MCP_REQ_RE.match(line)
+            if m:
+                ts = _utc(m[1])
+                best = max(filter(None, [best, ts]), default=None)
+                break
+    return best
+
+
+def _utc(stamp):
+    """podman -t stamp (2026-10-17T14:38:01.123456789-04:00) -> 2026-10-17T18:38:01Z."""
+    m = re.match(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?(Z|[+-]\d\d:\d\d)$", stamp)
+    if not m:
+        return None
+    t = calendar.timegm(time.strptime(m[1], "%Y-%m-%dT%H:%M:%S"))
+    if m[2] != "Z":
+        sign = 1 if m[2][0] == "+" else -1
+        t -= sign * (int(m[2][1:3]) * 3600 + int(m[2][4:6]) * 60)
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+
+
+# ───────────────────────────── knowledge: graphs + vector stores ─────────────────────────────
+# What each knowledge store is for, by key pattern (first match). Keys are
+# <container>/<db>[/<schema.table>], chroma:<path>, graphify:<path>.
+KNOWLEDGE_PURPOSE = [
+    (r"neo4j-db/neo4j$", "Unified graph: session history, code graph, doc claims, infra graph"),
+    (r"/recall\.chunks$", "Search index behind session-recall"),
+    (r"/recall\.summaries$", "Session summary vectors"),
+    (r"/openwebui\.document_chunk$", "Open WebUI RAG chunks (all knowledge collections)"),
+    (r"/openwebui\._document_chunk_\d+_backup$", "Backup from an old embedding dimension"),
+    (r"/spike\.", "Embedding-model comparison spike"),
+    (r"^open-webui:", "Open WebUI knowledge collection"),
+    (r"^chroma:.*openwebui", "Open WebUI vector store from before the move to pgvector"),
+    (r"ai-stack-postgres/memory/", "Old memory store (Open WebUI document chunks)"),
+]
+VECTOR_TYPES = ("vector", "halfvec", "sparsevec")
+PG_VECTOR_TABLES = """
+SELECT n.nspname, c.relname, pg_total_relation_size(c.oid),
+       coalesce((SELECT string_agg(a2.attname, ',') FROM pg_attribute a2
+                 WHERE a2.attrelid = c.oid AND a2.attnum > 0 AND NOT a2.attisdropped
+                   AND a2.atttypid IN ('timestamptz'::regtype, 'timestamp'::regtype, 'date'::regtype)), '')
+FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_type t ON t.oid = a.atttypid
+WHERE t.typname IN ('vector', 'halfvec', 'sparsevec') AND c.relkind IN ('r', 'p') AND a.attnum > 0
+  AND NOT a.attisdropped AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+GROUP BY 1, 2, 3, c.oid;"""
+TS_PREFERENCE = ("updated_at", "ts", "timestamp", "created_at", "inserted_at")
+KNOWLEDGE_STALE_DAYS = 60
+
+
+def knowledge_purpose(key):
+    return next((p for pat, p in KNOWLEDGE_PURPOSE if re.search(pat, key)), None)
+
+
+def _ts_col(cols):
+    cols = [c for c in cols.split(",") if c]
+    return next((c for p in TS_PREFERENCE for c in cols if c == p), cols[0] if cols else None)
+
+
+def _qi(name):
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _kb(key, name, kind, engine, host, **kw):
+    d = {"key": key, "name": name, "kind": kind, "engine": engine, "host": host, "container": None,
+         "bytes": None, "items": None, "unit": None, "relationships": None, "composition": None,
+         "last_written": None, "last_written_how": None, "state": "ok", "error": None}
+    d.update(kw)
+    d["purpose"] = d.get("purpose") or knowledge_purpose(key)
+    return d
+
+
+def _newest_mtime(path, skip=()):
+    best = None
+    for root, _, files in os.walk(path):
+        for f in files:
+            if f.startswith(skip):
+                continue
+            try:
+                m = os.path.getmtime(os.path.join(root, f))
+            except OSError:
+                continue
+            best = max(best or m, m)
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(best)) if best else None
+
+
+def _kb_neo4j(c, stores):
+    sh = 'cypher-shell -u neo4j -p "${NEO4J_AUTH#neo4j/}" --format plain'
+    dbs = run(["podman", "exec", "-i", c["name"], "sh", "-c", sh + " -d system"],
+              input="SHOW DATABASES YIELD name, currentStatus WHERE name <> 'system' RETURN name, currentStatus;")
+    data = next((m["source"] for m in c["mounts"] if m["dest"] == "/data" and m["type"] == "bind"), None)
+    for line in dbs.splitlines()[1:]:
+        db, status = [x.strip().strip('"') for x in line.split(",", 1)]
+        key = f'{c["name"]}/{db}'
+        if status != "online":
+            stores.append(_kb(key, key, "graph", "neo4j", HOST, container=c["name"], state="broken",
+                              error=f"database {status}"))
+            continue
+        o = run(["podman", "exec", "-i", c["name"], "sh", "-c", sh + f" -d {db}"],
+                input="CALL apoc.meta.stats() YIELD nodeCount, relCount, labels "
+                      "RETURN nodeCount, relCount, apoc.convert.toJson(labels);")
+        nodes, rels, labels = o.splitlines()[-1].split(", ", 2)
+        labels = json.loads(json.loads(labels))
+        top = sorted(labels.items(), key=lambda kv: -kv[1])[:8]
+        txdir = os.path.join(data, "transactions", db) if data else None
+        stores.append(_kb(key, key, "graph", "neo4j", HOST, container=c["name"],
+                          bytes=du_bytes(os.path.join(data, "databases", db)) if data else None,
+                          items=int(nodes), unit="nodes", relationships=int(rels),
+                          composition=[f"{k} {v}" for k, v in top],
+                          last_written=_newest_mtime(txdir, skip=("checkpoint",)) if txdir else None,
+                          last_written_how="transaction log mtime"))
+
+
+def _kb_postgres(c, stores):
+    env = env_of(c)
+    user, root = env.get("POSTGRES_USER", "postgres"), env.get("POSTGRES_DB", "postgres")
+    dbs = [r[0] for r in psql(c["name"], user, root,
+                              "SELECT datname FROM pg_database WHERE NOT datistemplate AND datallowconn;")]
+    for db in dbs:
+        try:
+            tables = psql(c["name"], user, db, PG_VECTOR_TABLES)
+        except Exception as e:
+            if "$libdir/vector" in str(e):  # pgvector registered, but this image has no library for it
+                stores.append(_kb(f'{c["name"]}/{db}/*', f"{db} (vector tables)", "vector", "pgvector", HOST,
+                                  container=c["name"], state="broken",
+                                  error="pgvector extension is registered but the image has no vector library"))
+            continue  # otherwise cannot open this db; collect_dbs already warns about it
+        if tables:
+            try:
+                psql(c["name"], user, db, "SELECT '[1]'::vector;")
+                broken = None
+            except Exception as e:  # extension registered but its library is gone (image swap)
+                broken = str(e)[-160:]
+            for schema, rel, nbytes, tscols in tables:
+                key = f'{c["name"]}/{db}/{schema}.{rel}'
+                kb = _kb(key, f"{db}.{schema}.{rel}", "vector", "pgvector", HOST, container=c["name"],
+                         bytes=int(nbytes), unit="rows", state="broken" if broken else "ok", error=broken)
+                if not broken:
+                    col = _ts_col(tscols)
+                    q = f"SET statement_timeout = '20s'; SELECT count(*)" + \
+                        (f", to_char(max({_qi(col)}) AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')" if col else "") + \
+                        f" FROM {_qi(schema)}.{_qi(rel)};"
+                    try:
+                        r = psql(c["name"], user, db, q)[-1]
+                        kb["items"] = int(r[0])
+                        if col and len(r) > 1 and r[1]:
+                            kb["last_written"], kb["last_written_how"] = r[1], f"max({col})"
+                        elif not col:
+                            kb["last_written_how"] = "no timestamp column"
+                    except Exception as e:
+                        kb["error"] = str(e)[-160:]
+                stores.append(kb)
+        try:
+            _kb_openwebui(c, user, db, stores)
+        except Exception:
+            pass  # not Open WebUI's schema (or an older one): no collections to list
+
+
+def _kb_openwebui(c, user, db, stores):
+    """Open WebUI knowledge collections, wherever its tables live (any schema)."""
+    found = psql(c["name"], user, db,
+                 "SELECT table_schema, string_agg(table_name, ',') FROM information_schema.tables "
+                 "WHERE table_name IN ('knowledge', 'knowledge_file') GROUP BY 1;")
+    for schema, names in found:
+        if "knowledge" not in names.split(","):
+            continue
+        s = _qi(schema)
+        files = (f"(SELECT count(*) FROM {s}.knowledge_file f WHERE f.knowledge_id = k.id)"
+                 if "knowledge_file" in names.split(",") else
+                 "coalesce(json_array_length((k.data::json)->'file_ids'), 0)")
+        rows = psql(c["name"], user, db,
+                    f"SELECT k.id, k.name, {files}, "
+                    f"to_char(to_timestamp(greatest(k.updated_at, k.created_at)) AT TIME ZONE 'UTC', "
+                    f"'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') FROM {s}.knowledge k;")
+        for kid, name, nfiles, updated in rows:
+            stores.append(_kb(f"open-webui:{c['name']}/{db}/{kid}", name, "collection", "open-webui", HOST,
+                              container=c["name"], items=int(nfiles), unit="files", last_written=updated or None,
+                              last_written_how="knowledge.updated_at"))
+
+
+def _kb_chroma(stores):
+    import sqlite3
+    for root in SQLITE_ROOTS:
+        r = subprocess.run(["find", root, "-xdev", "-maxdepth", "6", "-name", "chroma.sqlite3"],
+                           capture_output=True, text=True, timeout=120)
+        for path in r.stdout.split():
+            kb = _kb(f"chroma:{path}", path, "vector", "chroma", HOST, bytes=du_bytes(os.path.dirname(path)),
+                     unit="embeddings")
+            try:
+                con = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True, timeout=5)
+                kb["items"] = con.execute("SELECT count(*) FROM embeddings").fetchone()[0]
+                last = con.execute("SELECT max(created_at) FROM embeddings").fetchone()[0]
+                kb["composition"] = [f'{con.execute("SELECT count(*) FROM collections").fetchone()[0]} collections']
+                con.close()
+                kb["last_written"] = (str(last).replace(" ", "T")[:19] + "Z") if last else None
+                kb["last_written_how"] = "max(embeddings.created_at)"
+            except Exception as e:
+                kb["state"], kb["error"] = "broken", str(e)[:160]
+            stores.append(kb)
+
+
+def _kb_graphify(stores):
+    r = subprocess.run(["find", "/workspace", "-xdev", "-maxdepth", "6", "(", "-name", "node_modules", "-o", "-name",
+                        ".git", ")", "-prune", "-o", "-path", "*/graphify-out/graph.json", "-print"],
+                       capture_output=True, text=True, timeout=120)
+    for path in r.stdout.split()[:50]:
+        kb = _kb(f"graphify:{path}", os.path.basename(os.path.dirname(os.path.dirname(path))), "graph", "graphify",
+                 HOST, bytes=os.path.getsize(path), unit="nodes", purpose="graphify code/doc graph",
+                 last_written=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(os.path.getmtime(path))),
+                 last_written_how="graph.json mtime")
+        try:
+            g = json.load(open(path))
+            kb["items"], kb["relationships"] = len(g.get("nodes", [])), len(g.get("links", g.get("edges", [])))
+        except Exception as e:
+            kb["state"], kb["error"] = "broken", str(e)[:160]
+        stores.append(kb)
+
+
+def collect_knowledge(out):
+    stores, warnings = [], []
+    for c in out["containers"]:
+        eng = engine_of(c)
+        if eng not in ("neo4j", "postgres"):
+            continue
+        if c["state"] != "running":
+            if eng == "neo4j":
+                stores.append(_kb(f'{c["name"]}/*', c["name"], "graph", "neo4j", HOST, container=c["name"],
+                                  state="stopped"))
+            continue
+        try:
+            (_kb_neo4j if eng == "neo4j" else _kb_postgres)(c, stores)
+        except Exception as e:  # one unreadable store must not hide the rest
+            warnings.append(f'{c["name"]}: {str(e)[:200]}')
+    _kb_chroma(stores)
+    _kb_graphify(stores)
+    out["knowledge"] = stores
+    out["knowledge_warnings"] = warnings
 
 
 # ───────────────────────────── outbound API naming ─────────────────────────────
@@ -2159,7 +2467,7 @@ def _remote_port_reach(p, zones):
 
 def collect_remote(out):
     files = sorted(glob.glob(os.path.join(INVENTORY_DIR, "*.json")))
-    hosts, pipes, jobs, eps = [], [], [], []
+    hosts, pipes, jobs, eps, kbs, mcps = [], [], [], [], [], []
     now = time.time()
     for f in files:
         with open(f) as fh:
@@ -2210,6 +2518,16 @@ def collect_remote(out):
                         "name": f'{h} {p.get("process") or "?"} {p["proto"]}/{p["port"]}', "proto": p["proto"],
                         "port": p["port"], "process": p.get("process"), "reachable": reach, "via": "direct",
                         "flags": notes + (["reachable from the LAN"] if "lan" in reach else [])})
+        for k in d.get("knowledge", []):
+            if isinstance(k, dict) and k.get("key"):
+                kbs.append(dict(k, key=f'{h}:{k["key"]}', host=h,
+                                purpose=k.get("purpose") or knowledge_purpose(k["key"])))
+        for m in d.get("mcp_servers", []):
+            if isinstance(m, dict) and m.get("name"):
+                mcps.append({"key": f'{h}:{m.get("scope", "?")}:{m["name"]}' + (f'@{m["where"]}' if m.get("where") else ""),
+                             "name": m["name"], "scope": m.get("scope"), "where": m.get("where"), "host": h,
+                             "transport": m.get("transport"), "command": m.get("command"), "url": redact(m.get("url") or ""),
+                             "status": m.get("status") or "unknown"})
         funnel = (d.get("exposure") or {}).get("tailscale_funnel") or {}
         for hostport, on in (funnel.get("AllowFunnel") or {}).items():
             if on:
@@ -2218,6 +2536,7 @@ def collect_remote(out):
                             "reachable": ["internet"], "via": "tailscale-funnel",
                             "flags": ["PUBLIC INTERNET via Tailscale Funnel"]})
     out["remote_hosts"], out["remote_pipelines"], out["remote_jobs"], out["remote_endpoints"] = hosts, pipes, jobs, eps
+    out["remote_knowledge"], out["remote_mcp_servers"] = kbs, mcps
 
 
 # ───────────────────────────── inventory markdown ─────────────────────────────
@@ -2362,10 +2681,11 @@ def main():
              ("traefik", collect_traefik), ("ingress", collect_ingress), ("egress", collect_egress),
              ("creds", collect_creds), ("exposure", collect_exposure), ("pipelines", collect_pipelines),
              ("alerts", collect_alerts), ("remote", collect_remote),
-             ("grafana", collect_grafana), ("backup", collect_backup), ("mcp", collect_mcp)]
+             ("grafana", collect_grafana), ("backup", collect_backup), ("mcp", collect_mcp),
+             ("knowledge", collect_knowledge)]
     # A source is skipped (not run, not reconciled) when one it builds on failed.
     needs = {"db": ["podman"], "traefik": ["podman"], "grafana": ["podman"], "backup": ["podman"],
-             "mcp": ["podman"], "scripts": ["podman", "cron"], "ingress": ["traefik"], "egress": ["podman"],
+             "mcp": ["podman"], "knowledge": ["podman"], "scripts": ["podman", "cron"], "ingress": ["traefik"], "egress": ["podman"],
              "creds": ["podman"], "exposure": ["traefik"], "alerts": ["podman", "cron"]}
     for name, fn in steps:
         t0 = time.time()
@@ -2392,8 +2712,9 @@ def main():
                                  ("pods", "containers", "networks", "jobs", "datastores", "routes", "dashboards", "datasources",
                                   "mcp_servers", "scripts", "apis", "egress", "api_paths", "credentials",
                                   "unmanaged_secrets", "public_endpoints", "pipelines", "alert_rules",
-                                  "remote_hosts", "remote_pipelines", "remote_jobs", "remote_endpoints")},
-                      "db_warnings": out.get("db_warnings", [])}, indent=1))
+                                  "remote_hosts", "remote_pipelines", "remote_jobs", "remote_endpoints",
+                                  "knowledge", "remote_knowledge", "remote_mcp_servers")},
+                      "db_warnings": out.get("db_warnings", []), "knowledge_warnings": out.get("knowledge_warnings", [])}, indent=1))
     return 0 if all(s["ok"] for s in out["sources"].values()) else 2
 
 

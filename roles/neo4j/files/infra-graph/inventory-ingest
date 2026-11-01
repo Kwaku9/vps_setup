@@ -16,7 +16,7 @@ import time
 
 DIR = os.environ.get("INVENTORY_DIR", "/opt/compose/infra-graph/inventory")
 MAX_BYTES = 5 * 1024 * 1024
-LISTS = ("repos", "pipelines", "timers", "cron", "ports", "containers")
+LISTS = ("repos", "pipelines", "timers", "cron", "ports", "containers", "mcp_servers", "knowledge")
 
 
 def fail(msg):
