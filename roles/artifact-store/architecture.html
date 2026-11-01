@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Artifact Store Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout concept: five columns left to right (who calls, front doors, storage, compute, durability).
+   A flow picker lights up one path at a time; clicking any box shows what it needs and what needs it. */
+:root {
+  --bg: #EEF1F3;
+  --panel: #FFFFFF;
+  --fg: #17202A;
+  --muted: #566573;
+  --line: #C5CED6;
+  --build: #0E7C86;
+  --build-bg: #D9EEF0;
+  --reuse: #3F4E5F;
+  --reuse-bg: #E4E9EE;
+  --later: #7B8794;
+  --flow: #B93C08;
+  --flow-bg: #FBE3D3;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161B; --panel: #1A2128; --fg: #E6EBF0; --muted: #9AA7B4; --line: #34404B;
+    --build: #4FC3CD; --build-bg: #12363A; --reuse: #AAB8C6; --reuse-bg: #232C35;
+    --later: #7A8794; --flow: #FB923C; --flow-bg: #3A2616; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161B; --panel: #1A2128; --fg: #E6EBF0; --muted: #9AA7B4; --line: #34404B;
+  --build: #4FC3CD; --build-bg: #12363A; --reuse: #AAB8C6; --reuse-bg: #232C35;
+  --later: #7A8794; --flow: #FB923C; --flow-bg: #3A2616; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.55; margin: 0; padding-inline: 16px; padding-block: 28px 56px; }
+main { max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+h1 { font-size: clamp(1.6rem, 3.4vw, 2.2rem); line-height: 1.15; margin: 0; font-weight: 600; text-wrap: balance; letter-spacing: -0.01em; }
+h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); font-weight: 600; margin: 0 0 10px; }
+p { margin: 0; }
+.lede { color: var(--muted); max-width: 70ch; margin-top: 8px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.82rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.sw { width: 18px; height: 12px; border-radius: 3px; border: 1.5px solid; display: inline-block; }
+.sw.build { background: var(--build-bg); border-color: var(--build); }
+.sw.reuse { background: var(--reuse-bg); border-color: var(--reuse); }
+.sw.later { background: transparent; border-color: var(--later); border-style: dashed; }
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.tabs button { font: inherit; font-size: 0.88rem; font-weight: 500; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+.tabs button[aria-pressed="true"] { background: var(--flow); border-color: var(--flow); color: #fff; }
+:root[data-theme="dark"] .tabs button[aria-pressed="true"] { color: #1A1208; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tabs button[aria-pressed="true"] { color: #1A1208; } }
+button:focus-visible, g.node:focus-visible { outline: 2px solid var(--flow); outline-offset: 2px; }
+.stepbar { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: grid; grid-template-columns: 1fr auto; gap: 12px 20px; align-items: start; }
+.stepbar .count { font-family: var(--font-mono); font-size: 0.78rem; color: var(--flow); margin-bottom: 4px; }
+.stepbar .text { min-width: 0; }
+.stepbar .title { font-weight: 600; margin-bottom: 2px; }
+.calls { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-direction: column; gap: 4px; }
+.calls li { font-family: var(--font-mono); font-size: 0.78rem; color: var(--flow); overflow-wrap: anywhere; }
+.calls li span { color: var(--muted); }
+.ctrl { display: flex; gap: 8px; }
+.ctrl button { font: inherit; font-size: 0.85rem; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+.ctrl button:disabled { opacity: 0.4; cursor: default; }
+@media (max-width: 560px) { .stepbar { grid-template-columns: 1fr; } }
+.diagram { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; overflow-x: auto; }
+.diagram svg { display: block; min-width: 940px; width: 100%; height: auto; }
+.colhead { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+g.node { cursor: pointer; }
+g.node rect { stroke-width: 1.5; transition: opacity 0.15s; }
+g.node.build rect { fill: var(--build-bg); stroke: var(--build); }
+g.node.reuse rect { fill: var(--reuse-bg); stroke: var(--reuse); }
+g.node.later rect { fill: none; stroke: var(--later); stroke-dasharray: 5 4; }
+g.node text.name { font-size: 13px; font-weight: 600; fill: var(--fg); }
+g.node text.sub { font-size: 10px; fill: var(--muted); font-family: var(--font-mono); }
+g.node.later text.name { fill: var(--muted); }
+g.node.dim { opacity: 0.5; }
+g.node.hot rect { stroke: var(--flow); stroke-width: 2.5; }
+g.node.sel rect { stroke: var(--fg); stroke-width: 3; }
+path.edge { fill: none; stroke: var(--line); stroke-width: 1.3; opacity: 0.55; }
+path.edge.on { stroke: var(--flow); stroke-width: 2.4; opacity: 1; }
+path.edge.rel { stroke: var(--fg); stroke-width: 1.8; opacity: 0.85; }
+path.edge.dim { opacity: 0.25; }
+@media (prefers-reduced-motion: no-preference) {
+  path.edge.on { stroke-dasharray: 7 5; animation: march 0.9s linear infinite; }
+  @keyframes march { to { stroke-dashoffset: -12; } }
+}
+.lower { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 800px) { .lower { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+.card h3 { margin: 0 0 4px; font-size: 1.05rem; font-weight: 600; }
+.badge { font-family: var(--font-mono); font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; border: 1px solid; margin-left: 8px; vertical-align: middle; }
+.badge.build { color: var(--build); border-color: var(--build); }
+.badge.reuse { color: var(--reuse); border-color: var(--reuse); }
+.badge.later { color: var(--later); border-color: var(--later); border-style: dashed; }
+.card .desc { color: var(--muted); margin: 6px 0 12px; }
+.deps { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 560px) { .deps { grid-template-columns: minmax(0, 1fr); } }
+.deps ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.deps li { font-size: 0.86rem; line-height: 1.4; }
+.deps li b { font-weight: 600; }
+.deps li i { font-style: normal; font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted); display: block; }
+.deps li button { all: unset; cursor: pointer; border-bottom: 1px dotted var(--muted); font-weight: 600; }
+.deps li button:focus-visible { outline: 2px solid var(--flow); }
+.risk { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 0.86rem; }
+.risk b { color: var(--flow); }
+.rules { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 0.9rem; }
+.empty { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Artifact Store Architecture</h1>
+    <p class="lede">One place for every AI-generated artifact: bytes in R2, meaning in Postgres, relationships in Neo4j. Pick a flow to watch it move through the system, or click any box to see what it needs and what needs it.</p>
+  </header>
+
+  <div class="legend" aria-label="Legend">
+    <span><i class="sw build"></i>To build</span>
+    <span><i class="sw reuse"></i>Already running, reused</span>
+    <span><i class="sw later"></i>Deferred past the first slice</span>
+  </div>
+
+  <section aria-label="Flows">
+    <h2>Flow</h2>
+    <div class="tabs" id="tabs"></div>
+  </section>
+
+  <section class="stepbar" aria-live="polite">
+    <div class="text">
+      <div class="count" id="count"></div>
+      <div class="title" id="stitle"></div>
+      <p id="stext"></p>
+      <ul class="calls" id="calls"></ul>
+    </div>
+    <div class="ctrl">
+      <button id="prev" type="button">Back</button>
+      <button id="next" type="button">Next step</button>
+    </div>
+  </section>
+
+  <div class="diagram">
+    <svg id="svg" viewBox="0 0 1080 600" role="img" aria-label="Architecture diagram of the artifact store: callers, MCP servers, storage, compute and durability, with the selected flow highlighted"></svg>
+  </div>
+
+  <div class="lower">
+    <section class="card" id="detail" aria-live="polite"></section>
+    <section class="card">
+      <h2>Rules the design holds to</h2>
+      <ul class="rules">
+        <li>Bytes live in a dedicated R2 bucket with bucket-scoped tokens. Nothing artifact-related listens on the VPS, and the VPS disk holds only the index.</li>
+        <li>File bytes never pass through a model. The agent hashes and uploads in its own shell; the server only issues a short-lived URL.</li>
+        <li>Write and read are separate servers with separate database roles, so a poisoned search result cannot reach a save credential.</li>
+        <li>Credentials come from the vault into a root-only env file, never a command line or a transcript.</li>
+        <li>The rclone mount is read-only and optional. Writes only ever go through the save path.</li>
+        <li>Originals are quarantined after a verified copy, never deleted on inference.</li>
+        <li>Every check ships with a control that must fail.</li>
+      </ul>
+    </section>
+  </div>
+</main>
+
+<script>
+(function () {
+  var NW = 160, NH = 52;
+  var COLX = [20, 240, 460, 680, 900];
+  var HEADS = ['Callers', 'Front doors', 'Storage', 'Compute', 'Durability'];
+
+  // status: build | reuse | later
+  var N = {
+    cc:  { c:0, y:30,  name:'Claude Code',        sub:'agent, stdio MCP',        st:'reuse', desc:'The main caller. Computes the file hash in its own shell, calls the MCP tools, and uploads bytes straight to R2 with the URL it is given.', risk:'Shares the laptop GPU and disk with everything else. Heavy embedding during a session competes with it.' },
+    cx:  { c:0, y:140, name:'Codex',               sub:'agent, same tools',       st:'reuse', desc:'Same tool list as Claude Code. Its sessions already flow through the session ETL, so its artifacts carry source=codex.', risk:'Codex records only part of its token counts and skips reasoning blocks, so provenance for its artifacts is thinner.' },
+    dl:  { c:0, y:250, name:'Downloads sweep',     sub:'one-time backfill',       st:'reuse', desc:'The existing pile of files in Downloads and old project output. A dry run reports counts, duplicates and unreadable files before anything is stored.', risk:'Some tarballs are old mail backups with no other copy. They must be verified in the store before the original moves.' },
+    cai: { c:0, y:360, name:'claude.ai, Higgsfield', sub:'provider-hosted outputs', st:'later', desc:'Artifacts that live only on a provider. Needs a pull job or a save-a-copy step per skill. Left out of the first slice.', risk:'Until this exists, provider-hosted artifacts stay outside your ownership, which is the gap that started this project.' },
+    oo:  { c:0, y:470, name:'OnlyOffice',          sub:'optional editor',         st:'later', desc:'Opens docx, xlsx and pptx from a presigned URL when you want to edit. It is a viewer over the store, not the repository.', risk:'Wants to own the file lifecycle. Keep it out of the write path.' },
+    dk:  { c:0, y:525, name:'Deck authoring',      sub:'slide-deck skill, laptop', st:'reuse', desc:'Where decks are built: the slide-deck skill output on the laptop (vps_setup/local/decks, brand/decks) with narration, vo and bg audio. Today the only path to publish is scp to the decks host.', risk:'Sources on the laptop are not in git either. Both the source and the published copy need a backup.' },
+
+    mw:  { c:1, y:85,  name:'artifact-mcp write',  sub:'save_artifact',           st:'build', desc:'FastMCP server in a container on the VPS, reached over ssh podman exec like session-recall. Validates, dedupes, issues presigned PUT URLs and flips row status. Uses the insert-capable database role.', risk:'Must verify size and sha256 on confirm. A caller can lie about the hash.' },
+    mr:  { c:1, y:195, name:'artifact-mcp read',   sub:'search, get',             st:'build', desc:'A second server on a read-only database role. Embeds the query, searches vectors, returns snippets and presigned GET URLs. Tool descriptions label retrieved text as untrusted.', risk:'Retrieved text can carry injected instructions. A label is not a boundary, which is why this server cannot write.' },
+    tr:  { c:1, y:305, name:'Triggers',            sub:'hook + nightly timer', st:'build', desc:'A Claude Code SessionEnd hook for freshness and a nightly systemd timer as backstop, copied from embed-recall.timer. Both take a lock so runs do not overlap.', risk:'The recall timer once went months unscheduled. This one gets a freshness alert from day one.' },
+    mnt: { c:1, y:415, name:'rclone mount',         sub:'read-only browse view',   st:'later', desc:'A read-only FUSE view of the bucket on the laptop, using the reader token, so you can browse artifacts in a file manager or open them from tools that want a path. A convenience only: nothing in the pipeline reads through it.', risk:'Never mount read-write. A write through the mount would skip hashing, dedupe, the row insert and the embed trigger.' },
+    dh:  { c:1, y:525, name:'Decks host',          sub:'nginx on the VPS',        st:'reuse', desc:'decks.aicortex.cloud, served from /opt/compose/decks on the VPS. The decks themselves are data pushed in by scp and live in no repo, which is why they have no backup today.', risk:'513 MB including old .bak files, audio folders and PDFs. A deck without its vo-<deck>/ and bg/ folders loads but has no narration.' },
+
+    rf:  { c:2, y:30,  name:'R2 bucket',          sub:'primary bytes, S3 API',   st:'build', desc:'Cloudflare R2 bucket aicortex-artifacts holds every artifact, keyed by content hash. Callers reach it only through short-lived presigned URLs. It is a separate bucket from the VPS backup, with its own bucket-scoped tokens, and it uses no VPS disk.', risk:'Single provider and account. Keys are never overwritten, and a second copy plus a restore drill cover loss. Test large uploads, since R2 presigning differs slightly from AWS.' },
+    pg:  { c:2, y:140, name:'Postgres artifacts',  sub:'objects + chunks, HNSW',  st:'build', desc:'A new schema in the existing enterprise database: one row per object, one row per 768-dimension chunk. Own roles, isolated from sessions and recall.', risk:'Never GROUP BY, DISTINCT or join on the vector column. It runs the database out of memory.' },
+    nj:  { c:2, y:250, name:'Neo4j',               sub:'Artifact to Session',     st:'reuse', desc:'The VPS graph is the source of truth. Artifact nodes join the Session and Project nodes already there. The laptop copy is overwritten nightly, so nothing is written only there.', risk:'The graph loader runs on a schedule, so a fresh artifact appears in the graph later than in search.' },
+    ss:  { c:2, y:360, name:'sessions.*',          sub:'existing session ETL',    st:'reuse', desc:'The tables the session pipeline already fills. An artifact stores its session_uuid so it can be traced back to the conversation that made it.', risk:'Ingest depends on a vault password with two consumers that once drifted apart silently.' },
+
+    ex:  { c:3, y:85,  name:'Extractor',           sub:'text from files',         st:'build', desc:'Pulls text from markdown, html, pdf and docx, scrubs credentials, and cuts 2000-character chunks. Binaries with no text stay metadata-only.', risk:'Whitespace-only bodies must not be reselected forever. Use the POSIX whitespace test, not trim.' },
+    emb: { c:3, y:195, name:'Embed on laptop GPU', sub:'EmbeddingGemma 768-d',    st:'reuse', desc:'The same llama.cpp server and model the recall index uses. Bulk vectors are written to the VPS over an ssh tunnel.', risk:'The embedder grows about 1 GB a day and is restarted daily. Text only for now.' },
+    ll:  { c:3, y:305, name:'LiteLLM',             sub:'alias embeddinggemma',    st:'reuse', desc:'Query-time embeddings. The laptop GPU is primary; if it is down, a CPU pod on the VPS answers after a 15 second timeout.', risk:'The laptop tailnet address is hard-coded in its config. Reuse the existing alias instead of adding another pin.' },
+    cpu: { c:3, y:415, name:'VPS CPU embedder',    sub:'fallback pod',            st:'reuse', desc:'Slower but always on. Same model file, so vectors match the GPU ones.', risk:'The VPS is memory-starved. Fine for single queries, not for bulk work.' },
+
+    s3:  { c:4, y:30,  name:'Second copy',         sub:'rclone pull, nightly',   st:'build', desc:'The laptop pulls the bucket each night with rclone copy (never sync, so a delete cannot propagate), hash-verifies it, and keeps it on the external drive. Modeled on the existing VPS backup pull.', risk:'Open decision: external drive only, or also a second provider such as GCS.' },
+    dump:{ c:4, y:140, name:'pg_dump artifacts',   sub:'schema backup',           st:'build', desc:'Nightly logical dump of the artifacts schema, written to the bucket and to the second copy.', risk:'Restoring vectors is slow. The restore drill measures how slow.' },
+    ext: { c:4, y:250, name:'External drive',      sub:'cold originals',          st:'later', desc:'Holds quarantined originals from the Downloads sweep until verified. Cold storage only, never a service mount, because unplugging it would break whatever mounts it.', risk:'Format ext4 or btrfs. exFAT loses permissions and SELinux labels.' },
+    fe:  { c:4, y:360, name:'Freshness alert',     sub:'VPS cron to Telegram',    st:'build', desc:'Alerts when the newest stored object is more than a day ahead of the newest embedded one, or when the second copy is stale. Modeled on recall-freshness-check.', risk:'Judge freshness from timestamps, never from row counts.' },
+    vault:{c:4, y:470, name:'Ansible vault',       sub:'secrets, source of truth', st:'reuse', desc:'The VPS vault holds the two R2 bucket tokens and the database role passwords. The role writes them to 0600 env files with no_log. The laptop vault copy is stale.', risk:'Keep one consumer per secret. Two consumers drifting apart is how session ingest broke before.' }
+  };
+
+  // edges: id, from, to, label
+  var E = [
+    ['e1','cc','mw','save_artifact(sha256, size)'],
+    ['e1b','cx','mw','same tools'],
+    ['e2','mw','pg','hash lookup, row insert'],
+    ['e3','mw','cc','presigned PUT URL'],
+    ['e4','cc','rf','PUT bytes, direct'],
+    ['e5','mw','rf','verify size + sha256'],
+    ['e6','mw','ss','session_uuid link'],
+    ['e7','tr','ex','new rows to index'],
+    ['e8','rf','ex','read object'],
+    ['e9','ex','emb','2000-char chunks'],
+    ['e10','emb','pg','vectors via tunnel'],
+    ['e11','pg','nj','Artifact node'],
+    ['e12','cc','mr','search_artifacts(query)'],
+    ['e13','mr','ll','embed query'],
+    ['e14','ll','emb','GPU primary'],
+    ['e14b','ll','cpu','CPU fallback'],
+    ['e15','mr','pg','cosine top-k, read-only'],
+    ['e16','mr','rf','presigned GET'],
+    ['e23','mr','cc','ranked snippets'],
+    ['e17','dl','mw','dry run, then real run'],
+    ['e25','dl','rf','PUT via presigned URL'],
+    ['e20','dl','ext','quarantine originals'],
+    ['e18','rf','s3','rclone copy, nightly'],
+    ['e19','pg','dump','pg_dump'],
+    ['e19b','dump','s3','ship dump'],
+    ['e21','fe','pg','stored vs embedded gap'],
+    ['e21b','fe','s3','second copy age'],
+    ['e26','s3','rf','restore drill'],
+    ['e22','vault','rf','bucket tokens, 0600 env'],
+    ['e22b','vault','mw','insert role password'],
+    ['e22c','vault','mr','read-only role password'],
+    ['e24','cai','mw','pull job (later)'],
+    ['e27','oo','rf','presigned GET (later)'],
+    ['e28','rf','mnt','read-only FUSE view'],
+    ['e29','dk','dh','scp publish (today)'],
+    ['e30','dh','rf','nightly rclone copy'],
+    ['e31','dk','rf','push sources'],
+    ['e32','rf','dh','restore on demand']
+  ];
+
+  var FLOWS = [
+    { id:'overview', name:'Overview', steps:[ { t:'The whole system', x:'Five columns: who calls, the two MCP front doors, where data rests, the compute that makes it searchable, and the copies that keep it durable. Pick a flow above, or click any box to see its dependencies.', e:[], n:[] } ] },
+    { id:'save', name:'Save an artifact', steps:[
+      { t:'The agent asks to save', x:'The agent hashes the file in its own shell and calls save_artifact with the sha256, size, title, project and tags. The file itself never enters the model context.', e:['e1'], n:['cc','mw'] },
+      { t:'Dedupe check', x:'The server looks the hash up in artifacts.objects. If it exists, the call returns the existing id with deduped=true and the flow ends here. Saving the same file twice stores one object.', e:['e2'], n:['mw','pg'] },
+      { t:'A short-lived upload URL', x:'Not found: the server reserves a row with status=reserved and returns a presigned PUT URL that expires in minutes.', e:['e3'], n:['mw','cc'] },
+      { t:'Bytes go straight to storage', x:'The agent uploads with curl directly to R2. The URL is the only permission it holds; it never sees the storage keys.', e:['e4'], n:['cc','rf'] },
+      { t:'Verify before trusting', x:'On confirm, the server checks the stored object matches the size and sha256 it was promised. A mismatch quarantines the row so it is never indexed.', e:['e5'], n:['mw','rf'] },
+      { t:'Record and link', x:'The row becomes status=stored and records the session_uuid, so the artifact can be traced back to the conversation that produced it.', e:['e2','e6'], n:['mw','pg','ss'] }
+    ]},
+    { id:'index', name:'Make it searchable', steps:[
+      { t:'Something new is waiting', x:'A SessionEnd hook, or the nightly timer as backstop, finds rows with status=stored. A lock stops two runs overlapping.', e:['e7'], n:['tr','ex'] },
+      { t:'Pull the text out', x:'The extractor reads each object from R2 and extracts text from markdown, html, pdf and docx. Credentials are scrubbed first, because the index is searchable and replicated.', e:['e8'], n:['rf','ex'] },
+      { t:'Cut into chunks', x:'Text is split into 2000-character chunks and prefixed the same way the session index does, so queries and documents land in the same space.', e:['e9'], n:['ex','emb'] },
+      { t:'Embed and store', x:'EmbeddingGemma on the laptop GPU makes 768-dimension vectors. They are inserted into artifacts.chunks through the ssh tunnel with ON CONFLICT DO NOTHING, and the object moves to status=embedded.', e:['e10'], n:['emb','pg'] },
+      { t:'Join the graph', x:'The graph loader adds an Artifact node linked to its Session and Project, so you can ask what a session produced.', e:['e11'], n:['pg','nj'] }
+    ]},
+    { id:'search', name:'Search and fetch', steps:[
+      { t:'Ask by meaning', x:'An agent calls search_artifacts with a plain-language query and optional project, date or tag filters.', e:['e12'], n:['cc','mr'] },
+      { t:'Embed the question', x:'The read server sends the query through LiteLLM with the query prefix, so it is compared like with like.', e:['e13'], n:['mr','ll'] },
+      { t:'GPU first, CPU if needed', x:'LiteLLM tries the laptop GPU. If it is off or slow, the VPS CPU pod answers after a 15 second timeout.', e:['e14','e14b'], n:['ll','emb','cpu'] },
+      { t:'Nearest neighbours', x:'Cosine search over the HNSW index through a read-only role, deduplicated so one artifact appears once.', e:['e15'], n:['mr','pg'] },
+      { t:'Ranked results come back', x:'Snippets, ids, project and source return to the agent, labelled as untrusted content.', e:['e23'], n:['mr','cc'] },
+      { t:'Open one', x:'get_artifact returns the extracted text and a presigned GET URL for the original, so the file is fetched directly and not through the model.', e:['e16'], n:['mr','rf'] }
+    ]},
+    { id:'backfill', name:'Backfill Downloads', steps:[
+      { t:'Dry run first', x:'A sweep hashes everything in Downloads and reports counts, duplicates and unreadable files. Nothing is written.', e:['e17'], n:['dl','mw'] },
+      { t:'Store through the same door', x:'The real run uses the same save path as any agent, tagged source=downloads-backfill. Identical files collapse to one object.', e:['e17','e25'], n:['dl','mw','rf'] },
+      { t:'Verify the count', x:'Files in must equal objects stored plus duplicates. A deliberately corrupted copy must fail hash verification, or the check proves nothing.', e:['e5'], n:['mw','rf'] },
+      { t:'Quarantine, do not delete', x:'Originals move to a dated quarantine folder, then to the external drive once verified. Nothing is deleted because it looks redundant.', e:['e20'], n:['dl','ext'] }
+    ]},
+    { id:'durable', name:'Keep it durable', steps:[
+      { t:'Pull a second copy', x:'Each night the laptop pulls the bucket with rclone copy, never sync, so a deletion cannot propagate. Hashes are checked before the copy is trusted.', e:['e18'], n:['rf','s3'] },
+      { t:'Back up the index', x:'The artifacts schema is dumped to the bucket and to the second copy, so vectors and metadata can be rebuilt.', e:['e19','e19b'], n:['pg','dump','s3'] },
+      { t:'Prove you can restore', x:'The restore drill rebuilds a scratch bucket and schema from the second copy and the dump and compares counts and sample hashes. A tampered object must make it fail.', e:['e26'], n:['s3','rf'] },
+      { t:'Browse it like a folder', x:'Optionally, rclone mount gives a live read-only file view of the bucket on the laptop, using the read-only token. Nothing depends on it.', e:['e28'], n:['rf','mnt'] },
+      { t:'Watch for silence', x:'A cron job alerts when embedding falls a day behind storage, or when the second copy goes stale. Quiet failure is the usual way these pipelines die.', e:['e21','e21b'], n:['fe','pg','s3'] }
+    ]},
+    { id:'decks', name:'Back up and retrieve decks', steps:[
+      { t:'Decks are data, not code', x:'Decks are built with the slide-deck skill and published by scp to the decks host. They live in no repo, so today a lost VPS disk means lost decks.', e:['e29'], n:['dk','dh'] },
+      { t:'Nightly copy to the bucket', x:'A job on the VPS runs rclone copy from /opt/compose/decks to decks/live/ in the artifacts bucket. Copy, never sync, with a dated backup folder for anything replaced or deleted, and old .bak files excluded. The vo and bg audio folders ride along, or narration breaks.', e:['e30'], n:['dh','rf'] },
+      { t:'Back up the sources too', x:'From the laptop, rclone copy pushes the authoring folders to decks/src/, so a deck can be rebuilt as well as restored.', e:['e31'], n:['dk','rf'] },
+      { t:'Retrieve a deck', x:'Restore is one rclone copy from decks/live/ back into the decks host folder, and nginx serves it again with no restart. The same files are browsable read-only through the rclone mount.', e:['e32','e28'], n:['rf','dh','mnt'] },
+      { t:'Search the narration', x:'Each deck has a narration markdown file. Saving those through save_artifact makes what a deck says searchable by meaning, next to every other artifact.', e:[], n:['rf'] }
+    ]},
+    { id:'access', name:'Secrets and access', steps:[
+      { t:'Secrets live in the vault', x:'Two R2 tokens, one writer and one reader, both scoped to the artifacts bucket, come from the Ansible vault and land in root-only env files rendered with no_log. They never appear in a command line or a transcript.', e:['e22'], n:['vault','rf'] },
+      { t:'Two roles, two servers', x:'The write server gets the insert-capable database role and the writer token, the read server a read-only role and the reader token. Neither can touch the VPS backup bucket.', e:['e22b','e22c'], n:['vault','mw','mr'] },
+      { t:'No bytes on the VPS', x:'Artifacts never touch the VPS disk, which the daily backup needs 12 GiB of. Callers upload and download only through short-lived presigned URLs.', e:[], n:['rf'] },
+      { t:'What waits', x:'Provider-hosted outputs and OnlyOffice are deliberately outside the first slice.', e:['e24','e27'], n:['cai','oo','mw','rf'] }
+    ]}
+  ];
+
+  var NS = 'http://www.w3.org/2000/svg';
+  var svg = document.getElementById('svg');
+  var edgeEls = {}, nodeEls = {};
+  var flow = FLOWS[0], step = 0, selected = null;
+
+  function el(name, attrs, parent) {
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  // ROUTER-START
+  function geom(id) { var n = N[id]; return { x: COLX[n.c], y: n.y, cx: COLX[n.c] + NW / 2, cy: n.y + NH / 2, c: n.c }; }
+  var pairs = {};
+  E.forEach(function (e) { pairs[e[1] + '>' + e[2]] = true; });
+  function segHits(p, q, skip) {
+    var m = 5;
+    for (var id in N) {
+      if (skip[id]) continue;
+      var r = geom(id);
+      var x1 = Math.min(p[0], q[0]), x2 = Math.max(p[0], q[0]), y1 = Math.min(p[1], q[1]), y2 = Math.max(p[1], q[1]);
+      if (x2 > r.x - m && x1 < r.x + NW + m && y2 > r.y - m && y1 < r.y + NH + m) return true;
+    }
+    return false;
+  }
+  function plen(pts) { var L = 0; for (var i = 1; i < pts.length; i++) L += Math.abs(pts[i][0] - pts[i - 1][0]) + Math.abs(pts[i][1] - pts[i - 1][1]); return L; }
+  function route(e, idx) {
+    var a = geom(e[1]), b = geom(e[2]);
+    var rev = pairs[e[2] + '>' + e[1]];
+    var off = rev ? (e[1] < e[2] ? -7 : 7) : 0;
+    var jit = ((idx * 7) % 5 - 2) * 5;
+    var skip = {}; skip[e[1]] = true; skip[e[2]] = true;
+    if (a.c === b.c) {
+      var down = b.y > a.y;
+      var straight = [[a.cx + off, down ? a.y + NH : a.y], [b.cx + off, down ? b.y : b.y + NH]];
+      if (!segHits(straight[0], straight[1], skip)) return straight;
+      var gx = a.x - 30 + jit;
+      return [[a.x, a.cy + off], [gx, a.cy + off], [gx, b.cy + off], [b.x, b.cy + off]];
+    }
+    var dir = b.c > a.c ? 1 : -1;
+    var Sx = dir > 0 ? a.x + NW : a.x, Tx = dir > 0 ? b.x : b.x + NW;
+    var Sy = a.cy + off, Ty = b.cy + off;
+    var gs = Sx + dir * 30 + jit, gt = Tx - dir * 30 + jit;
+    var S = [Sx, Sy], T = [Tx, Ty];
+    var cands = [];
+    cands.push([S, [gs, Sy], [gs, Ty], T]);
+    cands.push([S, [gt, Sy], [gt, Ty], T]);
+    for (var L = 20; L < 540; L += 6) cands.push([S, [gs, Sy], [gs, L], [gt, L], [gt, Ty], T]);
+    var best = null, bestScore = 1e9;
+    cands.forEach(function (pts) {
+      for (var i = 1; i < pts.length; i++) if (segHits(pts[i - 1], pts[i], skip)) return;
+      var sc = plen(pts) + pts.length * 40;
+      if (sc < bestScore) { bestScore = sc; best = pts; }
+    });
+    return best || [S, T];
+  }
+  // ROUTER-END
+
+  function build() {
+    var defs = el('defs', {}, svg);
+    ['a-dim', 'a-on', 'a-rel'].forEach(function (id) {
+      var m = el('marker', { id: id, viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '7', markerHeight: '7', orient: 'auto-start-reverse' }, defs);
+      el('path', { d: 'M0,0 L10,5 L0,10 z', fill: id === 'a-on' ? 'var(--flow)' : (id === 'a-rel' ? 'var(--fg)' : 'var(--line)') }, m);
+    });
+    HEADS.forEach(function (h, i) {
+      var t = el('text', { x: COLX[i], y: 16, 'class': 'colhead' }, svg);
+      t.textContent = h;
+    });
+    E.forEach(function (e, idx) {
+      var pts = route(e, idx);
+      var d = pts.map(function (p, k) { return (k ? 'L' : 'M') + p[0] + ',' + p[1]; }).join(' ');
+      var p = el('path', { d: d, 'class': 'edge', 'marker-end': 'url(#a-dim)' }, svg);
+      var tt = el('title', {}, p); tt.textContent = N[e[1]].name + ' to ' + N[e[2]].name + ': ' + e[3];
+      edgeEls[e[0]] = p;
+    });
+    Object.keys(N).forEach(function (id) {
+      var n = N[id], g = geom(id);
+      var grp = el('g', { 'class': 'node ' + n.st, tabindex: '0', role: 'button', 'aria-label': n.name + ', ' + n.sub, transform: 'translate(' + g.x + ',' + g.y + ')' }, svg);
+      el('rect', { width: NW, height: NH, rx: 6 }, grp);
+      var t1 = el('text', { x: 10, y: 22, 'class': 'name' }, grp); t1.textContent = n.name;
+      var t2 = el('text', { x: 10, y: 39, 'class': 'sub' }, grp); t2.textContent = n.sub;
+      grp.addEventListener('click', function () { select(id); });
+      grp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); select(id); } });
+      nodeEls[id] = grp;
+    });
+  }
+
+  function related(id) {
+    var out = { edges: {}, nodes: {} };
+    E.forEach(function (e) {
+      if (e[1] === id || e[2] === id) { out.edges[e[0]] = true; out.nodes[e[1]] = true; out.nodes[e[2]] = true; }
+    });
+    return out;
+  }
+
+  function paint() {
+    var s = flow.steps[step];
+    var act = {}; s.e.forEach(function (i) { act[i] = true; });
+    var hot = {}; s.n.forEach(function (i) { hot[i] = true; });
+    var rel = selected ? related(selected) : null;
+    var anyFocus = s.e.length > 0 || s.n.length > 0 || !!selected;
+
+
+    E.forEach(function (e) {
+      var p = edgeEls[e[0]];
+      var cls = 'edge';
+      var mk = 'url(#a-dim)';
+      if (act[e[0]]) { cls += ' on'; mk = 'url(#a-on)'; }
+      else if (rel && rel.edges[e[0]]) { cls += ' rel'; mk = 'url(#a-rel)'; }
+      else if (anyFocus) { cls += ' dim'; }
+      p.setAttribute('class', cls);
+      p.setAttribute('marker-end', mk);
+    });
+    Object.keys(N).forEach(function (id) {
+      var c = 'node ' + N[id].st;
+      if (hot[id]) c += ' hot';
+      if (selected === id) c += ' sel';
+      var isRel = rel && rel.nodes[id];
+      if (anyFocus && !hot[id] && !isRel && selected !== id) c += ' dim';
+      nodeEls[id].setAttribute('class', c);
+      nodeEls[id].setAttribute('aria-pressed', selected === id ? 'true' : 'false');
+    });
+  }
+
+  function renderStep() {
+    var s = flow.steps[step];
+    document.getElementById('count').textContent = flow.name + ' · step ' + (step + 1) + ' of ' + flow.steps.length;
+    document.getElementById('stitle').textContent = s.t;
+    document.getElementById('stext').textContent = s.x;
+    var calls = document.getElementById('calls');
+    calls.textContent = '';
+    s.e.forEach(function (id) {
+      var ed = E.filter(function (x) { return x[0] === id; })[0];
+      var li = document.createElement('li');
+      li.textContent = ed[3] + ' ';
+      var sp = document.createElement('span');
+      sp.textContent = '(' + N[ed[1]].name + ' to ' + N[ed[2]].name + ')';
+      li.appendChild(sp);
+      calls.appendChild(li);
+    });
+    document.getElementById('prev').disabled = step === 0;
+    document.getElementById('next').disabled = step === flow.steps.length - 1;
+    paint();
+  }
+
+  var STLAB = { build: 'To build', reuse: 'Reused', later: 'Deferred' };
+  function linkBtn(id) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.textContent = N[id].name;
+    b.addEventListener('click', function () { select(id); });
+    return b;
+  }
+  function list(items, emptyText) {
+    var ul = document.createElement('ul');
+    if (!items.length) { var li0 = document.createElement('li'); li0.className = 'empty'; li0.textContent = emptyText; ul.appendChild(li0); return ul; }
+    items.forEach(function (it) {
+      var li = document.createElement('li');
+      li.appendChild(linkBtn(it.id));
+      var i = document.createElement('i'); i.textContent = it.label; li.appendChild(i);
+      ul.appendChild(li);
+    });
+    return ul;
+  }
+  function renderDetail() {
+    var box = document.getElementById('detail');
+    box.textContent = '';
+    if (!selected) {
+      var h = document.createElement('h3'); h.textContent = 'Select a box';
+      var p = document.createElement('p'); p.className = 'desc';
+      p.textContent = 'Click any component in the diagram to see what it does, what it needs in order to work, and what breaks if it goes away.';
+      box.appendChild(h); box.appendChild(p);
+      return;
+    }
+    var n = N[selected];
+    var h3 = document.createElement('h3'); h3.textContent = n.name;
+    var bd = document.createElement('span'); bd.className = 'badge ' + n.st; bd.textContent = STLAB[n.st];
+    h3.appendChild(bd);
+    var d = document.createElement('p'); d.className = 'desc'; d.textContent = n.desc;
+    box.appendChild(h3); box.appendChild(d);
+    var needs = [], feeds = [];
+    E.forEach(function (e) {
+      if (e[2] === selected) needs.push({ id: e[1], label: e[3] });
+      if (e[1] === selected) feeds.push({ id: e[2], label: e[3] });
+    });
+    var wrap = document.createElement('div'); wrap.className = 'deps';
+    var a = document.createElement('div'); var ah = document.createElement('h2'); ah.textContent = 'Receives from'; a.appendChild(ah); a.appendChild(list(needs, 'Nothing, it starts flows.'));
+    var b = document.createElement('div'); var bh = document.createElement('h2'); bh.textContent = 'Sends to'; b.appendChild(bh); b.appendChild(list(feeds, 'Nothing, it is an endpoint.'));
+    wrap.appendChild(a); wrap.appendChild(b); box.appendChild(wrap);
+    var r = document.createElement('p'); r.className = 'risk';
+    var rb = document.createElement('b'); rb.textContent = 'Watch for: ';
+    r.appendChild(rb); r.appendChild(document.createTextNode(n.risk));
+    box.appendChild(r);
+  }
+  function select(id) {
+    selected = (selected === id) ? null : id;
+    renderDetail(); paint();
+  }
+
+  function setFlow(f) {
+    flow = f; step = 0;
+    Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function (b) {
+      b.setAttribute('aria-pressed', b.dataset.id === f.id ? 'true' : 'false');
+    });
+    renderStep();
+  }
+
+  var tabs = document.getElementById('tabs');
+  FLOWS.forEach(function (f) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.dataset.id = f.id; b.textContent = f.name;
+    b.setAttribute('aria-pressed', 'false');
+    b.addEventListener('click', function () { setFlow(f); });
+    tabs.appendChild(b);
+  });
+  document.getElementById('prev').addEventListener('click', function () { if (step > 0) { step--; renderStep(); } });
+  document.getElementById('next').addEventListener('click', function () { if (step < flow.steps.length - 1) { step++; renderStep(); } });
+
+  build();
+  renderDetail();
+  setFlow(FLOWS[0]);
+})();
+</script>
+</body>
+</html>

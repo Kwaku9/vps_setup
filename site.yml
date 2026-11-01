@@ -145,6 +145,13 @@
       tags: ['mailkit-mcp']
       when: mailkit_mcp.enabled | default(true)
 
+    # Artifact store (RustFS, S3 on VPS loopback only). DISABLED by default;
+    # see roles/artifact-store/README.md. Not in boot-services until step 1 is
+    # verified, so it is a prune-reap candidate until then (see memory).
+    - role: artifact-store
+      tags: ['artifact-store']
+      when: artifact_store.enabled | default(false)
+
     - role: lab
       tags: ['lab']
       when: lab.enabled | default(true)

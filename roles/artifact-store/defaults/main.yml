@@ -1,0 +1,27 @@
+---
+# DEFERRED 2026-10-15: artifact bytes live in Cloudflare R2, not here (README.md).
+# This RustFS role stays in the tree, DISABLED, for the day the VPS has disk to host a local S3.
+# Do not enable it while the daily backup is failing its 12 GiB free-space gate.
+#
+# Reachability: loopback on the VPS only. Agents reach it through
+# `ssh ... podman exec` or an ssh tunnel, the same way session-recall-mcp is
+# reached. There is deliberately no host-wide bind and no Traefik route.
+artifact_store:
+  enabled: false
+  pod_name: artifact-store-pod
+  container_name: rustfs
+  network: "{{ podman_network_name | default('enterprise_network') }}"
+  # PIN a version. The task refuses to run with `latest`: RustFS is young and
+  # an unreviewed upgrade is exactly what the restore drill (README step 7)
+  # exists to catch. Pick the tag after reading its changelog.
+  image: docker.io/rustfs/rustfs
+  image_tag: ""
+  data_dir: /opt/podman-data/artifact-store/data
+  env_file: /opt/podman-data/artifact-store/rustfs.env
+  s3_port: 9000
+  # Web console off: one fewer listening surface, and nothing needs it.
+  console_enable: false
+  memory: 1g
+  # Vault variable NAMES (values live only in the vault). Add both before enabling.
+  access_key_var: artifact_store_rustfs_access_key
+  secret_key_var: artifact_store_rustfs_secret_key
