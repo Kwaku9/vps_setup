@@ -53,7 +53,7 @@ Ansible role for Cloudflare Tunnel integration providing secure public access to
 | Portal | https://portal.aicortex.cloud | nginx:80 |
 | Grafana | https://grafana.aicortex.cloud | grafana:3000 |
 | n8n | https://n8n.aicortex.cloud | n8n-claude:5678 |
-| Open WebUI | https://chat.aicortex.cloud | open-webui:8080 |
+| Open WebUI | https://chat.aicortex.cloud | openwebui-pod:8080 |
 | Portainer | https://portainer.aicortex.cloud | portainer:9443 |
 | Prometheus | https://prometheus.aicortex.cloud | prometheus:9090 |
 | Authentik | https://auth.aicortex.cloud | authentik-server:9000 |

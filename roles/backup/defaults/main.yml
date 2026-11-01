@@ -203,7 +203,9 @@ backup:
     - metrics-pod
     - logs-pod
     - tempo-pod
-    - ai-stack-pod
+    - ai-db-pod          # LiteLLM's Postgres: stopped for a consistent snapshot (was ai-stack-pod until the split)
+    - ai-gateway-pod
+    - openwebui-pod
     - management-pod
     - authentication-pod
     - frontend-pod
@@ -222,7 +224,9 @@ backup:
     - metrics-pod
     - logs-pod
     - tempo-pod
-    - ai-stack-pod
+    - ai-db-pod
+    - ai-gateway-pod
+    - openwebui-pod
     - authentication-pod
     - management-pod
     - frontend-pod

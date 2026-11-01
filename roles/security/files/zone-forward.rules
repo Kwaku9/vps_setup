@@ -96,6 +96,7 @@ iptables -A ZONE_FWD -s 10.89.128.10/32 -d 10.89.128.162/32 -p tcp --dport 8090 
 iptables -A ZONE_FWD -s 10.89.128.10/32 -d 10.89.128.170/32 -p tcp -m multiport --dports 8790,8791 -m comment --comment "security-infra-pod>mailkit-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.8/29 -p tcp --dport 443 -m comment --comment "edge>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.48/28 -p tcp -m multiport --dports 4000,8080 -m comment --comment "frontend>svc" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.35/32 -d 10.89.128.50/32 -p tcp -m multiport --dports 8880,8888 -m comment --comment "openwebui-pod>ai-gateway-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "frontend>shared-db-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.80/28 -p tcp --dport 9000 -m comment --comment "frontend>identity" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.114/32 -p tcp --dport 7557 -m comment --comment "frontend>gateway-pod" -j ACCEPT

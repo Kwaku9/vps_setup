@@ -26,6 +26,7 @@ flows:
 
   # --- frontend ---
   - {from: frontend, to: svc, ports: [4000, 8080], reason: "Open WebUI to LiteLLM and SearXNG", unverified: true}
+  - {from: frontend, from_pod: openwebui-pod, to: svc, to_pod: ai-gateway-pod, ports: [8880, 8888], reason: "Open WebUI to Kokoro TTS and SearXNG (were pod loopback until the ai-stack split)"}
   - {from: frontend, to: data, to_pod: shared-db-pod, ports: [5432], reason: "apps to their schemas"}
   - {from: frontend, to: identity, ports: [9000], reason: "OIDC back-channel", unverified: true}
   - {from: frontend, to: agent, to_pod: gateway-pod, ports: [7557], reason: "OWUI CC Sessions pipe to owui-coder"}

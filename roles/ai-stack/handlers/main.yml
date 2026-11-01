@@ -21,11 +21,6 @@
 # --tags filtering), and it is `--skip-tags always` that silently disables
 # every handler. After such a run, restart the notified service by hand
 # (`podman restart <name>`) or run the tag without --skip-tags.
-- name: restart ai-stack-pod
-  containers.podman.podman_pod:
-    name: "{{ ai_stack.pod_name }}"
-    state: restarted
-
 - name: restart litellm
   containers.podman.podman_container:
     name: "{{ ai_stack.litellm.name }}"
