@@ -59,3 +59,7 @@ monitoring_network_name: "monitoring-net"
 
 # Will be overridden by vault
 grafana_password: "VAULT_OVERRIDE"
+
+# Pods whose unexpected stop pages (WatchedPodStopped). trading-pod holds the IBKR session.
+monitoring_watched_pods:
+  - trading-pod
