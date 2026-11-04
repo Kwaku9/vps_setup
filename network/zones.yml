@@ -39,6 +39,9 @@ zones:
   web:
     name: net-web
     bridge: br-web
+    # BLIND (owner 2026-11-04): web holds the honeypot and has no outbound flows, so its aardvark forwards only to the
+    # DNSCrypt fallback, which has no `.zone` records: a foothold here cannot enumerate the other zones' pods by name.
+    dns_upstream: [127.0.0.2]
     cidr: 10.89.128.16/28
     purpose: anonymous and untrusted; reachable, reaches nothing
     pods:

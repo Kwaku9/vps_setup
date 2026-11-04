@@ -9,6 +9,11 @@
     name: unbound
     state: restarted
 
+- name: reload unbound
+  # Re-reads the config (incl. zone-names.conf) and flushes the cache without a restart.
+  command: unbound-control reload
+  changed_when: true
+
 - name: restart dnscrypt-proxy
   service:
     name: dnscrypt-proxy
