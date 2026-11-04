@@ -84,6 +84,22 @@ workstation:
   # Claude Code skills that are part of the machine's toolkit, not a project.
   claude_skills:
     - memwatch
+    - flow-map      # AICORTEX narrated architecture maps (files git-crypt encrypted: they name tailnet hosts)
+
+  # The Claude Code reply-voice hook (~/.claude/hooks). speak.py is the Stop/Notification entry point; it calls
+  # speech_refine.py, which uses speech_voice.py (render + word/ending checks + yield to live voice calls),
+  # speech_cadence.py and litellm_key.py. Deployed file by file with the source's mode (speech_refine.py is
+  # executable). The hooks are registered in ~/.claude/settings.json, which this role does not rewrite.
+  claude_hooks:
+    - speak.py
+    - tts_daemon.py
+    - speech_refine.py
+    - speech_voice.py
+    - speech_cadence.py
+    - litellm_key.py
+    - briefing.py
+    - speech_persona.md
+    - SPEECH.md
 
   # systemd --user units.
   #   enabled: true|false   -> `systemctl --user enable/disable`
