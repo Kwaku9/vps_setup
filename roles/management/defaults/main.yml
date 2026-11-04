@@ -17,7 +17,7 @@ management:
     ssh_host: "10.89.0.1"  # host gateway IP inside enterprise_network
     ssh_known_hosts: "/root/.ssh/known_hosts_ops"
     vm_url: "http://metrics-pod:8428"
-    db_host: "shared-db-pod"     # pod alias for the enterprise Postgres (cross-pod DNS-resolvable; bare `postgres` name is not)
+    db_host: "{{ netseg_pods['shared-db-pod'].host }}"     # pod alias for the enterprise Postgres (cross-pod DNS-resolvable; bare `postgres` name is not)
     stale_minutes: 10            # staleness sweeper threshold for live sessions
     repo_radar_root: "/workspace/vscode-projects"   # VPS workspace scanned for the Repos tab
     repo_radar_interval: 300     # seconds between VPS git scans

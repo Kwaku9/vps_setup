@@ -35,7 +35,7 @@ neo4j:
     usage_report: false
 
   # Bolt as dialled from the MCP servers, which no longer share the database's pod (phase 2 split).
-  bolt_uri: "bolt://{{ neo4j.pod_name }}:7687"
+  bolt_uri: "bolt://{{ netseg_pods[neo4j.pod_name].host }}:7687"
   # graph-mcp-pod publishes the MCP's loopback port (it used to be neo4j-pod's). Every task file that can create the pod
   # must use this same list: a differing definition makes containers.podman recreate the pod and kill its members.
   graph_mcp_pod_ports:
