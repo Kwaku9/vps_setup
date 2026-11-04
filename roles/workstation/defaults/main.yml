@@ -50,6 +50,9 @@ workstation:
     - { src: bin/voicebox-idle-unload,        dest_dir: bin }
     - { src: scripts/neo4j-sync.sh,           dest_dir: scripts }
     - { src: scripts/pg-sync.sh,              dest_dir: scripts }
+    # Every 5 min: this laptop's sessions -> postgres-local + embeddings, so local recall is minutes behind,
+    # not a day. Redaction registry/key fetched from the VPS into RAM per run (fail closed).
+    - { src: bin/recall-local-sync.sh,        dest_dir: scripts }
 
   # Podman quadlets. Files are deployed and the generator is reloaded, but the
   # resulting services are deliberately NOT state-managed — see tasks/main.yml.
@@ -168,6 +171,12 @@ workstation:
       enabled: true
       state: started
     - name: pg-sync.service
+      manage: false            # static
+
+    - name: recall-local-sync.timer
+      enabled: true
+      state: started
+    - name: recall-local-sync.service
       manage: false            # static
 
     - name: embed-recall.timer

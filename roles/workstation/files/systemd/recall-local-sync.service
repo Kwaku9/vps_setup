@@ -1,0 +1,15 @@
+[Unit]
+Description=Local recall sync: this laptop's sessions -> postgres-local + embeddings (every 5 min)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/general/scripts/recall-local-sync.sh
+Nice=10
+IOSchedulingClass=idle
+# A first catch-up after a missed day embeds thousands of messages; steady state is seconds.
+TimeoutStartSec=1800
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=recall-local-sync

@@ -98,3 +98,4 @@ roles/trading/files/lightweight-charts/package.json !filter !diff
 # Claude Code reply-voice hook and the flow-map skill: they name tailnet hosts/IPs and the estate layout (repo is public)
 roles/workstation/files/claude-hooks/** filter=git-crypt diff=git-crypt
 roles/workstation/files/claude-skills/flow-map/** filter=git-crypt diff=git-crypt
+roles/workstation/files/bin/recall-local-sync.sh filter=git-crypt diff=git-crypt

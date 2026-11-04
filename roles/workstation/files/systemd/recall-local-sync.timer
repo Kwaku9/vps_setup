@@ -1,0 +1,12 @@
+[Unit]
+Description=Keep local recall current: sync this laptop's sessions into postgres-local every 5 minutes
+
+[Timer]
+# Runs never overlap (oneshot + the script's flock on /tmp/pg-local.lock, shared with pg-sync.sh), and the script
+# skips 05:20-06:15 local time around the nightly full clone.
+OnBootSec=3min
+OnUnitInactiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
