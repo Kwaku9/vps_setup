@@ -67,7 +67,7 @@ zones:
     cidr: 10.89.128.48/28
     purpose: internal services called by apps and agents
     pods:
-      ai-gateway-pod: {ip: 10.89.128.50, replaces: [ai-stack-pod, litellm, searxng, kokoro-tts, gemini-tts-proxy]}
+      ai-gateway-pod: {ip: 10.89.128.50, replaces: [ai-stack-pod, litellm, searxng, piper-tts, gemini-tts-proxy]}
       llama-embed-pod: {ip: 10.89.128.51, replaces: [llama-embed-pod, llama-embed]}
       backend-pod: {ip: 10.89.128.52, replaces: [backend-pod, ais-relay, timeline-api, catalog-api]}
   data:
