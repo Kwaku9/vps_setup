@@ -51,12 +51,12 @@ access_tiers:
       rate_limit: "5 POST / 10s / IP"       # enforced, CF http_ratelimit
     apps: [openwebui]           # enforced (authentik-apps.yml bindings)
     mfa: optional               # enforced (default validation stage)
-    llm:                        # PROPOSED
-      models: free_cloud_only   # no local inference, no paid models
-      rpm: 10
-      tpm: 20000
-      max_requests_per_day: 200
-      max_budget_usd: 0         # free models only, so spend must stay 0
+    llm:                        # enforced 2026-11-05 via Open WebUI groups
+      models: free_only         # docs/model_tiers.yml tier: free = Groq + Cloudflare
+                                # pools only; no paid models, no local inference
+      caps: per-route           # Groq 24 RPM / 6.5K TPM, Cloudflare 10-15 RPM
+                                # (80% of the free plans). No per-user cap: Open
+                                # WebUI uses one LiteLLM key for everyone.
     escalation: portal_request  # PROPOSED (portal not built)
 
   students:                     # PROPOSED: group not created yet
@@ -64,11 +64,12 @@ access_tiers:
     apps: [openwebui, grafana, geo, charts, timeline, portal, decks, threat-map]
     grafana: student_folder_viewer   # copies of chosen dashboards incl. timeline
     mfa: required               # add "students" to mfa.totp.required_groups
-    llm:
-      models: [free_cloud, local]    # local = Debian GPU via LiteLLM
-      rpm: 20
-      tpm: 60000
-      max_budget_usd_per_month: 5
+    llm:                        # enforced 2026-11-05: LiteLLM team "students"
+      models: [free-chat, free-small]  # local-chat added when Strata is back
+      team: {rpm: 20, tpm: 12000, max_budget_usd: 5, per: 30d}
+      demo_key: {rpm: 5, tpm: 4000, parallel: 1, expires: 30d}
+      mint: "--tags litellm-tiers -e student=<name>"
+      revoke: "--tags litellm-tiers -e revoke_student=<name>"
     tailnet: per_student_approval    # credit-limited, owner approves each
     write_access: lab_sandbox_only   # real services stay read-only
     logging: elevated                # per-identity access log + alerts
