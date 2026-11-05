@@ -104,8 +104,10 @@ class VpsProvider(Provider):
 
     async def list_containers(self) -> list[dict]:
         """Enumerate every podman container on the VPS host (running or stopped)."""
+        # --pod fills PodName; without it podman reports only the pod ID, and the
+        # dashboard filed every pod's containers under "standalone".
         out, rc = await self._ssh_command(
-            "podman ps -a --format json", timeout=10,
+            "podman ps -a --pod --format json", timeout=10,
         )
         if rc != 0 or not out:
             return []

@@ -87,11 +87,20 @@ def _container_name(entry: dict) -> str | None:
     return None
 
 
+def _pod_name(entry: dict) -> str | None:
+    """Pod NAME from `podman ps -a --pod --format json`; never the bare pod ID."""
+    name = entry.get("PodName")
+    return name if isinstance(name, str) and name else None
+
+
 def merge_live_containers(state: DashboardState, live: list[dict]) -> None:
     """Merge live `podman ps -a` output into state.services.
 
     Rules:
     - Managed services (from profiles.yaml) are never replaced — they stay.
+      Their pod, though, is a runtime fact: the live pod name overwrites the
+      hand-typed profiles.yaml value (most entries have none; some named pods
+      that were later split), so the Services tab groups by the real pod.
     - Containers present on host but absent from profiles.yaml become synthetic
       unmanaged Service entries.
     - Unmanaged entries from a previous pass that have disappeared are removed.
@@ -102,12 +111,16 @@ def merge_live_containers(state: DashboardState, live: list[dict]) -> None:
         svc = state.services[name]
         if not svc.managed and name not in live_names:
             del state.services[name]
-    # Add newly discovered unmanaged containers.
+    # Add newly discovered unmanaged containers; refresh every known one's pod.
     for entry in live:
         name = _container_name(entry)
-        if not name or name in state.services:
+        if not name:
             continue
-        pod = entry.get("Pod") or None
+        pod = _pod_name(entry)
+        if name in state.services:
+            if pod:
+                state.services[name].pod = pod
+            continue
         state.services[name] = Service(
             name=name,
             platform=ServicePlatform.VPS,
