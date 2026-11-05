@@ -32,3 +32,55 @@ authentik_smtp_port: "587"
 authentik_smtp_username: ""
 authentik_smtp_password: ""
 authentik_smtp_from: ""
+
+# ============================================================
+# Access tiers: who gets what, with throttles and caps.
+# ============================================================
+# STATUS 2026-11-05. "enforced" lines are live; everything marked PROPOSED is
+# the review draft for the student group and the tiered LiteLLM keys, and is
+# not wired to any task yet. Numbers are starting points, not measurements.
+#
+# Escalation is never self-service: a user asks through the portal, the owner
+# approves or denies, and only then does a deploy change their group.
+access_tiers:
+  public:                       # self sign-up lands here
+    group: free_users           # enforced (enrollment-user-write)
+    signup:
+      inactive_until_email_verified: true   # enforced, 30 min token
+      bot_challenge: true                   # enforced, CF managed challenge
+      rate_limit: "5 POST / 10s / IP"       # enforced, CF http_ratelimit
+    apps: [openwebui]           # enforced (authentik-apps.yml bindings)
+    mfa: optional               # enforced (default validation stage)
+    llm:                        # PROPOSED
+      models: free_cloud_only   # no local inference, no paid models
+      rpm: 10
+      tpm: 20000
+      max_requests_per_day: 200
+      max_budget_usd: 0         # free models only, so spend must stay 0
+    escalation: portal_request  # PROPOSED (portal not built)
+
+  students:                     # PROPOSED: group not created yet
+    group: students
+    apps: [openwebui, grafana, geo, charts, timeline, portal, decks, threat-map]
+    grafana: student_folder_viewer   # copies of chosen dashboards incl. timeline
+    mfa: required               # add "students" to mfa.totp.required_groups
+    llm:
+      models: [free_cloud, local]    # local = Debian GPU via LiteLLM
+      rpm: 20
+      tpm: 60000
+      max_budget_usd_per_month: 5
+    tailnet: per_student_approval    # credit-limited, owner approves each
+    write_access: lab_sandbox_only   # real services stay read-only
+    logging: elevated                # per-identity access log + alerts
+    escalation: portal_request
+
+  paid:
+    group: paid_users
+    apps: [openwebui, grafana]  # enforced
+    mfa: optional
+
+  admins:
+    group: admins
+    apps: all                   # enforced
+    mfa: required               # enforced (mfa-routing.yml)
+    edge: "CF Access requires groups=admins"   # enforced
