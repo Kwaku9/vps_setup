@@ -34,17 +34,29 @@ neo4j:
     # Visible in Squid logs as sni=udc.neo4j.com. Off by default; set true to allow reporting.
     usage_report: false
 
+  # Bolt as dialled from the MCP servers, which no longer share the database's pod (phase 2 split).
+  bolt_uri: "bolt://{{ netseg_pods[neo4j.pod_name].host }}:7687"
+  # graph-mcp-pod publishes the MCP's loopback port (it used to be neo4j-pod's). Every task file that can create the pod
+  # must use this same list: a differing definition makes containers.podman recreate the pod and kill its members.
+  graph_mcp_pod_ports:
+    - "{{ neo4j.mcp.http_bind }}:{{ neo4j.mcp.port }}"
+
   mcp:
     container_name: "neo4j-mcp-server"
+    # graph-mcp-pod (agent zone), with knowledge-mcp and timeline-context-api. 8081 inside the pod, because
+    # timeline-context-api already listens on 8080 there; the host port stays 127.0.0.1:18080.
+    pod_name: "graph-mcp-pod"
+    port: 8081
     image: "localhost/neo4j-mcp:latest"
     build: true
     package_version: "0.6.0"      # mcp-neo4j-cypher pin (see files/neo4j-mcp/Dockerfile)
     http_bind: "127.0.0.1:18080"  # MCP streamable-http endpoint (Claude connects here)
     database: "neo4j"
     # DNS-rebinding allow-list for the streamable-http transport. Must include every
-    # Host header clients send: 127.0.0.1:18080 (host-loopback session) AND neo4j-pod:8080
-    # (cross-pod clients like the telegram-gateway). Default allows localhost only.
-    allowed_hosts: "127.0.0.1:18080,127.0.0.1,localhost,neo4j-pod:8080,neo4j-pod"
+    # Host header clients send: 127.0.0.1:18080 (host-loopback session) AND graph-mcp-pod:8081
+    # (cross-pod clients like the telegram-gateway). Default allows localhost only; a missing
+    # entry is a 421 Misdirected Request.
+    allowed_hosts: "127.0.0.1:18080,127.0.0.1,localhost,graph-mcp-pod:8081,graph-mcp-pod"
 
   # Idempotent sessions-graph loader (Claude Code session history + Telegram-queryable).
   # Heavy (~226k messages) -> runs via nightly cron, not on every deploy.
@@ -71,6 +83,7 @@ neo4j:
   knowledge_mcp:
     enabled: true
     container_name: "knowledge-mcp"
+    pod_name: "graph-mcp-pod"
     image: "localhost/knowledge-mcp:latest"
     memory: "192m"
 

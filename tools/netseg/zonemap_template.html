@@ -267,8 +267,10 @@ iptables -A ZONE_FWD -j ZONE_AUDIT   <span class="c"># "zone-would-deny "</span>
     <div><b><span class="pill ok">done</span> Connection capture</b>Sampling every 5 minutes since 2026-10-22. It was blind to pod-to-pod traffic until <code>br_netfilter</code> was enabled on 2026-10-25; that is now persisted at boot, and an alert fires if the capture ever goes blind again.</div>
     <div><b><span class="pill ok">done</span> Pod wrap: 4 batches</b>decks; honeypot and threat-map (one pod each); dsm5, lab and legal (one pod each); the three Telegram bots, recall and the Historian link. Each proved with a probe that has controls which must fail first.</div>
     <div><b><span class="pill ok">done</span> github-runner retired</b>Role removed, host SSH key revoked. The runner registration on GitHub is the owner's to remove.</div>
-    <div><b><span class="pill warn">next</span> Remaining wraps</b>@@REMAINING@@</div>
-    <div><b><span class="pill warn">then</span> Pod splits</b><code>ai-stack-pod</code> into the gateway, OpenWebUI and its database; <code>neo4j-pod</code> into the database and the MCP; the zone moves need them.</div>
+    <div><b><span class="pill ok">done</span> Pod wrap: the rest (2026-10-29/30)</b>scrapy-mcp into <code>scrape-pod</code>; timeline-context-api into <code>graph-mcp-pod</code>; the ingress: Traefik and CrowdSec into <code>security-infra-pod</code>, cloudflared into <code>cloudflared-pod</code> on its pinned address, both keeping their old names as network aliases; the fintech trio wrapped <b>stopped</b> at the owner's request (<code>trading-pod</code>, <code>charts-pod</code>: created, excluded from boot, started by hand). Only <code>ansible-deployment</code> is standalone, plus the GPU fleet and Tetragon in the lint backlog. Remaining: @@REMAINING@@</div>
+    <div><b><span class="pill ok">done</span> Pod splits: neo4j and frontend</b>The neo4j MCP servers moved to <code>graph-mcp-pod</code> (the database stays in <code>neo4j-pod</code>); <code>timeline-api</code> moved from <code>frontend-pod</code> to <code>backend-pod</code> (owner's decision; it now listens on the pod interface, a recorded exception to the no-0.0.0.0 rule).</div>
+    <div><b><span class="pill ok">done</span> Observability for the migration (2026-11-01)</b>Podman's event log moved from RAM to disk (64 MB, about 1.5 to 3 days), so a night's container stops can be read the next morning; every pod now reports a running gauge, and <code>WatchedPodStopped</code> alerts on Telegram when <code>trading-pod</code> stops after running. This page is served on the tailnet and refreshes hourly.</div>
+    <div><b><span class="pill warn">next</span> Pod split: ai-stack-pod</b>Built and tested, not yet applied: <code>ai-db-pod</code>, <code>ai-gateway-pod</code> (carries <code>ai-stack-pod</code> as an alias so clients with that name in their source keep working) and <code>openwebui-pod</code>. A 3 to 5 minute outage of chat, LiteLLM, TTS and search when it is applied. Also fixes OpenWebUI web search, which was querying OpenWebUI itself.</div>
     <div><b><span class="pill neu">gate</span> Capture review</b>Earliest 2026-11-01. Every uncovered or unmapped row is decided by the owner before any zone is enforced.</div>
     <div><b><span class="pill bad">not started</span> Zone moves</b>No pod is on a zone network. This is where the isolation actually begins.</div>
   </div>
@@ -277,8 +279,9 @@ iptables -A ZONE_FWD -j ZONE_AUDIT   <span class="c"># "zone-would-deny "</span>
   <ol class="steps">
     <li class="done"><b>Local rig and reachability test</b><span>Zone networks and stub pods proved the rules in enforce mode before the VPS saw them.</span></li>
     <li class="done"><b>Firewall rules in audit mode, then capture</b><span>Deployed and rebooted through. The capture needed <code>br_netfilter</code> to see pod-to-pod traffic.</span></li>
-    <li><b>Wrap every standalone container in a pod <span class="pill warn">in progress</span></b><span>Same network first. The rest: @@REMAINING_SHORT@@. Ingress last, because cloudflared dials <code>traefik</code> by name.</span></li>
-    <li><b>Split the multi-purpose pods</b><span>The zone moves need <code>ai-stack-pod</code>, <code>neo4j-pod</code> and <code>frontend-pod</code> carved along the zone boundaries.</span></li>
+    <li class="done"><b>Wrap every standalone container in a pod</b><span>Same network first. Ingress last, with the old names kept as pod aliases so cloudflared and the scrapes needed no change. Left: @@REMAINING_SHORT@@.</span></li>
+    <li><b>Split the multi-purpose pods <span class="pill warn">in progress</span></b><span><code>neo4j-pod</code> and <code>frontend-pod</code> done; <code>ai-stack-pod</code> built, waiting for its apply window.</span></li>
+    <li><b>Zone-move tooling</b><span>Fixed addresses and <code>--add-host</code> entries generated from the flows file (a pod resolves names only on its own network), rehearsed on a throwaway pod.</span></li>
     <li><b>net-web first: honeypot and public sites</b><span>Cuts the demonstrated honeypot-to-database path. Needs the move tooling (fixed addresses, <code>--add-host</code> from the flows).</span></li>
     <li><b>net-data: databases</b><span>No egress; reachable only from zones named in the flows file.</span></li>
     <li><b>net-tunnel and net-edge together</b><span>Only the cloudflared pod can open a connection to Traefik.</span></li>
@@ -296,6 +299,9 @@ iptables -A ZONE_FWD -j ZONE_AUDIT   <span class="c"># "zone-would-deny "</span>
     <li>Cloudflared and Traefik live in separate single-pod zones; <code>ssh.&lt;domain&gt;</code> stays on the tunnel.</li>
     <li>The ops dashboard runs alone in <code>net-mgmt</code>; Mail Kit runs alone in <code>net-mail</code>.</li>
     <li>Only <code>ansible-deployment</code> stays standalone.</li>
+    <li>Retired ingress containers are stopped and renamed <code>*-pre-pod</code>, never deleted, until a separate cleanup step.</li>
+    <li>The fintech pods stay stopped until the owner starts them: starting ibeam is an IBKR login.</li>
+    <li><code>timeline-api</code> lives in <code>backend-pod</code> (svc) rather than next to its nginx.</li>
     <li>Audit before enforce, one zone at a time, never before the capture review.</li>
   </ul>
 
@@ -307,7 +313,10 @@ iptables -A ZONE_FWD -j ZONE_AUDIT   <span class="c"># "zone-would-deny "</span>
       <tr><td>Split Mail Kit read and send into separate pods</td><td>Open. They share a network namespace today; the network cannot tell them apart.</td></tr>
       <tr><td>CrowdSec LAPI exception for threat-map</td><td>Decided and tested, owner may veto: <code>threat-map-pod</code> may reach the CrowdSec API (8180) on the edge pod; Traefik's 443 stays reachable from the tunnel pod only. Removing it costs threat-map its live decisions.</td></tr>
       <tr><td>Telegram bots publish loopback ports on the pod</td><td>Note. The Claude approval gate and host consumers use <code>127.0.0.1:7555-7557</code>; the pod owns that publishing now.</td></tr>
-      <tr><td>Backup aborting on disk space</td><td>Open. Nightly backups have aborted since 2026-10-20 (9.5G free against a 12G gate). Deferred by the owner.</td></tr>
+      <tr><td>Backup aborting on disk space</td><td>Open. Nightly backups have aborted since 2026-10-20 (9.5G free against a 12G gate). Deferred by the owner until the migration is complete.</td></tr>
+      <tr><td>What stopped trading-pod at 03:10 on 2026-10-31</td><td>Open. Not the OOM killer, the backup or the prune; the old event log had already rotated. The next occurrence is recorded and alerted.</td></tr>
+      <tr><td>Rotate the shared Postgres superuser password</td><td>Open. It was printed into a session transcript on 2026-10-30.</td></tr>
+      <tr><td>Aliases to remove at the zone move</td><td>Note. <code>traefik</code>, <code>cloudflared</code> and (after its split) <code>ai-stack-pod</code> resolve as pod aliases; their consumers are repointed when the pods change networks.</td></tr>
       <tr><td>Flows marked unverified</td><td>Confirmed or corrected by the capture review before any zone is enforced.</td></tr>
     </tbody>
   </table></div>
