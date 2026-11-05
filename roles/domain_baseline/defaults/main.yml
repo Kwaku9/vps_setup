@@ -81,12 +81,21 @@ domain_baseline:
       # Existing SPF is already correct (-all, DreamHost + MailChannels).
       # Preserved verbatim — do not "improve" a customer's working mail config.
       spf: "v=spf1 mx include:netblocks.dreamhost.com include:relay.mailchannels.net -all"
-      # Customer domain sends real business mail (bookings). Start at none and
-      # ramp only after reviewing reports WITH the customer. Breaking a
-      # customer's booking confirmations is worse than the risk we are closing.
-      dmarc_policy: none
+      # reject since 2026-10-28, owner's call (none -> reject, skipping
+      # quarantine, without a report review). Known senders both DKIM-sign as
+      # d=larougebrows.com: DreamHost/MailChannels (dreamhost._domainkey) and
+      # SES order mail (3 token CNAMEs). Anything else sending as
+      # @larougebrows.com is now REFUSED, so if a booking/shop tool's mail
+      # "stops arriving", check the reports first and back off to quarantine.
+      dmarc_policy: reject
       dmarc_pct: 100
-      dmarc_subdomain_policy: none
+      dmarc_subdomain_policy: reject
+      # Relaxed alignment, as the record was before codifying: strict buys
+      # nothing for this domain and would refuse any mail.* signer.
+      dmarc_alignment: r
+      # Postmark weekly digest, added by hand in Aug and never codified; kept
+      # so running this role does not silently drop it.
+      dmarc_rua_extra: ["re+glwbwdpyp4o@dmarc.postmarkapp.com"]
       dkim_null: false
       caa:
         # Three CAs have historically issued for this domain (Let's Encrypt R12,
@@ -95,3 +104,6 @@ domain_baseline:
         - { flags: 0, tag: issue,     value: "amazon.com" }
         - { flags: 0, tag: issue,     value: "letsencrypt.org" }
         - { flags: 0, tag: issuewild, value: "amazon.com" }
+        # Live since Aug, never codified until 2026-10-28; without it this
+        # role's overwrite would silently revoke LE wildcard issuance.
+        - { flags: 0, tag: issuewild, value: "letsencrypt.org" }
