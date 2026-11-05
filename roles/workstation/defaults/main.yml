@@ -4,7 +4,7 @@
 # debian-voice-tunnel.service, laptop Voicebox as automatic fallback. Measured 2026-10-30 on one 41-sentence reply:
 # first sound 3.6 s vs 10.8 s, 0.3 s waiting vs 48 s. `laptop`: Voicebox on this machine only, tunnel stopped.
 # Flip everything (this line, the apply, Debian voice mode) with: tools/ansible-workstation.sh voice debian|laptop
-speech_voice_backend: debian
+speech_voice_backend: laptop
 # The ssh target lives in all.yml (git-crypt): this repo is public. Empty here so a run without all.yml fails loudly.
 speech_voice_debian_ssh: ""
 speech_voice_debian_local_port: 18095
