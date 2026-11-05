@@ -189,6 +189,9 @@ tools/spikes/
 # (overrides the global *.md and *.sh ignores above for SKILL.md, reference.md, *.sh helpers)
 !roles/claude-prep/files/skills/**/*.md
 !roles/claude-prep/files/skills/**/*.sh
+!roles/claude-prep/files/skills/**/*.svg
+!roles/workstation/files/claude-skills/**/*.md
+!roles/workstation/files/claude-skills/**/*.svg
 
 # `scripts/` above became `scripts/*` so the two negations below can apply
 # (git cannot re-include a file whose parent directory is excluded). That also
