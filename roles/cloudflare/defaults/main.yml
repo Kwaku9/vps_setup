@@ -145,9 +145,9 @@ cloudflare_access:
   lab:
     enabled: true
     subdomain: "lab"
-    allowed_emails:
-      - "redacted-client-1@example.invalid"
-      - "redacted-client-2@example.invalid"
+    # The client addresses live in all.yml (git-crypt) as cloudflare_lab_allowed_emails;
+    # this file is public. Empty means no one is admitted (the deploy fails loudly).
+    allowed_emails: "{{ cloudflare_lab_allowed_emails | default([]) }}"
   # Branding for the Cloudflare Access login page (the first gate users hit on
   # protected *.<domain> apps, before the Authentik login page). Applied to the
   # Zero Trust *organization* via login_design, so it themes every Access app at
