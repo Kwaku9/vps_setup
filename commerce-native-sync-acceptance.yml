@@ -1,0 +1,14 @@
+---
+- name: Validate native sync using an isolated synthetic merchant
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Exercise scheduled worker and MCP offer behavior
+      ansible.builtin.command:
+        argv: [podman, exec, -i, commerce-dev, python, '-']
+        stdin: "{{ lookup('file', '../aicortex-commerce/tests/native_sync_live.py') }}"
+      register: acceptance
+      changed_when: true
+    - name: Report test results without credentials
+      ansible.builtin.debug:
+        var: acceptance.stdout_lines

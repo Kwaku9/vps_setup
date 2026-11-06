@@ -1,0 +1,104 @@
+---
+# Prepared for explicit approval. Included only with commerce_public_mcp_enabled=true.
+- name: Start shopper-only listener without operator credential
+  containers.podman.podman_container:
+    name: commerce-mcp-dev
+    image: docker.io/library/python:3.13-slim
+    pod: commerce-dev-pod
+    state: started
+    restart_policy: unless-stopped
+    recreate: '{{ app_files.changed or (commerce_force_recreate | default(false) | bool) }}'
+    user: '65532:65532'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges']
+    memory: 128m
+    pids_limit: 64
+    env:
+      BIND: '0.0.0.0'
+      PORT: '8789'
+      SHOPPER_ONLY: '1'
+      PUBLIC_ORIGIN: 'https://commerce-mcp-dev.{{ domain_name }}'
+      PYTHONDONTWRITEBYTECODE: '1'
+    volumes:
+      - '{{ commerce_root }}/app:/app:ro'
+      - '{{ commerce_root }}/data:/data:rw'
+    command: [python, /app/server.py]
+- name: Route only MCP and health on dedicated public host
+  ansible.builtin.copy:
+    dest: /opt/compose/traefik/dynamic/commerce-mcp-dev.yml
+    mode: '0644'
+    content: |
+      http:
+        routers:
+          commerce-mcp-dev:
+            rule: "Host(`commerce-mcp-dev.{{ domain_name }}`) && (PathPrefix(`/mcp/`) || Path(`/health`))"
+            entryPoints: [websecure]
+            service: commerce-mcp-dev
+            middlewares: [crowdsec, secure-headers, rate-limit]
+            tls:
+              certResolver: cloudflare
+              domains:
+                - main: '{{ domain_name }}'
+                  sans: ['*.{{ domain_name }}']
+        services:
+          commerce-mcp-dev:
+            loadBalancer:
+              servers:
+                - url: 'http://commerce-dev-pod:8789'
+- name: Query shopper DNS
+  ansible.builtin.uri:
+    url: 'https://api.cloudflare.com/client/v4/zones/{{ cloudflare_zone_id }}/dns_records?name=commerce-mcp-dev.{{ domain_name }}&type=CNAME'
+    headers: {Authorization: 'Bearer {{ cloudflare_api_token }}'}
+  register: shopper_dns
+  no_log: true
+- name: Create shopper DNS when absent
+  ansible.builtin.uri:
+    url: 'https://api.cloudflare.com/client/v4/zones/{{ cloudflare_zone_id }}/dns_records'
+    method: POST
+    headers: {Authorization: 'Bearer {{ cloudflare_api_token }}'}
+    body_format: json
+    body: {type: CNAME, name: 'commerce-mcp-dev.{{ domain_name }}', content: '{{ domain_name }}', proxied: true, ttl: 1}
+  when: shopper_dns.json.result | length == 0
+  no_log: true
+- name: Read Access applications
+  ansible.builtin.uri:
+    url: 'https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps'
+    headers: {Authorization: 'Bearer {{ cloudflare_api_token }}'}
+  register: shopper_apps
+  no_log: true
+- name: Create dedicated shopper Access application
+  ansible.builtin.uri:
+    url: 'https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps'
+    method: POST
+    headers: {Authorization: 'Bearer {{ cloudflare_api_token }}'}
+    body_format: json
+    body: {name: 'Commerce MCP development - application auth', domain: 'commerce-mcp-dev.{{ domain_name }}', type: self_hosted, session_duration: 24h}
+    status_code: [200, 201]
+  when: shopper_apps.json.result | selectattr('domain','equalto','commerce-mcp-dev.' + domain_name) | list | length == 0
+  register: shopper_new_app
+  no_log: true
+- name: Select dedicated shopper application
+  ansible.builtin.set_fact:
+    shopper_app_id: "{{ shopper_new_app.json.result.id if shopper_new_app is not skipped else (shopper_apps.json.result | selectattr('domain','equalto','commerce-mcp-dev.' + domain_name) | first).id }}"
+  no_log: true
+- name: Read dedicated shopper policies
+  ansible.builtin.uri:
+    url: 'https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps/{{ shopper_app_id }}/policies'
+    headers: {Authorization: 'Bearer {{ cloudflare_api_token }}'}
+  register: shopper_policies
+  no_log: true
+- name: Enable application authentication only on dedicated shopper hostname
+  ansible.builtin.uri:
+    url: 'https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps/{{ shopper_app_id }}/policies'
+    method: POST
+    headers: {Authorization: 'Bearer {{ cloudflare_api_token }}'}
+    body_format: json
+    body:
+      name: Commerce MCP application authentication
+      decision: bypass
+      include: [{everyone: {}}]
+      precedence: 1
+    status_code: [200, 201]
+  when: shopper_policies.json.result | selectattr('decision','equalto','bypass') | list | length == 0
+  no_log: true
