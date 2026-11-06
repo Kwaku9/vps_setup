@@ -16,6 +16,7 @@ export interface Triage {
 export interface Service {
   name: string; platform: string; pod: string | null; description: string; status: string; managed: boolean;
   memory_mb: number | null; cpu_percent: number | null; memory_percent: number | null; dependencies: string[];
+  memory_usage_mb?: number | null; metrics_at?: number | null;
 }
 export interface ActionResult { service: string; action: string; success: boolean; message: string }
 
