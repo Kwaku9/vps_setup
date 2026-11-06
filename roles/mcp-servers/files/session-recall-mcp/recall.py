@@ -14,6 +14,22 @@ LITELLM_KEY = os.environ.get("LITELLM_API_KEY", "")
 GEMMA_MODEL = os.environ.get("GEMMA_MODEL", "embeddinggemma")
 PREFETCH_MULT = 20  # ANN candidate chunks fetched per requested session
 
+# HNSW scan settings, applied per search transaction (SET LOCAL). An HNSW scan returns at most
+# ef_search rows, so at pgvector's default 40 the k*20 prefetch was starved to ~38 chunks
+# (benchmark 2026-11-06). iterative_scan keeps scanning until the LIMIT is met.
+ITERATIVE_SCAN_MODES = ("off", "relaxed_order", "strict_order")
+
+
+def ann_settings(ef_search=None, iterative_scan=None):
+    """Pure: the SET LOCAL statements for one search. Validated, because SET takes no bind params."""
+    ef = int(ef_search if ef_search is not None else os.environ.get("RECALL_EF_SEARCH", "100"))
+    mode = iterative_scan if iterative_scan is not None else os.environ.get("RECALL_ITERATIVE_SCAN", "relaxed_order")
+    if not 1 <= ef <= 1000:
+        raise ValueError(f"ef_search out of range: {ef}")
+    if mode not in ITERATIVE_SCAN_MODES:
+        raise ValueError(f"unknown iterative_scan mode: {mode!r}")
+    return [f"SET LOCAL hnsw.ef_search = {ef}", f"SET LOCAL hnsw.iterative_scan = {mode}"]
+
 
 def gemma_query(query):
     # MUST match the index's asymmetric prefix (text_prep.gemma_query in the spike).
@@ -40,6 +56,9 @@ def build_search_sql(project, since):
 
     ANN-fetches the closest chunks (HNSW), then picks the best chunk per session
     (DISTINCT ON) and joins the human title. Python sorts + truncates to k.
+    A relaxed-order scan may return the candidates slightly out of order, so
+    nothing downstream relies on scan order: the per-session pick orders by
+    dist explicitly, and MATERIALIZED keeps the LIMIT a hard candidate boundary.
     """
     clauses = []
     params = {}
@@ -51,7 +70,7 @@ def build_search_sql(project, since):
         params["since"] = since
     where = "\n            ".join(clauses)
     sql = f"""
-        WITH hits AS (
+        WITH hits AS MATERIALIZED (
           SELECT c.session_uuid, c.project, c.snippet, c.ts,
                  c.embedding <=> %(qv)s::vector AS dist
           FROM recall.chunks c
@@ -83,14 +102,30 @@ def shape_hit(row):
     }
 
 
+def run_ann(conn, sql, params, settings=None):
+    """Run one vector search inside its own transaction with the HNSW settings applied.
+
+    The server's connections are autocommit, where SET LOCAL is a silent no-op (a
+    WARNING, and the search runs on the defaults). An explicit BEGIN makes the
+    settings real; ROLLBACK ends them with the search, so nothing leaks.
+    """
+    cur = conn.cursor()
+    cur.execute("BEGIN READ ONLY")
+    try:
+        for stmt in (ann_settings() if settings is None else settings):
+            cur.execute(stmt)
+        cur.execute(sql, params)
+        return cur.fetchall()
+    finally:
+        cur.execute("ROLLBACK")
+
+
 def search_sessions(conn, query, k=8, project=None, since=None):
     qv = embed_query(query)
     sql, params = build_search_sql(project, since)
     params["qv"] = vec_literal(qv)
     params["prefetch"] = max(k, 1) * PREFETCH_MULT
-    cur = conn.cursor()
-    cur.execute(sql, params)
-    hits = [shape_hit(r) for r in cur.fetchall()]
+    hits = [shape_hit(r) for r in run_ann(conn, sql, params)]
     hits.sort(key=lambda h: h["score"], reverse=True)
     return hits[:k]
 
