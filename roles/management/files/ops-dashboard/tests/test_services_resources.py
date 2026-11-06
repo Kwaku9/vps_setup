@@ -1,7 +1,6 @@
 from unittest.mock import AsyncMock
 
 import pytest
-
 from ops_dashboard.api.dependencies import DashboardState
 from ops_dashboard.api.routers.services import _service_to_schema
 from ops_dashboard.api.schemas import MetricsSnapshot
