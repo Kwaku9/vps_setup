@@ -22,7 +22,7 @@ vm_client = VictoriaMetricsClient()
 _METRIC_TO_PROMQL = {
     "cpu": 'podman_container_cpu_percent{{name="{name}"}}',
     "mem": '100 * podman_container_mem_usage_bytes{{name="{name}"}} '
-           '/ ignoring(__name__) podman_container_mem_limit_bytes{{name="{name}"}}',
+           '/ ignoring(__name__) (podman_container_mem_limit_bytes{{name="{name}"}} > 0)',
 }
 
 
