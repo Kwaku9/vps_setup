@@ -1,0 +1,25 @@
+---
+- name: Issue private shopper credential for Amazon sandbox acceptance
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Issue a merchant-scoped sandbox shopper key
+      ansible.builtin.command:
+        argv: [podman, exec, -i, commerce-dev, python, '-']
+        stdin: |
+          import sys,json
+          sys.path.insert(0,'/app')
+          from core import Store
+          s=Store('/data/commerce.db')
+          matches=[m for m in s.list() if m['name']=='Amazon FBA sandbox acceptance']
+          assert len(matches)==1
+          print(json.dumps(s.issue_shopper(matches[0]['id'])))
+      register: amazon_shopper
+      no_log: true
+    - name: Save the shopper token privately on the workstation
+      ansible.builtin.copy:
+        dest: '{{ playbook_dir }}/../aicortex-commerce/.amazon-sandbox-shopper-token'
+        content: "{{ (amazon_shopper.stdout | from_json).token }}\n"
+        mode: '0600'
+      delegate_to: localhost
+      no_log: true

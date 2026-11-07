@@ -1,0 +1,21 @@
+---
+- name: Re-download an encrypted commerce snapshot and rehearse isolated restore
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Read latest verified snapshot identifier
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /opt/aicortex-commerce-recovery/bin/recovery.py, status]
+      register: recovery_status
+      changed_when: false
+    - name: Select requested or latest verified commerce snapshot
+      ansible.builtin.set_fact:
+        recovery_snapshot: '{{ commerce_recovery_snapshot | default((recovery_status.stdout | from_json).last_backup_snapshot) }}'
+    - name: Check offsite restore in a fresh root-only directory
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /opt/aicortex-commerce-recovery/bin/recovery.py, restore-check, --snapshot, '{{ recovery_snapshot }}']
+      register: restore_check
+      changed_when: false
+    - name: Report restore outcome without restored data or credentials
+      ansible.builtin.debug:
+        msg: '{{ restore_check.stdout | from_json }}'

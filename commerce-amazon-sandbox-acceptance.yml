@@ -1,0 +1,23 @@
+---
+- name: Validate Amazon sandbox integration without production operations
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Seed a named virtual sandbox inventory item
+      ansible.builtin.command:
+        argv: [podman, exec, -i, commerce-dev, python, '-']
+        stdin: "{{ lookup('file', '../aicortex-commerce/ansible/seed_amazon_sandbox.py') }}"
+      register: seeded
+      changed_when: "'HTTP 200' in seeded.stdout"
+    - name: Report sandbox seeding results without credentials
+      ansible.builtin.debug:
+        var: seeded.stdout_lines
+    - name: Validate deployed sync and MCP mapping
+      ansible.builtin.command:
+        argv: [podman, exec, -i, commerce-dev, python, '-']
+        stdin: "{{ lookup('file', '../aicortex-commerce/tests/amazon_sandbox_live.py') }}"
+      register: tested
+      changed_when: true
+    - name: Report deployed sandbox validation
+      ansible.builtin.debug:
+        var: tested.stdout_lines

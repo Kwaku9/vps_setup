@@ -1,0 +1,14 @@
+---
+- name: Close synthetic assistant acceptance access
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Unpublish and revoke only the marked synthetic fixture
+      ansible.builtin.command:
+        argv: [podman, exec, -i, commerce-dev, python, '-']
+        stdin: "{{ lookup('file', '../aicortex-commerce/tests/publication_cleanup.py') }}"
+      register: cleanup
+      changed_when: true
+    - name: Report synthetic cleanup without credentials
+      ansible.builtin.debug:
+        var: cleanup.stdout_lines

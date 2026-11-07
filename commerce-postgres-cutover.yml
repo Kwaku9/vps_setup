@@ -1,0 +1,117 @@
+---
+- name: Controlled commerce storage cutover with verified rollback and bounded maintenance
+  hosts: alpine_servers
+  gather_facts: false
+  vars_files: [all.yml, vault.yml]
+  vars:
+    commerce_host: 'commerce-dev.{{ domain_name }}'
+    commerce_root: /opt/aicortex-commerce-dev
+    commerce_public_mcp_enabled: true
+    commerce_production_enabled: true
+  tasks:
+    - name: Check requested storage operation
+      ansible.builtin.assert:
+        that: commerce_storage_operation | default('migrate') in ['migrate', 'rollback']
+    - name: Inspect active backend before any service interruption
+      ansible.builtin.stat:
+        path: /opt/aicortex-commerce-postgres/active.json
+      register: cutover_active_file
+    - name: Read active backend metadata
+      ansible.builtin.slurp:
+        src: /opt/aicortex-commerce-postgres/active.json
+      when: cutover_active_file.stat.exists
+      register: cutover_active_read
+    - name: Select current backend metadata
+      ansible.builtin.set_fact:
+        cutover_active: "{{ (cutover_active_read.content | b64decode | from_json) if cutover_active_file.stat.exists else {'backend':'sqlite'} }}"
+    - name: Finish an already-completed migration without stopping services
+      ansible.builtin.meta: end_host
+      when: commerce_storage_operation | default('migrate') == 'migrate' and cutover_active.backend == 'postgres'
+    - name: Inspect previous migration marker
+      ansible.builtin.stat:
+        path: /opt/aicortex-commerce-postgres/migration.json
+      register: cutover_marker
+    - name: Reject invalid rollback or unreviewed re-migration before stopping services
+      ansible.builtin.assert:
+        that:
+          - commerce_storage_operation | default('migrate') != 'rollback' or cutover_active.backend == 'postgres'
+          - commerce_storage_operation | default('migrate') != 'migrate' or not cutover_marker.stat.exists
+        fail_msg: Rollback requires active PostgreSQL; re-migration after rollback requires current-state reconciliation.
+    - name: Verify an encrypted backup and isolated restore before freezing writes
+      ansible.builtin.command: /usr/bin/python3 /opt/aicortex-commerce-recovery/bin/recovery.py backup
+      changed_when: true
+    - name: Bound planned service-alert suppression to fifteen minutes
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, -c, "import os,json,time; from pathlib import Path; os.umask(0o077); Path('/opt/aicortex-commerce-monitoring/maintenance.json').write_text(json.dumps({'until':time.time()+900}))"]
+    - name: Apply storage operation under a writer freeze
+      block:
+        - name: Stop commerce writers and listeners while preserving existing network policies
+          ansible.builtin.command: /usr/bin/python3 /opt/aicortex-commerce-postgres/bin/postgres_admin.py freeze
+          register: graceful_freeze
+        - name: Report graceful stop outcome without customer data
+          ansible.builtin.debug:
+            var: graceful_freeze.stdout
+        - name: Migrate all rows to PostgreSQL and verify exact content
+          ansible.builtin.command: /usr/bin/python3 /opt/aicortex-commerce-postgres/bin/postgres_admin.py migrate
+          when: commerce_storage_operation | default('migrate') == 'migrate'
+        - name: Create new SQLite files from current PostgreSQL state for rollback
+          ansible.builtin.command: /usr/bin/python3 /opt/aicortex-commerce-postgres/bin/postgres_admin.py prepare-rollback
+          register: reverse_state
+          when: commerce_storage_operation | default('migrate') == 'rollback'
+        - name: Persist the verified backend selection
+          ansible.builtin.copy:
+            dest: /opt/aicortex-commerce-postgres/active.json
+            content: "{{ ((reverse_state.stdout | from_json) if commerce_storage_operation | default('migrate') == 'rollback' else {'backend':'postgres','migration_verified':true}) | to_nice_json }}"
+            owner: root
+            group: root
+            mode: '0600'
+        - name: Start all commerce components using the verified active backend
+          ansible.builtin.include_tasks: commerce-runtime-tasks.yml
+        - name: Confirm all four services are running after storage operation
+          ansible.builtin.command:
+            argv: [/usr/bin/python3, -c, "import json,subprocess; rows=json.loads(subprocess.check_output(['podman','inspect','commerce-dev','commerce-mcp-dev','commerce-sync-dev','commerce-production-worker'])); assert all(r['State']['Running'] for r in rows); print('PASS all commerce services running')"]
+          changed_when: false
+      rescue:
+        - name: Freeze any components started during a failed cutover
+          ansible.builtin.command: podman stop --time 90 commerce-sync-dev commerce-production-worker commerce-dev commerce-mcp-dev
+        - name: Inspect last active backend without credentials
+          ansible.builtin.stat:
+            path: /opt/aicortex-commerce-postgres/active.json
+          register: failed_active_file
+        - name: Read last active backend without credentials
+          ansible.builtin.slurp:
+            src: /opt/aicortex-commerce-postgres/active.json
+          when: failed_active_file.stat.exists
+          register: failed_active_read
+        - name: Restore verified pre-operation selection if a failed copy left no selector
+          ansible.builtin.copy:
+            dest: /opt/aicortex-commerce-postgres/active.json
+            content: '{{ cutover_active | to_nice_json }}'
+            mode: '0600'
+          when: not failed_active_file.stat.exists
+        - name: Select verified recovery backend without guessing from old data files
+          ansible.builtin.set_fact:
+            recovery_backend: "{{ ((failed_active_read.content | b64decode | from_json) if failed_active_file.stat.exists else cutover_active).backend }}"
+        - name: Generate state-preserving reverse export if PostgreSQL had become active
+          ansible.builtin.command: /usr/bin/python3 /opt/aicortex-commerce-postgres/bin/postgres_admin.py prepare-rollback
+          when: recovery_backend == 'postgres'
+          register: rescued_reverse
+        - name: Persist recovered SQLite backend without resurrecting old grants
+          ansible.builtin.copy:
+            dest: /opt/aicortex-commerce-postgres/active.json
+            content: '{{ (rescued_reverse.stdout | from_json) | to_nice_json }}'
+            mode: '0600'
+          when: rescued_reverse is not skipped
+        - name: Restore service using the last verified backend
+          ansible.builtin.include_tasks: commerce-runtime-tasks.yml
+        - name: Report failed cutover after service recovery
+          ansible.builtin.fail:
+            msg: Cutover failed and service recovery was attempted using verified current state. Review sanitized evidence before retrying.
+      always:
+        - name: End bounded planned maintenance on success or failure
+          ansible.builtin.file:
+            path: /opt/aicortex-commerce-monitoring/maintenance.json
+            state: absent
+        - name: Refresh actual operational health after maintenance
+          ansible.builtin.command: /usr/bin/python3 /opt/aicortex-commerce-monitoring/bin/monitoring.py
+          changed_when: false

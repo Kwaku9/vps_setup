@@ -1,0 +1,206 @@
+- name: Inspect persistent commerce backend selection
+  ansible.builtin.stat:
+    path: /opt/aicortex-commerce-postgres/active.json
+  register: commerce_active_file
+- name: Inspect completed migration marker
+  ansible.builtin.stat:
+    path: /opt/aicortex-commerce-postgres/migration.json
+  register: commerce_migration_marker
+- name: Refuse stale SQLite fallback if backend selection is missing after migration
+  ansible.builtin.assert:
+    that: not commerce_migration_marker.stat.exists or commerce_active_file.stat.exists
+    fail_msg: Backend selection is missing after migration. Restore verified backend metadata before deployment.
+- name: Read backend selection without database credentials
+  ansible.builtin.slurp:
+    src: /opt/aicortex-commerce-postgres/active.json
+  when: commerce_active_file.stat.exists
+  register: commerce_active_read
+- name: Select persisted backend and rollback data paths
+  ansible.builtin.set_fact:
+    commerce_active: "{{ (commerce_active_read.content | b64decode | from_json) if commerce_active_file.stat.exists else {'backend': 'sqlite'} }}"
+- name: Reject an invalid active backend instead of falling back to stale SQLite
+  ansible.builtin.assert:
+    that: commerce_active.backend in ['sqlite', 'postgres']
+- name: Keep active backend persistent across ordinary deployments
+  ansible.builtin.set_fact:
+    commerce_use_postgres: "{{ commerce_active.backend == 'postgres' }}"
+    commerce_data_root: "{{ commerce_active.sqlite_paths.development | default(commerce_root + '/data') }}"
+    commerce_private_root: "{{ commerce_active.sqlite_paths.production | default('/opt/aicortex-commerce-production/data') }}"
+    commerce_publications_root: "{{ commerce_active.sqlite_paths.publications | default('/opt/aicortex-commerce-publications/data') }}"
+- name: Preserve managed feeds independently of database backend
+  ansible.builtin.file:
+    path: '{{ commerce_root }}/data/feeds'
+    state: directory
+    owner: '65532'
+    group: '65532'
+    mode: '0750'
+- name: Create application and private data directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    mode: '0750'
+  loop:
+    - {path: '{{ commerce_root }}', owner: 'root'}
+    - {path: '{{ commerce_root }}/app', owner: '65532'}
+    - {path: '{{ commerce_root }}/data', owner: '65532'}
+- name: Create separated operational status and listener telemetry mounts
+  ansible.builtin.file:
+    path: '{{ item.path }}'
+    state: directory
+    owner: '{{ item.owner }}'
+    group: '{{ item.group }}'
+    mode: '{{ item.mode }}'
+  loop:
+    - {path: /opt/aicortex-commerce-monitoring, owner: root, group: '65532', mode: '0750'}
+    - {path: /opt/aicortex-commerce-monitoring/status, owner: root, group: '65532', mode: '0750'}
+    - {path: /opt/aicortex-commerce-monitoring/telemetry, owner: root, group: root, mode: '0755'}
+    - {path: /opt/aicortex-commerce-monitoring/telemetry/admin, owner: '65532', group: '65532', mode: '0750'}
+    - {path: /opt/aicortex-commerce-monitoring/telemetry/mcp, owner: '65532', group: '65532', mode: '0750'}
+- name: Copy application release
+  ansible.builtin.copy:
+    src: "../aicortex-commerce/app/{{ item }}"
+    dest: "{{ commerce_root }}/app/{{ item }}"
+    owner: '65532'
+    mode: '0640'
+  loop: [core.py, server.py, index.html, app.js, style.css, RELEASE, connectors.py, sync_worker.py, amazon_sandbox.py, amazon_production.py, production_worker.py, readiness.py, publication.py, operations.py, telemetry.py, portability.py, lifecycle.py, database.py]
+  register: app_files
+- name: Generate private development credential once
+  ansible.builtin.shell: "umask 077; printf 'ADMIN_TOKEN=' > {{ commerce_root }}/secret.env; head -c 48 /dev/urandom | base64 | tr -d '\\n' >> {{ commerce_root }}/secret.env; printf '\\n' >> {{ commerce_root }}/secret.env"
+  args:
+    creates: '{{ commerce_root }}/secret.env'
+  no_log: true
+- name: Initialize private sandbox credential binding file when absent
+  ansible.builtin.copy:
+    dest: '{{ commerce_root }}/amazon-sandbox.json'
+    content: '{}'
+    force: false
+    owner: '65532'
+    group: '65532'
+    mode: '0600'
+  no_log: true
+- name: Create curated publication directory
+  ansible.builtin.file:
+    path: /opt/aicortex-commerce-publications/data
+    state: directory
+    owner: '65532'
+    group: '65532'
+    mode: '0750'
+  when: commerce_production_enabled | default(false) | bool
+- name: Create commerce pod without host ports
+  containers.podman.podman_pod:
+    name: commerce-dev-pod
+    network: enterprise_network
+    state: started
+- name: Start resource-limited development runtime
+  containers.podman.podman_container:
+    name: commerce-dev
+    image: localhost/aicortex-commerce-runtime:0.12.0
+    pod: commerce-dev-pod
+    state: started
+    restart_policy: unless-stopped
+    stop_timeout: 90
+    recreate: '{{ app_files.changed or (commerce_force_recreate | default(false) | bool) }}'
+    user: '65532:65532'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges']
+    memory: 192m
+    pids_limit: 64
+    env_file: '{{ commerce_root }}/secret.env'
+    env:
+      BIND: '0.0.0.0'
+      DATABASE: "{{ 'pgfile:/run/secrets/development.json' if commerce_use_postgres else '/data/commerce.db' }}"
+      FEED_ROOT: /feeds
+      TELEMETRY_DATABASE: /telemetry/events.sqlite3
+      OPERATIONS_STATUS_FILE: /operations/observations.json
+      PUBLIC_ORIGIN: 'https://{{ commerce_host }}'
+      PUBLICATION_DATABASE: "{{ ('pgfile:/run/secrets/publications.json' if commerce_use_postgres else '/publications/commerce.db') if (commerce_production_enabled | default(false) | bool) else '' }}"
+      PRODUCTION_DATABASE: "{{ ('pgfile:/run/secrets/production.json' if commerce_use_postgres else '/production/commerce.db') if (commerce_production_enabled | default(false) | bool) else '' }}"
+      PYTHONDONTWRITEBYTECODE: '1'
+    volumes: "{{ [commerce_root + '/app:/app:ro', commerce_root + '/data/feeds:/feeds:rw', '/opt/aicortex-commerce-monitoring/telemetry/admin:/telemetry:rw', '/opt/aicortex-commerce-monitoring/status:/operations:ro', commerce_root + '/amazon-sandbox.json:/run/secrets/amazon-sandbox.json:ro'] + (['/opt/aicortex-commerce-postgres/clients/commerce_dev_rw.json:/run/secrets/development.json:ro', '/opt/aicortex-commerce-postgres/clients/commerce_prod_rw.json:/run/secrets/production.json:ro', '/opt/aicortex-commerce-postgres/clients/commerce_pub_rw.json:/run/secrets/publications.json:ro'] if commerce_use_postgres else [commerce_data_root + ':/data:rw'] + ([commerce_private_root + ':/production:rw', commerce_publications_root + ':/publications:rw'] if (commerce_production_enabled | default(false) | bool) else [])) }}"
+    command: [python, /app/server.py]
+- name: Verify runtime health inside container
+  ansible.builtin.command: podman exec commerce-dev python -c "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8788/health').status == 200"
+  changed_when: false
+  register: health
+  retries: 10
+  delay: 2
+  until: health.rc == 0
+- name: Initialize curated publication database before read-only public mount
+  ansible.builtin.command: podman exec -w /app commerce-dev python -c "import os; from publication import Publications; Publications(os.environ['PUBLICATION_DATABASE'])"
+  changed_when: false
+  when: commerce_production_enabled | default(false) | bool
+- name: Route through existing security middleware
+  ansible.builtin.copy:
+    dest: /opt/compose/traefik/dynamic/commerce-dev.yml
+    mode: '0644'
+    content: |
+      http:
+        routers:
+          commerce-dev:
+            rule: "Host(`{{ commerce_host }}`)"
+            entryPoints: [websecure]
+            service: commerce-dev
+            middlewares: [crowdsec, secure-headers, rate-limit]
+            tls:
+              certResolver: cloudflare
+              domains:
+                - main: '{{ domain_name }}'
+                  sans: ['*.{{ domain_name }}']
+        services:
+          commerce-dev:
+            loadBalancer:
+              servers:
+                - url: 'http://commerce-dev-pod:8788'
+- name: Query development DNS record
+  ansible.builtin.uri:
+    url: 'https://api.cloudflare.com/client/v4/zones/{{ cloudflare_zone_id }}/dns_records?name={{ commerce_host }}&type=CNAME'
+    headers:
+      Authorization: 'Bearer {{ cloudflare_api_token }}'
+  register: dns
+  no_log: true
+- name: Create development DNS only when absent
+  ansible.builtin.uri:
+    url: 'https://api.cloudflare.com/client/v4/zones/{{ cloudflare_zone_id }}/dns_records'
+    method: POST
+    headers:
+      Authorization: 'Bearer {{ cloudflare_api_token }}'
+    body_format: json
+    body:
+      type: CNAME
+      name: '{{ commerce_host }}'
+      content: '{{ domain_name }}'
+      proxied: true
+      ttl: 1
+  when: dns.json.result | length == 0
+  no_log: true
+- name: Deploy public MCP only after explicit access-policy approval
+  ansible.builtin.include_tasks: commerce-public-mcp-tasks.yml
+  when: commerce_public_mcp_enabled | default(false) | bool
+
+- name: Run bounded native catalog sync worker without operator credential
+  containers.podman.podman_container:
+    name: commerce-sync-dev
+    image: localhost/aicortex-commerce-runtime:0.12.0
+    pod: commerce-dev-pod
+    state: started
+    restart_policy: unless-stopped
+    stop_timeout: 90
+    recreate: '{{ app_files.changed or (commerce_force_recreate | default(false) | bool) }}'
+    user: '65532:65532'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges']
+    memory: 128m
+    pids_limit: 32
+    env:
+      DATABASE: "{{ 'pgfile:/run/secrets/development.json' if commerce_use_postgres else '/data/commerce.db' }}"
+      FEED_ROOT: /feeds
+      PYTHONDONTWRITEBYTECODE: '1'
+    volumes: "{{ [commerce_root + '/app:/app:ro', commerce_root + '/data/feeds:/feeds:rw', commerce_root + '/amazon-sandbox.json:/run/secrets/amazon-sandbox.json:ro'] + (['/opt/aicortex-commerce-postgres/clients/commerce_dev_rw.json:/run/secrets/development.json:ro'] if commerce_use_postgres else [commerce_data_root + ':/data:rw']) }}"
+    command: [python, /app/sync_worker.py]
+
+- name: Deploy private production FBA pilot when enabled
+  ansible.builtin.include_tasks: commerce-production-tasks.yml
+  when: commerce_production_enabled | default(false) | bool

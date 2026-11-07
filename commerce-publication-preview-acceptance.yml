@@ -1,0 +1,28 @@
+---
+- name: Validate protected publication preview without sharing inventory
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Run synthetic preview checks with guaranteed test-access cleanup
+      block:
+        - name: Refresh only the clearly labelled synthetic source
+          ansible.builtin.command:
+            argv: [podman, exec, -i, -e, PUBLICATION_REFRESH_ONLY=1, commerce-dev, python, '-']
+            stdin: "{{ lookup('file', '../aicortex-commerce/tests/publication_live.py') }}"
+          no_log: true
+          changed_when: true
+        - name: Exercise protected read-only preview and review boundaries
+          ansible.builtin.command:
+            argv: [podman, exec, -i, commerce-dev, python, '-']
+            stdin: "{{ lookup('file', '../aicortex-commerce/tests/publication_preview_live.py') }}"
+          register: preview
+          changed_when: false
+        - name: Report preview acceptance without business values
+          ansible.builtin.debug:
+            var: preview.stdout_lines
+      always:
+        - name: Keep synthetic source paused and publication credentials revoked
+          ansible.builtin.command:
+            argv: [podman, exec, -i, commerce-dev, python, '-']
+            stdin: "{{ lookup('file', '../aicortex-commerce/tests/publication_cleanup.py') }}"
+          changed_when: true

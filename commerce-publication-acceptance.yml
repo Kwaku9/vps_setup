@@ -1,0 +1,31 @@
+---
+- name: Validate explicitly selected synthetic assistant publication
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Exercise synthetic protocol/isolation/revocation without publishing real inventory
+      ansible.builtin.command:
+        argv: [podman, exec, -i, -e, 'PUBLICATION_REFRESH_ONLY={{ "1" if (publication_refresh_only | default(false) | bool) else "0" }}', commerce-dev, python, '-']
+        stdin: "{{ lookup('file', '../aicortex-commerce/tests/publication_live.py') }}"
+      register: publication_acceptance
+      no_log: true
+      changed_when: true
+    - name: Save synthetic connector credential privately on controller
+      ansible.builtin.copy:
+        dest: '{{ playbook_dir }}/../aicortex-commerce/.publication-acceptance-token'
+        content: '{{ (publication_acceptance.stdout | from_json).token }}'
+        mode: '0600'
+      delegate_to: localhost
+      no_log: true
+      when: not (publication_refresh_only | default(false) | bool)
+    - name: Save only non-secret synthetic fixture metadata
+      ansible.builtin.copy:
+        dest: '{{ playbook_dir }}/../aicortex-commerce/evidence/publication-fixture.json'
+        content: '{{ {"endpoint": (publication_acceptance.stdout | from_json).endpoint, "publication_id": (publication_acceptance.stdout | from_json).publication_id, "fixture_merchant": (publication_acceptance.stdout | from_json).fixture_merchant} | to_nice_json }}'
+        mode: '0644'
+      delegate_to: localhost
+      when: not (publication_refresh_only | default(false) | bool)
+    - name: Report only acceptance status, never credential values
+      ansible.builtin.debug:
+        msg: '{{ (publication_acceptance.stdout | from_json).checks }}'
+      when: not (publication_refresh_only | default(false) | bool)

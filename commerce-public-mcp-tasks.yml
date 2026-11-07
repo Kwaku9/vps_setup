@@ -3,10 +3,11 @@
 - name: Start shopper-only listener without operator credential
   containers.podman.podman_container:
     name: commerce-mcp-dev
-    image: docker.io/library/python:3.13-slim
+    image: localhost/aicortex-commerce-runtime:0.12.0
     pod: commerce-dev-pod
     state: started
     restart_policy: unless-stopped
+    stop_timeout: 90
     recreate: '{{ app_files.changed or (commerce_force_recreate | default(false) | bool) }}'
     user: '65532:65532'
     read_only: true
@@ -16,13 +17,14 @@
     pids_limit: 64
     env:
       BIND: '0.0.0.0'
+      DATABASE: "{{ 'pgfile:/run/secrets/development.json' if commerce_use_postgres else '/data/commerce.db' }}"
+      TELEMETRY_DATABASE: /telemetry/events.sqlite3
       PORT: '8789'
       SHOPPER_ONLY: '1'
+      PUBLICATION_DATABASE: "{{ ('pgfile:/run/secrets/publications.json' if commerce_use_postgres else '/publications/commerce.db') if (commerce_production_enabled | default(false) | bool) else '' }}"
       PUBLIC_ORIGIN: 'https://commerce-mcp-dev.{{ domain_name }}'
       PYTHONDONTWRITEBYTECODE: '1'
-    volumes:
-      - '{{ commerce_root }}/app:/app:ro'
-      - '{{ commerce_root }}/data:/data:rw'
+    volumes: "{{ [commerce_root + '/app:/app:ro', '/opt/aicortex-commerce-monitoring/telemetry/mcp:/telemetry:rw'] + (['/opt/aicortex-commerce-postgres/clients/commerce_dev_ro.json:/run/secrets/development.json:ro', '/opt/aicortex-commerce-postgres/clients/commerce_pub_ro.json:/run/secrets/publications.json:ro'] if commerce_use_postgres else [commerce_data_root + ':/data:rw'] + ([commerce_publications_root + ':/publications:ro'] if (commerce_production_enabled | default(false) | bool) else [])) }}"
     command: [python, /app/server.py]
 - name: Route only MCP and health on dedicated public host
   ansible.builtin.copy:

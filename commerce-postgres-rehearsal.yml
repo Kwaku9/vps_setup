@@ -1,0 +1,32 @@
+---
+- name: Rehearse both migration directions and native restore on disposable databases
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Update private migration helper
+      ansible.builtin.copy:
+        src: ../aicortex-commerce/ops/postgres_admin.py
+        dest: /opt/aicortex-commerce-postgres/bin/postgres_admin.py
+        mode: '0700'
+    - name: Update native restore verifier
+      ansible.builtin.copy:
+        src: ../aicortex-commerce/ops/recovery.py
+        dest: /opt/aicortex-commerce-recovery/bin/recovery.py
+        mode: '0700'
+    - name: Install native database helper for existing recovery tool
+      ansible.builtin.copy:
+        src: ../aicortex-commerce/ops/postgres_admin.py
+        dest: /opt/aicortex-commerce-recovery/bin/postgres_admin.py
+        mode: '0700'
+    - name: Install isolated migration and restore rehearsal
+      ansible.builtin.copy:
+        src: ../aicortex-commerce/ops/postgres_rehearsal.py
+        dest: /opt/aicortex-commerce-postgres/tests/rehearsal.py
+        mode: '0700'
+    - name: Validate row reconciliation, reverse migration and native restore without touching live databases
+      ansible.builtin.command: /usr/bin/python3 /opt/aicortex-commerce-postgres/tests/rehearsal.py
+      register: rehearsal
+      changed_when: false
+    - name: Report only sanitized acceptance outcomes
+      ansible.builtin.debug:
+        var: rehearsal.stdout_lines
