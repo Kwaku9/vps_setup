@@ -63,3 +63,15 @@ grafana_password: "VAULT_OVERRIDE"
 # Pods whose unexpected stop pages (WatchedPodStopped). trading-pod holds the IBKR session.
 monitoring_watched_pods:
   - trading-pod
+
+# Password for the grafana_student Postgres role (Students Grafana org's only SQL
+# datasource; reads the student_view schema). Derived from the vault's
+# pg_grafana_password so it needs no new vault entry and never appears in a file;
+# set pg_grafana_student_password in the vault to override. Same expression in
+# roles/shared-services and roles/monitoring defaults: keep them identical.
+pg_grafana_student_password: "{{ (pg_grafana_password ~ ':grafana_student') | hash('sha256') }}"
+
+# VictoriaMetrics admin-endpoint key (delete_series, snapshots, force merge).
+# Derived from the vault's grafana_password; nothing calls those endpoints today.
+# Set vm_admin_auth_key in the vault to override.
+vm_admin_auth_key: "{{ (grafana_password ~ ':vm-admin') | hash('sha256') }}"

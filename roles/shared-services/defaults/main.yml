@@ -57,3 +57,10 @@ traefik_internal_sources:
   - "10.89.0.235/32"   # cloudflared — the tunnel, i.e. all external traffic
   - "10.89.0.1/32"     # bridge gateway — dep-health-check.sh probing from the host
   - "127.0.0.0/8"      # loopback
+
+# Password for the grafana_student Postgres role (Students Grafana org's only SQL
+# datasource; reads the student_view schema). Derived from the vault's
+# pg_grafana_password so it needs no new vault entry and never appears in a file;
+# set pg_grafana_student_password in the vault to override. Same expression in
+# roles/shared-services and roles/monitoring defaults: keep them identical.
+pg_grafana_student_password: "{{ (pg_grafana_password ~ ':grafana_student') | hash('sha256') }}"
