@@ -1,0 +1,85 @@
+---
+- name: Install commerce operational monitoring into existing VPS alert route
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Prepare private collector and isolated rule test directories
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      loop:
+        - /opt/aicortex-commerce-monitoring/bin
+        - /opt/aicortex-commerce-monitoring/rule-tests
+    - name: Install collector and shared sanitized health model
+      ansible.builtin.copy:
+        src: '{{ item.src }}'
+        dest: '/opt/aicortex-commerce-monitoring/bin/{{ item.name }}'
+        owner: root
+        group: root
+        mode: '0700'
+      loop:
+        - {src: ../aicortex-commerce/ops/monitoring.py, name: monitoring.py}
+        - {src: ../aicortex-commerce/app/operations.py, name: operations.py}
+    - name: Stage commerce rules and isolated synthetic test cases
+      ansible.builtin.copy:
+        src: '{{ item.src }}'
+        dest: '/opt/aicortex-commerce-monitoring/rule-tests/{{ item.name }}'
+        owner: root
+        group: root
+        mode: '0600'
+      loop:
+        - {src: ../aicortex-commerce/deploy/commerce-alerts.yml, name: commerce-alerts.yml}
+        - {src: ../aicortex-commerce/tests/commerce-alerts.test.yml, name: commerce-alerts.test.yml}
+    - name: Activate after application telemetry and protected status mounts are deployed
+      when: commerce_monitoring_activate | default(false) | bool
+      block:
+        - name: Parse rules without notifying or querying production metrics
+          ansible.builtin.command:
+            argv: [podman, run, --rm, --network, none, --memory, 128m, -v, '/opt/aicortex-commerce-monitoring/rule-tests:/rules:ro', docker.io/victoriametrics/vmalert:v1.115.0, -dryRun, -rule=/rules/commerce-alerts.yml, -datasource.url=http://127.0.0.1:1, -notifier.blackhole]
+          changed_when: false
+        - name: Verify synthetic alert firing and delays in an isolated engine without notifier
+          ansible.builtin.command:
+            argv: [podman, run, --rm, --network, none, --memory, 256m, -v, '/opt/aicortex-commerce-monitoring/rule-tests:/rules:ro', docker.io/victoriametrics/vmalert-tool:v1.115.0, unittest, --files=/rules/commerce-alerts.test.yml]
+          changed_when: false
+        - name: Collect initial sanitized state before enabling live rules
+          ansible.builtin.command: /usr/bin/python3 /opt/aicortex-commerce-monitoring/bin/monitoring.py
+          changed_when: false
+        - name: Install only commerce rules alongside existing VPS rules
+          ansible.builtin.copy:
+            src: ../aicortex-commerce/deploy/commerce-alerts.yml
+            dest: /opt/compose/prometheus-rules/commerce.yml
+            owner: root
+            group: root
+            mode: '0644'
+          register: commerce_rules
+        - name: Reload existing alert engine without restarting shared monitoring
+          ansible.builtin.command: podman exec vmalert kill -HUP 1
+          when: commerce_rules.changed
+        - name: Verify commerce rules and dependencies after reload
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/python3
+              - -c
+              - "import runpy,sys; sys.path.insert(0,'/opt/aicortex-commerce-monitoring/bin'); m=runpy.run_path('/opt/aicortex-commerce-monitoring/bin/monitoring.py'); p=m['service_probes'](); assert p['alerting']['engine_up'] and p['alerting']['rules_loaded'] and p['alerting']['gateway_up']; m['main'](); print('PASS all commerce rules loaded; existing Telegram gateway reachable')"
+          changed_when: false
+          register: commerce_monitoring_verified
+          retries: 10
+          delay: 2
+          until: commerce_monitoring_verified.rc == 0
+        - name: Prepare private collector log without truncation
+          ansible.builtin.file:
+            path: /var/log/aicortex-commerce-monitoring.log
+            state: touch
+            owner: root
+            group: root
+            mode: '0600'
+            modification_time: preserve
+            access_time: preserve
+        - name: Schedule independent commerce health collection each minute
+          ansible.builtin.cron:
+            name: AICORTEX commerce sanitized operational health collection
+            user: root
+            job: 'PATH=/usr/local/bin:/usr/bin:/bin /usr/bin/python3 /opt/aicortex-commerce-monitoring/bin/monitoring.py >> /var/log/aicortex-commerce-monitoring.log 2>&1'

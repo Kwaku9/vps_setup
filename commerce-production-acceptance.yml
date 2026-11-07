@@ -1,0 +1,23 @@
+---
+- name: Validate protected production FBA pilot
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Reconcile production reads and test failure/revocation privately
+      ansible.builtin.command:
+        argv: [podman, exec, -i, commerce-production-worker, python, '-']
+        stdin: "{{ lookup('file', '../aicortex-commerce/tests/production_live.py') }}"
+      register: acceptance
+      changed_when: true
+    - name: Report pass/fail only, without inventory or credentials
+      ansible.builtin.debug:
+        var: acceptance.stdout_lines
+    - name: Exercise protected production pause and resume controls
+      ansible.builtin.command:
+        argv: [podman, exec, -i, commerce-dev, python, '-']
+        stdin: "{{ lookup('file', '../aicortex-commerce/tests/production_controls.py') }}"
+      register: controls
+      changed_when: true
+    - name: Report protected controls status only
+      ansible.builtin.debug:
+        var: controls.stdout_lines

@@ -1,0 +1,77 @@
+---
+- name: Deploy commerce-only encrypted backup and isolated recovery checks
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Create root-only commerce recovery directories
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      tags: [commerce-recovery-install]
+      loop:
+        - /opt/aicortex-commerce-recovery
+        - /opt/aicortex-commerce-recovery/bin
+    - name: Install reviewed commerce recovery tool
+      ansible.builtin.copy:
+        src: ../aicortex-commerce/ops/recovery.py
+        dest: /opt/aicortex-commerce-recovery/bin/recovery.py
+        owner: root
+        group: root
+        mode: '0700'
+      tags: [commerce-recovery-install]
+    - name: Install native PostgreSQL recovery helper without runtime credentials
+      ansible.builtin.copy:
+        src: ../aicortex-commerce/ops/postgres_admin.py
+        dest: /opt/aicortex-commerce-recovery/bin/postgres_admin.py
+        owner: root
+        group: root
+        mode: '0700'
+      tags: [commerce-recovery-install]
+    - name: Confirm existing encrypted remote before any backup upload
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "import runpy; m=runpy.run_path('/opt/aicortex-commerce-recovery/bin/recovery.py'); m['encrypted_remote_available'](); print('PASS existing encrypted remote validated without disclosing configuration')"
+      changed_when: false
+      tags: [commerce-recovery-install]
+    - name: Run online snapshot, encrypted upload, download and isolated restore rehearsal
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /opt/aicortex-commerce-recovery/bin/recovery.py, backup]
+      register: recovery_run
+      when: commerce_recovery_run_now | default(true) | bool
+      changed_when: true
+    - name: Read only recovery outcome metadata
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /opt/aicortex-commerce-recovery/bin/recovery.py, status]
+      register: recovery_status
+      changed_when: false
+    - name: Require a verified backup before enabling unattended scheduling
+      ansible.builtin.assert:
+        that:
+          - (recovery_status.stdout | from_json).last_success_at | default(0) | float > 0
+          - (recovery_status.stdout | from_json).checks.publications_disabled | default(false)
+          - (recovery_status.stdout | from_json).checks.credentials_revoked | default(false)
+        fail_msg: A verified encrypted backup and guarded restore rehearsal are required before scheduling.
+    - name: Prepare private operation log without truncating existing logs
+      ansible.builtin.file:
+        path: /var/log/aicortex-commerce-recovery.log
+        state: touch
+        owner: root
+        group: root
+        mode: '0600'
+        modification_time: preserve
+        access_time: preserve
+    - name: Schedule independent daily commerce backup and restore verification
+      ansible.builtin.cron:
+        name: AICORTEX commerce encrypted backup and guarded restore check
+        user: root
+        minute: '17'
+        hour: '4'
+        job: 'PATH=/usr/local/bin:/usr/bin:/bin /usr/bin/python3 /opt/aicortex-commerce-recovery/bin/recovery.py backup >> /var/log/aicortex-commerce-recovery.log 2>&1'
+    - name: Report verified recovery status without catalog values or credentials
+      ansible.builtin.debug:
+        msg: '{{ recovery_status.stdout | from_json }}'

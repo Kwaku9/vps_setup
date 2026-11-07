@@ -1,0 +1,23 @@
+---
+- name: Validate read-only production listing observations privately
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Compare listing and price observations to raw Amazon source
+      ansible.builtin.command:
+        argv: [podman, exec, -i, commerce-production-worker, python, '-']
+        stdin: "{{ lookup('file', '../aicortex-commerce/tests/listing_live.py') }}"
+      register: listing_acceptance
+      changed_when: false
+    - name: Report listing acceptance status without inventory or credentials
+      ansible.builtin.debug:
+        var: listing_acceptance.stdout_lines
+    - name: Verify persisted listing observations in protected operator API
+      ansible.builtin.command:
+        argv: [podman, exec, -i, commerce-dev, python, '-']
+        stdin: "{{ lookup('file', '../aicortex-commerce/tests/listing_admin.py') }}"
+      register: listing_view
+      changed_when: false
+    - name: Report protected listing view status only
+      ansible.builtin.debug:
+        var: listing_view.stdout_lines

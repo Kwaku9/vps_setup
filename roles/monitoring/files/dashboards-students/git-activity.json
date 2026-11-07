@@ -1,0 +1,1066 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_POSTGRES",
+      "label": "PostgreSQL",
+      "description": "PostgreSQL datasource for sessions schema",
+      "type": "datasource",
+      "pluginId": "grafana-postgresql-datasource",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "grafana-postgresql-datasource",
+      "name": "PostgreSQL",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "barchart",
+      "name": "Bar chart",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "volkovlabs-echarts-panel",
+      "name": "Apache ECharts",
+      "version": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Contribution Heatmap",
+      "description": "GitHub-style contribution heatmap showing daily commit activity",
+      "type": "volkovlabs-echarts-panel",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-student"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres-student"
+          },
+          "format": "table",
+          "rawSql": "SELECT\n    TO_CHAR(committed_at::date, 'YYYY-MM-DD') AS commit_date,\n    COUNT(*) AS commits,\n    SUM(insertions) AS insertions,\n    SUM(deletions) AS deletions\nFROM student_view.git_commits\nWHERE committed_at BETWEEN $__timeFrom() AND $__timeTo()\n  AND ($repo = 0 OR repo_id = $repo)\nGROUP BY committed_at::date\nORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "renderer": "canvas",
+        "editor": {
+          "height": 600,
+          "format": "auto"
+        },
+        "getOption": "const data = context.panel.data.series[0];\nif (!data || !data.fields || data.fields.length === 0) return {};\n\nconst dates = data.fields.find(f => f.name === 'commit_date');\nconst counts = data.fields.find(f => f.name === 'commits');\nif (!dates || !counts) return {};\n\nconst calendarData = [];\nlet maxVal = 0;\nfor (let i = 0; i < dates.values.length; i++) {\n    const val = counts.values[i];\n    calendarData.push([dates.values[i], val]);\n    if (val > maxVal) maxVal = val;\n}\n\nconst from = context.grafana.replaceVariables('${__from:date:YYYY-MM-DD}');\nconst to = context.grafana.replaceVariables('${__to:date:YYYY-MM-DD}');\n\nreturn {\n    tooltip: {\n        formatter: function(p) {\n            return p.value[0] + '<br/>Commits: ' + p.value[1];\n        }\n    },\n    visualMap: {\n        min: 0,\n        max: Math.max(maxVal, 1),\n        calculable: false,\n        orient: 'horizontal',\n        left: 'center',\n        bottom: 0,\n        inRange: {\n            color: ['#161b22', '#0e4429', '#006d32', '#26a641', '#39d353']\n        },\n        textStyle: { color: '#ccc' }\n    },\n    calendar: {\n        range: [from, to],\n        cellSize: ['auto', 15],\n        top: 40,\n        left: 60,\n        right: 40,\n        itemStyle: {\n            borderWidth: 3,\n            borderColor: '#1a1a2e'\n        },\n        splitLine: { show: false },\n        dayLabel: { color: '#8b949e', fontSize: 10 },\n        monthLabel: { color: '#8b949e', fontSize: 11 },\n        yearLabel: { show: false }\n    },\n    series: [{\n        type: 'heatmap',\n        coordinateSystem: 'calendar',\n        data: calendarData\n    }]\n};"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Total Commits",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-student"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres-student"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Commits\" FROM student_view.git_commits\nWHERE committed_at BETWEEN $__timeFrom() AND $__timeTo()\nAND ($repo = 0 OR repo_id = $repo)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Lines Added",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-student"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres-student"
+          },
+          "format": "table",
+          "rawSql": "SELECT COALESCE(SUM(insertions), 0) AS \"Lines Added\" FROM student_view.git_commits\nWHERE committed_at BETWEEN $__timeFrom() AND $__timeTo()\nAND ($repo = 0 OR repo_id = $repo)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "super-light-blue",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Lines Deleted",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-student"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres-student"
+          },
+          "format": "table",
+          "rawSql": "SELECT COALESCE(SUM(deletions), 0) AS \"Lines Deleted\" FROM student_view.git_commits\nWHERE committed_at BETWEEN $__timeFrom() AND $__timeTo()\nAND ($repo = 0 OR repo_id = $repo)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Files Changed",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-student"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres-student"
+          },
+          "format": "table",
+          "rawSql": "SELECT COALESCE(SUM(files_changed), 0) AS \"Files Changed\" FROM student_view.git_commits\nWHERE committed_at BETWEEN $__timeFrom() AND $__timeTo()\nAND ($repo = 0 OR repo_id = $repo)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "yellow",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "AI-Assisted Commits",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-student"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres-student"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"AI Commits\" FROM student_view.git_commits\nWHERE co_authored = TRUE\nAND committed_at BETWEEN $__timeFrom() AND $__timeTo()\nAND ($repo = 0 OR repo_id = $repo)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "Session-Linked",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-student"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres-student"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Linked\" FROM student_view.git_commits\nWHERE session_id IS NOT NULL\nAND committed_at BETWEEN $__timeFrom() AND $__timeTo()\nAND ($repo = 0 OR repo_id = $repo)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "Commits per Repo",
+      "type": "barchart",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-student"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres-student"
+          },
+          "format": "table",
+          "rawSql": "SELECT gr.repo_name AS \"Repo\", COUNT(*) AS \"Commits\"\nFROM student_view.git_commits gc\nJOIN student_view.git_repos gr ON gc.repo_id = gr.id\nWHERE committed_at BETWEEN $__timeFrom() AND $__timeTo()\nAND ($repo = 0 OR gc.repo_id = $repo)\nGROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "showValue": "auto",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.7,
+        "barRadius": 0,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "title": "Daily Commit Trend",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-student"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres-student"
+          },
+          "format": "table",
+          "rawSql": "SELECT\n    committed_at::date AS time,\n    COUNT(*) AS \"Commits\",\n    SUM(insertions) AS \"Lines Added\",\n    SUM(deletions) AS \"Lines Deleted\"\nFROM student_view.git_commits\nWHERE committed_at BETWEEN $__timeFrom() AND $__timeTo()\nAND ($repo = 0 OR repo_id = $repo)\nGROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "barAlignment": 0,
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "scheme",
+            "spanNulls": false,
+            "showPoints": "auto",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Commits"
+            },
+            "properties": [
+              {
+                "id": "custom.drawStyle",
+                "value": "bars"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 50
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Lines Added"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Lines Deleted"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "title": "Tokens per Commit (Session-Linked)",
+      "description": "Commits linked to Claude Code sessions showing token usage and tool calls",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-student"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres-student"
+          },
+          "format": "table",
+          "rawSql": "SELECT\n    gc.short_hash AS \"Hash\",\n    gr.repo_name AS \"Repo\",\n    LEFT(gc.commit_message, 60) AS \"Message\",\n    gc.files_changed AS \"Files\",\n    gc.insertions AS \"+Lines\",\n    gc.deletions AS \"-Lines\",\n    s.input_tokens + s.output_tokens AS \"Session Tokens\",\n    ROUND(s.duration_seconds / 60.0, 1) AS \"Session Min\",\n    s.total_tool_calls AS \"Tools Used\",\n    gc.committed_at AS \"Date\"\nFROM student_view.git_commits gc\nJOIN student_view.sessions s ON gc.session_id = s.id\nJOIN student_view.git_repos gr ON gc.repo_id = gr.id\nWHERE gc.committed_at BETWEEN $__timeFrom() AND $__timeTo()\nAND ($repo = 0 OR gc.repo_id = $repo)\nORDER BY gc.committed_at DESC\nLIMIT 50",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        },
+        "sortBy": []
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": true
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Hash"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Message"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 350
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Session Tokens"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 50000
+                    },
+                    {
+                      "color": "red",
+                      "value": 200000
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Date"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 160
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "title": "Activity Pattern - Day x Hour",
+      "description": "Heatmap of commit activity by day of week and hour",
+      "type": "volkovlabs-echarts-panel",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-student"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres-student"
+          },
+          "format": "table",
+          "rawSql": "SELECT\n    EXTRACT(DOW FROM committed_at)::int AS dow,\n    EXTRACT(HOUR FROM committed_at)::int AS hour,\n    COUNT(*) AS count\nFROM student_view.git_commits\nWHERE committed_at BETWEEN $__timeFrom() AND $__timeTo()\nAND ($repo = 0 OR repo_id = $repo)\nGROUP BY 1, 2 ORDER BY 1, 2",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "renderer": "canvas",
+        "editor": {
+          "height": 600,
+          "format": "auto"
+        },
+        "getOption": "const data = context.panel.data.series[0];\nif (!data || !data.fields || data.fields.length === 0) return {};\n\nconst dow = data.fields.find(f => f.name === 'dow');\nconst hour = data.fields.find(f => f.name === 'hour');\nconst count = data.fields.find(f => f.name === 'count');\nif (!dow || !hour || !count) return {};\n\nconst heatData = [];\nlet maxVal = 0;\nfor (let i = 0; i < dow.values.length; i++) {\n    heatData.push([hour.values[i], dow.values[i], count.values[i]]);\n    if (count.values[i] > maxVal) maxVal = count.values[i];\n}\n\nconst days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];\nconst hours = Array.from({length: 24}, (_, i) => i + ':00');\n\nreturn {\n    tooltip: {\n        formatter: function(p) {\n            return days[p.value[1]] + ' ' + p.value[0] + ':00<br/>Commits: ' + p.value[2];\n        }\n    },\n    xAxis: { type: 'category', data: hours, splitArea: { show: true }, axisLabel: { color: '#8b949e' } },\n    yAxis: { type: 'category', data: days, splitArea: { show: true }, axisLabel: { color: '#8b949e' } },\n    visualMap: {\n        min: 0, max: Math.max(maxVal, 1),\n        calculable: false, orient: 'horizontal', left: 'center', bottom: 0,\n        inRange: { color: ['#0d1117', '#1f6feb', '#58a6ff', '#79c0ff'] },\n        textStyle: { color: '#ccc' }\n    },\n    series: [{\n        type: 'heatmap',\n        data: heatData,\n        label: { show: false },\n        itemStyle: { borderWidth: 2, borderColor: '#1a1a2e' }\n    }]\n};"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "title": "Full Commit History",
+      "description": "Complete commit log with session linkage and AI-assist indicators",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-student"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres-student"
+          },
+          "format": "table",
+          "rawSql": "SELECT\n    gc.short_hash AS \"Hash\",\n    gr.repo_name AS \"Repo\",\n    gc.branch AS \"Branch\",\n    LEFT(gc.commit_message, 60) AS \"Message\",\n    gc.files_changed AS \"Files\",\n    gc.insertions AS \"+\",\n    gc.deletions AS \"-\",\n    CASE WHEN gc.session_id IS NOT NULL THEN '\u2713' ELSE '' END AS \"Linked\",\n    CASE WHEN gc.co_authored THEN '\ud83e\udd16' ELSE '' END AS \"AI\",\n    gc.committed_at AS \"Date\"\nFROM student_view.git_commits gc\nJOIN student_view.git_repos gr ON gc.repo_id = gr.id\nWHERE gc.committed_at BETWEEN $__timeFrom() AND $__timeTo()\nAND ($repo = 0 OR gc.repo_id = $repo)\nORDER BY gc.committed_at DESC\nLIMIT 100",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        },
+        "sortBy": []
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": true
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Hash"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 75
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Message"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Linked"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 55
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "AI"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 40
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Date"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "+"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 50
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "-"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 50
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "refresh": "1h",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": [
+    "developer",
+    "git",
+    "sessions",
+    "students"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "All Repos",
+          "value": "0"
+        },
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "postgres-student"
+        },
+        "definition": "SELECT 0 AS __value, 'All Repos' AS __text UNION ALL SELECT id AS __value, repo_name AS __text FROM student_view.git_repos ORDER BY __text",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Repository",
+        "multi": false,
+        "name": "repo",
+        "options": [],
+        "query": "SELECT 0 AS __value, 'All Repos' AS __text UNION ALL SELECT id AS __value, repo_name AS __text FROM student_view.git_repos ORDER BY __text",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-90d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Git Activity & Session Correlation",
+  "uid": "git-activity-stu",
+  "version": 1,
+  "weekStart": ""
+}

@@ -1,0 +1,14 @@
+---
+- name: Add synthetic for-sale checkout positive control
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Update isolated acceptance dataset without touching credentials
+      ansible.builtin.command:
+        argv: [podman, exec, -i, commerce-dev, python, '-']
+        stdin: "{{ lookup('file', '../aicortex-commerce/ansible/add_checkout_control.py') }}"
+      register: fixture
+      changed_when: "'control added' in fixture.stdout"
+    - name: Report synthetic fixture update
+      ansible.builtin.debug:
+        var: fixture.stdout

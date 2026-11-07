@@ -1,0 +1,23 @@
+---
+- name: Validate protected readiness diagnostics and revocation
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Check real protected readiness and policy boundaries
+      ansible.builtin.command:
+        argv: [podman, exec, -i, commerce-dev, python, '-']
+        stdin: "{{ lookup('file', '../aicortex-commerce/tests/readiness_live.py') }}"
+      register: readiness
+      changed_when: false
+    - name: Report readiness status without production records
+      ansible.builtin.debug:
+        var: readiness.stdout_lines
+    - name: Check readiness after protected source pause and resume
+      ansible.builtin.command:
+        argv: [podman, exec, -i, commerce-dev, python, '-']
+        stdin: "{{ lookup('file', '../aicortex-commerce/tests/production_controls.py') }}"
+      register: controls
+      changed_when: true
+    - name: Report pause/resume results without production records
+      ansible.builtin.debug:
+        var: controls.stdout_lines

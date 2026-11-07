@@ -1,0 +1,40 @@
+---
+- name: Exercise PostgreSQL with disposable fixtures and scoped runtime roles
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Create isolated test staging directories
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: directory
+        owner: root
+        mode: '0755'
+      loop: [/opt/aicortex-commerce-postgres/tests, /opt/aicortex-commerce-postgres/tests/app, /opt/aicortex-commerce-postgres/tests/tests]
+    - name: Stage reviewed application files without modifying live runtime
+      ansible.builtin.copy:
+        src: '{{ item }}'
+        dest: '/opt/aicortex-commerce-postgres/tests/app/{{ item | basename }}'
+        owner: '65532'
+        mode: '0644'
+      with_fileglob: ['../aicortex-commerce/app/*.py', '../aicortex-commerce/app/*.js', '../aicortex-commerce/app/*.html', '../aicortex-commerce/app/*.css', '../aicortex-commerce/app/RELEASE']
+    - name: Stage PostgreSQL acceptance and existing core regressions
+      ansible.builtin.copy:
+        src: '{{ item.src }}'
+        dest: '/opt/aicortex-commerce-postgres/tests/tests/{{ item.name }}'
+        owner: '65532'
+        mode: '0644'
+      loop:
+        - {src: ../aicortex-commerce/tests/postgres_suite.py, name: postgres_suite.py}
+        - {src: ../aicortex-commerce/tests/test_core.py, name: test_core.py}
+        - {src: ../aicortex-commerce/ops/postgres_test_setup.py, name: setup.py}
+    - name: Create disposable database fixtures and verify actual production role boundaries
+      ansible.builtin.command: /usr/bin/python3 /opt/aicortex-commerce-postgres/tests/tests/setup.py
+      changed_when: false
+    - name: Test real PostgreSQL isolation, concurrent updates, leases and revocation
+      ansible.builtin.command:
+        argv: [podman, run, --rm, --network, enterprise_network, --memory, 192m, --pids-limit, '64', --user, '65532:65532', --read-only, --cap-drop, ALL, --security-opt, no-new-privileges, -v, '/opt/aicortex-commerce-postgres/tests/app:/app:ro', -v, '/opt/aicortex-commerce-postgres/tests/tests:/tests:ro', -v, '/opt/aicortex-commerce-postgres/tests/config:/test-config:ro', localhost/aicortex-commerce-runtime:0.12.0, python, /tests/postgres_suite.py, -v]
+      changed_when: false
+      register: postgres_acceptance
+    - name: Report PostgreSQL acceptance outcomes
+      ansible.builtin.debug:
+        var: postgres_acceptance.stderr_lines

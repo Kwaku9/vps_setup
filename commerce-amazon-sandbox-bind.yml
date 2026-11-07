@@ -1,0 +1,38 @@
+---
+- name: Bind sandbox-only credentials to an isolated Amazon test merchant
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Create or find isolated sandbox merchant
+      ansible.builtin.command:
+        argv: [podman, exec, -i, commerce-dev, python, '-']
+        stdin: |
+          import sys,json
+          sys.path.insert(0,'/app')
+          from core import Store
+          s=Store('/data/commerce.db')
+          found=[m for m in s.list() if m['name']=='Amazon FBA sandbox acceptance']
+          assert len(found)<=1
+          m=found[0] if found else s.create({'name':'Amazon FBA sandbox acceptance','domain':'www.amazon.com'})
+          assert m['domain']=='www.amazon.com'
+          print(json.dumps({'merchant_id':m['id'],'created':not bool(found)}))
+      register: amazon_merchant
+      changed_when: (amazon_merchant.stdout | from_json).created
+    - name: Read sandbox fields privately using workstation AWS access
+      ansible.builtin.command:
+        argv: [python3, '{{ playbook_dir }}/../aicortex-commerce/ansible/read_amazon_sandbox_secret.py']
+      delegate_to: localhost
+      register: sandbox_credentials
+      changed_when: false
+      no_log: true
+    - name: Write only sandbox credentials scoped to the test merchant
+      ansible.builtin.copy:
+        dest: /opt/aicortex-commerce-dev/amazon-sandbox.json
+        content: '{{ { (amazon_merchant.stdout | from_json).merchant_id: (sandbox_credentials.stdout | from_json) } | to_json }}'
+        owner: '65532'
+        group: '65532'
+        mode: '0600'
+      no_log: true
+    - name: Report binding without credentials
+      ansible.builtin.debug:
+        msg: "Sandbox-only credentials bound to merchant {{ (amazon_merchant.stdout | from_json).merchant_id }}; no production fields copied."

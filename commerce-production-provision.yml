@@ -1,0 +1,30 @@
+---
+- name: Provision exact-resource runtime production secret access
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Provision production-only secret and scoped reader on AWS
+      ansible.builtin.command:
+        argv: [python3, '{{ playbook_dir }}/../aicortex-commerce/ansible/provision_production_reader.py']
+      delegate_to: localhost
+      register: reader
+      no_log: true
+    - name: Create private production directories
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: directory
+        owner: '65532'
+        group: '65532'
+        mode: '0700'
+      loop:
+        - /opt/aicortex-commerce-production
+        - /opt/aicortex-commerce-production/data
+        - /opt/aicortex-commerce-production/secrets
+    - name: Deliver scoped AWS reader bootstrap only to private worker
+      ansible.builtin.copy:
+        dest: /opt/aicortex-commerce-production/secrets/production-reader.json
+        content: '{{ reader.stdout }}'
+        owner: '65532'
+        group: '65532'
+        mode: '0600'
+      no_log: true

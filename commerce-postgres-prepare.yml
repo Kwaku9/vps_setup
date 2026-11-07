@@ -1,0 +1,39 @@
+---
+- name: Prepare isolated commerce PostgreSQL databases and runtime without switching active storage
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Create private commerce database administration directories
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      loop: [/opt/aicortex-commerce-postgres, /opt/aicortex-commerce-postgres/bin, /opt/aicortex-commerce-postgres/build]
+    - name: Install private database provisioning and migration tool
+      ansible.builtin.copy:
+        src: ../aicortex-commerce/ops/postgres_admin.py
+        dest: /opt/aicortex-commerce-postgres/bin/postgres_admin.py
+        owner: root
+        group: root
+        mode: '0700'
+    - name: Provision dedicated databases and scoped runtime credentials
+      ansible.builtin.command: /usr/bin/python3 /opt/aicortex-commerce-postgres/bin/postgres_admin.py provision
+      changed_when: false
+      no_log: true
+    - name: Copy pinned PostgreSQL-capable runtime definition
+      ansible.builtin.copy:
+        src: ../aicortex-commerce/deploy/Containerfile.runtime
+        dest: /opt/aicortex-commerce-postgres/build/Containerfile
+        mode: '0600'
+      register: pg_runtime_build
+    - name: Build bounded commerce runtime with pinned PostgreSQL driver
+      containers.podman.podman_image:
+        name: localhost/aicortex-commerce-runtime
+        tag: '0.12.0'
+        path: /opt/aicortex-commerce-postgres/build
+        force: '{{ pg_runtime_build.changed }}'
+        build:
+          file: Containerfile
+          extra_args: --network=enterprise_network

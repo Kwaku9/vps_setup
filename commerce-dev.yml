@@ -1,0 +1,13 @@
+---
+- name: Deploy isolated AICORTEX Commerce development workspace
+  hosts: alpine_servers
+  gather_facts: false
+  vars_files:
+    - all.yml
+    - vault.yml
+  vars:
+    commerce_host: "commerce-dev.{{ domain_name }}"
+    commerce_root: /opt/aicortex-commerce-dev
+  tasks:
+    - name: Apply commerce runtime with persistent backend selection
+      ansible.builtin.include_tasks: commerce-runtime-tasks.yml

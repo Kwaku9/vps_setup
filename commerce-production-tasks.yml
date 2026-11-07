@@ -1,0 +1,48 @@
+---
+- name: Create private production build context
+  ansible.builtin.file:
+    path: /opt/aicortex-commerce-production/build
+    state: directory
+    mode: '0750'
+- name: Copy pinned AWS SDK worker definition
+  ansible.builtin.copy:
+    src: ../aicortex-commerce/deploy/Containerfile.production
+    dest: /opt/aicortex-commerce-production/build/Containerfile
+    mode: '0644'
+  register: production_build
+- name: Build private AWS SDK worker image
+  containers.podman.podman_image:
+    name: localhost/aicortex-commerce-production
+    tag: '0.12.0'
+    path: /opt/aicortex-commerce-production/build
+    force: '{{ production_build.changed }}'
+    build:
+      file: Containerfile
+      extra_args: --network=enterprise_network
+- name: Create private production worker pod without host ports
+  containers.podman.podman_pod:
+    name: commerce-production-pod
+    network: enterprise_network
+    state: started
+- name: Run isolated read-only production inventory worker
+  containers.podman.podman_container:
+    name: commerce-production-worker
+    image: localhost/aicortex-commerce-production:0.12.0
+    pod: commerce-production-pod
+    state: started
+    restart_policy: unless-stopped
+    stop_timeout: 90
+    recreate: '{{ app_files.changed or production_build.changed or (commerce_force_recreate | default(false) | bool) }}'
+    user: '65532:65532'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges']
+    memory: 192m
+    pids_limit: 32
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      AWS_EC2_METADATA_DISABLED: 'true'
+      DATABASE: "{{ 'pgfile:/run/secrets/production.json' if commerce_use_postgres else '/data/commerce.db' }}"
+      PUBLICATION_DATABASE: "{{ 'pgfile:/run/secrets/publications.json' if commerce_use_postgres else '/publications/commerce.db' }}"
+    volumes: "{{ [commerce_root + '/app:/app:ro', '/opt/aicortex-commerce-production/secrets/production-reader.json:/run/secrets/production-reader.json:ro'] + (['/opt/aicortex-commerce-postgres/clients/commerce_prod_rw.json:/run/secrets/production.json:ro', '/opt/aicortex-commerce-postgres/clients/commerce_pub_rw.json:/run/secrets/publications.json:ro'] if commerce_use_postgres else [commerce_private_root + ':/data:rw', commerce_publications_root + ':/publications:rw']) }}"
+    command: [python, /app/production_worker.py]
