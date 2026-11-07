@@ -44,12 +44,31 @@ DO $$ BEGIN
 END $$;
 
 -- 3. Assign tiers
-GRANT app_ro TO grafana_ro, recall_ro;                      -- read-only (Grafana dashboards; session-recall MCP)
+GRANT app_ro TO recall_ro;                                  -- read-only (session-recall MCP)
 GRANT app_rw TO session_ingest, telegram_gw;                -- read-write consumers
 
 -- grafana_ro also feeds Alloy's postgres exporter, whose WAL collector calls
 -- pg_ls_waldir(); that and the other pg_stat_* internals need pg_monitor.
 GRANT pg_monitor TO grafana_ro;
+
+-- 3b. grafana_ro: exactly the tables Grafana's dashboards query, nothing more.
+-- It used to be in app_ro, i.e. pg_read_all_data: every table in every database
+-- on this server, including openwebui.auth (password hashes), openwebui.api_key,
+-- every user's chats, catalog leads and the commerce_* databases. Any Grafana
+-- viewer can send raw SQL to a datasource through /api/ds/query, so the role's
+-- reach IS the viewer's reach. Derived 2026-11-07 from the rawSql of every live
+-- dashboard on the postgres-trading datasource. A new dashboard table needs a
+-- grant here.
+REVOKE app_ro FROM grafana_ro;
+GRANT USAGE ON SCHEMA gateway, sessions, trading TO grafana_ro;
+GRANT SELECT ON gateway.approvals, gateway.commands, gateway.responses             TO grafana_ro;
+GRANT SELECT ON sessions.sessions, sessions.projects, sessions.subagents,
+                sessions.messages, sessions.tool_calls, sessions.artifacts,
+                sessions.git_commits, sessions.git_repos                           TO grafana_ro;
+GRANT SELECT ON trading.backtest_results, trading.backtest_trades,
+                trading.iv_scan_results, trading.iv_snapshots,
+                trading.scan_metadata                                              TO grafana_ro;
+GRANT SELECT ON public.larouge_look_sync_runs, public.larouge_look_usage           TO grafana_ro;
 
 -- 4. ops_dashboard: exactly what the dashboard's code touches, nothing more.
 -- It used to be in app_rw (read + write on every table in every schema),
