@@ -59,11 +59,13 @@ access_tiers:
                                 # WebUI uses one LiteLLM key for everyone.
     escalation: portal_request  # PROPOSED (portal not built)
 
-  students:                     # PROPOSED: group not created yet
-    group: students
-    apps: [openwebui, grafana, geo, charts, timeline, portal, decks, threat-map]
-    grafana: student_folder_viewer   # copies of chosen dashboards incl. timeline
-    mfa: required               # add "students" to mfa.totp.required_groups
+  students:                     # enforced 2026-11-07
+    group: students             # admins add members; sign-up never does
+    apps: [openwebui, grafana, charts, timeline, portal, decks, threat-map]   # geo: admin-only (dev server)
+    edge: "own CF Access app per host: groups students OR admins"
+    grafana: students_org_viewer  # separate org, 16 dashboards, metrics + student_view SQL, no logs
+    openwebui: [free, local]    # 9 free models + local-chat
+    mfa: required               # mfa.totp.required_groups
     llm:                        # enforced 2026-11-05: LiteLLM team "students"
       models: [free-chat, free-small]  # local-chat added when Strata is back
       team: {rpm: 20, tpm: 12000, max_budget_usd: 5, per: 30d}
