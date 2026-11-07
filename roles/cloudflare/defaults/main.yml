@@ -115,6 +115,18 @@ cloudflare_access:
     # The CF Access app was also deleted 2026-05-26.
     # otlp removed — internal telemetry uses Podman DNS (logs-pod:4318), public URL now behind CF Access
     # dev removed 2026-05-26 — Expo Metro now Tailscale-only, public URL deleted.
+  # Student hostnames: each gets its own Access app (more specific than the
+  # admins-only wildcard) admitting Authentik groups students OR admins, plus
+  # the admin e-mail OTP break-glass. Other policies found on these apps are
+  # reported by the deploy, never deleted (portal has a hand-made January rule).
+  # geo stays admin-only: a Vite dev server is not safe to expose.
+  student_services:
+    - "grafana"
+    - "threat"
+    - "decks"
+    - "portal"
+    - "charts"
+    - "timeline"
   ssh_browser:
     enabled: true
     subdomain: "ssh"
