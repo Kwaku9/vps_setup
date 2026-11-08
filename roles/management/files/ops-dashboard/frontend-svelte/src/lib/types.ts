@@ -50,3 +50,10 @@ export interface ContainerDetails {
   mounts: { source: string; destination: string; mode: string }[] | null;
   env: [string, string][] | null; labels: Record<string, string>; pod: string | null;
 }
+
+/** An Authentik account as the Students page sees it. */
+export interface Person {
+  pk: number; username: string; name: string; email: string;
+  active: boolean; last_login: string | null; groups: string[];
+}
+export interface StudentsList { students: Person[]; candidates: Person[] }

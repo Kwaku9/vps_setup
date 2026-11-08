@@ -1,7 +1,7 @@
 // Hash routing (#/triage, #/inventory/jobs …) so the server only ever serves
 // /m/index.html and deep links survive a reload or a sign-in round trip.
 
-export const TABS = ['triage', 'services', 'sessions', 'inventory', 'audit'] as const;
+export const TABS = ['triage', 'services', 'sessions', 'inventory', 'students', 'audit'] as const;
 export type Tab = (typeof TABS)[number];
 
 function parse() {

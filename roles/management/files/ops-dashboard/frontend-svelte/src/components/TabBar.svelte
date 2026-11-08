@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { can } from '../lib/me.svelte';
   import { route, type Tab } from '../lib/router.svelte';
   let { badges = {} }: { badges?: Partial<Record<Tab, number>> } = $props();
 
@@ -7,12 +8,15 @@
     { key: 'services', label: 'Services', icon: '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/>' },
     { key: 'sessions', label: 'Sessions', icon: '<path d="M4 6h16M4 12h10M4 18h6"/>' },
     { key: 'inventory', label: 'Inventory', icon: '<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="8" r="2.5"/><circle cx="9" cy="18" r="2.5"/><path d="M8.2 7.2l7.5.4M7.2 8.3l1.3 7.3M16.7 10l-6 6.3"/>' },
+    { key: 'students', label: 'Students', icon: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5l5 2-5 2-5-2z"/><path d="M19 7v3"/>' },
     { key: 'audit', label: 'Audit', icon: '<path d="M12 4v4M12 16v4M4 12h4M16 12h4"/><circle cx="12" cy="12" r="3"/>' },
   ];
+  // Students is admin-only (the server enforces it too); others never see the tab.
+  const shown = $derived(tabs.filter((t) => t.key !== 'students' || can('admin')));
 </script>
 
-<nav aria-label="Sections">
-  {#each tabs as t (t.key)}
+<nav aria-label="Sections" style="grid-template-columns: repeat({shown.length}, minmax(0, 1fr))">
+  {#each shown as t (t.key)}
     <a href="#/{t.key}" aria-current={route.tab === t.key ? 'page' : undefined}>
       <span class="ic">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{@html t.icon}</svg>

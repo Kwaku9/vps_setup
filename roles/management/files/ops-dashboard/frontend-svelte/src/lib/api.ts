@@ -1,5 +1,5 @@
 import type { ActionResult, AuditRow, ContainerDetails, Finding, InventorySummary, LiveSession, Me, PendingApproval, Service,
-  TranscriptMessage, Triage } from './types';
+  TranscriptMessage, Triage, StudentsList } from './types';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -27,6 +27,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const get = <T>(p: string) => request<T>(p);
 const post = <T>(p: string, body?: unknown) =>
   request<T>(p, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
+const del = <T>(p: string) => request<T>(p, { method: 'DELETE' });
 const enc = encodeURIComponent;
 
 export const api = {
@@ -50,5 +51,8 @@ export const api = {
   inventory: <T = unknown>(view: string) => get<T>(`/api/inventory/${enc(view)}`),
   tables: (database?: string) => get<Record<string, unknown>[]>(
     `/api/inventory/tables?limit=2000${database ? `&database=${enc(database)}` : ''}`),
+  students: () => get<StudentsList>('/api/students'),
+  addStudent: (pk: number) => post<{ ok: boolean }>(`/api/students/${pk}`),
+  removeStudent: (pk: number) => del<{ ok: boolean }>(`/api/students/${pk}`),
   pipelines: (own = true) => get<Record<string, unknown>[]>(`/api/inventory/pipelines?own=${own}`),
 };
