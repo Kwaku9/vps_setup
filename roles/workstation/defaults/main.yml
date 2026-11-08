@@ -204,7 +204,15 @@ workstation:
     - name: voice-hotkey.service
       enabled: true
       state: started
-    - name: vps-tts-tunnel.service
+    # VPS speech through the laptop, tailnet only (2026-11-08). The daemon plays
+    # Kokoro (am_michael) on the laptop speakers and listens on loopback :5000;
+    # vps-tts-tailnet fronts that port on the tailnet with `tailscale serve`.
+    # The VPS hook already targets http://100.79.60.27:5000/speak. Laptop asleep
+    # or off the tailnet = the VPS hook times out in 3 s and goes quiet, by design.
+    - name: vps-tts-daemon.service
+      enabled: true
+      state: started
+    - name: vps-tts-tailnet.service
       enabled: true
       state: started
     # Voicebox: the Claude Code Stop hook speaks replies in the owner's trained voice through it (2026-10-29), and the
@@ -229,8 +237,12 @@ workstation:
       state: null
 
     # --- Deliberately dormant ----------------------------------------------
-    # Superseded by vps-tts-tunnel.service.
-    - name: vps-tts-daemon.service
+    # Reverse SSH tunnel that used to carry VPS localhost:5000 -> laptop :5000.
+    # Retired 2026-11-08: VPS :5000 is held by tailscaled so the RemoteForward was
+    # refused forever and the unit looped 8,000+ restarts. It also rode Tailscale
+    # SSH, so it was never a fallback for a tailnet outage. Replaced by
+    # vps-tts-tailnet.service above (tailnet only, owner's decision).
+    - name: vps-tts-tunnel.service
       enabled: false
       state: stopped
     # Voice-driven computer-use. OFF on purpose: the 6GB GPU cannot host the PTT
