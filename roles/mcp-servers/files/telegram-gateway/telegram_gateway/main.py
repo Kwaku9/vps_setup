@@ -7,6 +7,7 @@ import logging
 import re
 from contextlib import asynccontextmanager
 
+import asyncpg
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastmcp import FastMCP
@@ -82,6 +83,20 @@ logger = logging.getLogger(__name__)
 _listen_task: asyncio.Task | None = None
 _reaper_task: asyncio.Task | None = None
 
+# Errors that mean "Postgres is not reachable right now" rather than a bug.
+# OSError covers TimeoutError (asyncpg's connect timeout), refused connections
+# and DNS failures; CannotConnectNowError is "the database system is starting
+# up" while shared-db-pod comes back after the backup.
+TRANSIENT_DB_ERRORS = (
+    OSError,
+    asyncpg.PostgresConnectionError,
+    asyncpg.CannotConnectNowError,
+)
+# Consecutive failed sweeps before a DB outage is logged as ERROR. Each failed
+# attempt costs the connect timeout plus the sweep interval (~2 min at the
+# defaults), so 15 is roughly 30 min — well past the ~15 min backup window.
+SWEEP_OUTAGE_ESCALATE_AFTER = 15
+
 
 async def _expire_approvals():
     """Background task: sweep approvals past expires_at into 'expired'.
@@ -91,17 +106,45 @@ async def _expire_approvals():
     /permission_prompt poll timing out — so without this sweep every request
     whose requester walked away sits 'pending' forever.
     """
+    failures = 0
     while True:
         await asyncio.sleep(APPROVAL_REAPER_INTERVAL_SECONDS)
         try:
             n = await db.expire_stale_approvals()
-            if n:
-                logger.info("Expired %d stale approval(s)", n)
         except asyncio.CancelledError:
             raise
+        except TRANSIENT_DB_ERRORS as e:
+            # Postgres unreachable. Expected every night: the 06:00 vps-backup
+            # stops shared-db-pod for ~15 min, and each sweep in that window
+            # timed out in pool.acquire() and dumped a full traceback (14 per
+            # two nights). One warning when the outage starts, an ERROR only if
+            # it outlasts any backup window, an INFO when it clears.
+            failures += 1
+            if failures == 1:
+                logger.warning(
+                    "Approval expiry sweep: database unreachable (%s: %s); "
+                    "retrying every %ss",
+                    type(e).__name__, e, APPROVAL_REAPER_INTERVAL_SECONDS,
+                )
+            elif failures == SWEEP_OUTAGE_ESCALATE_AFTER:
+                logger.error(
+                    "Approval expiry sweep: database still unreachable after "
+                    "%d consecutive attempts (%s: %s)",
+                    failures, type(e).__name__, e,
+                )
+            continue
         except Exception:
-            # Never let a transient DB error kill the sweep loop.
+            # Never let an unexpected error kill the sweep loop.
             logger.exception("Approval expiry sweep failed")
+            continue
+        if failures:
+            logger.info(
+                "Approval expiry sweep: database reachable again after %d "
+                "failed attempt(s)", failures,
+            )
+            failures = 0
+        if n:
+            logger.info("Expired %d stale approval(s)", n)
 
 
 async def _listen_responses():
