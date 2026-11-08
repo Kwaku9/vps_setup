@@ -55,6 +55,23 @@ def unregister_run(run_id: int) -> None:
     PENDING.pop(run_id, None)
 
 
+def _build_claude_args(prompt, session_id, model, allowed_tools,
+                       mcp_config=None, append_system_prompt=None):
+    """Pure: assemble the `claude` CLI argv. Defaults reproduce the coder turn;
+    mcp_config / append_system_prompt let a persona (Historian) override."""
+    args = [CLAUDE_CLI_PATH]
+    if session_id:
+        args += ["--resume", session_id]
+    args += ["-p", prompt, "--model", model,
+             "--output-format", "stream-json", "--verbose",
+             "--mcp-config", mcp_config or CODER_APPROVER_MCP_CONFIG,
+             "--strict-mcp-config",
+             "--allowedTools", allowed_tools]
+    if append_system_prompt:
+        args += ["--append-system-prompt", append_system_prompt]
+    return args
+
+
 async def run_coder_turn(
     prompt: str,
     cwd: str,
@@ -62,6 +79,8 @@ async def run_coder_turn(
     env_overrides: dict | None = None,
     allowed_tools: str = OWUI_AUTO_ALLOW_TOOLS,
     on_proc: Callable[[asyncio.subprocess.Process], None] | None = None,
+    mcp_config: str | None = None,
+    append_system_prompt: str | None = None,
 ) -> AsyncIterator[tuple[FeedItem, int | None]]:
     """Run one ``claude`` turn in ``cwd``, yielding ``(FeedItem, code)``.
 
@@ -70,13 +89,9 @@ async def run_coder_turn(
     ``on_proc`` (if given) is called with the live process once spawned — used by
     the Telegram path to register the process for ``/cancel``.
     """
-    args = [CLAUDE_CLI_PATH]
-    if session_id:
-        args += ["--resume", session_id]
-    args += ["-p", prompt, "--model", CODER_MODEL,
-             "--output-format", "stream-json", "--verbose",
-             "--mcp-config", CODER_APPROVER_MCP_CONFIG, "--strict-mcp-config",
-             "--allowedTools", allowed_tools]
+    args = _build_claude_args(
+        prompt, session_id, CODER_MODEL, allowed_tools,
+        mcp_config=mcp_config, append_system_prompt=append_system_prompt)
     env = {**os.environ, **(env_overrides or {})}
     proc = await asyncio.create_subprocess_exec(
         *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
