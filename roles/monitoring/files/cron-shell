@@ -16,6 +16,67 @@
 # metrics never affects the job. The label is cron_job, not job: node-exporter
 # scrapes already carry job="node-exporter".
 
+dir=${CRON_SHELL_DIR:-/opt/compose/textfile-collector}
+tab=${CRON_SHELL_CRONTAB:-/etc/crontabs/root}
+
+# job_name CMD: the name a job is recorded under. The "#Ansible: <name>" comment
+# above its crontab line, else the command's program name for unmanaged lines.
+# The reaper below names live jobs with this same function, so what it keeps is
+# exactly what the jobs write.
+job_name() {
+    _n=$(awk -v c="$1" 'index($0, c) && prev ~ /^#Ansible: / { sub(/^#Ansible: /, "", prev); print prev; exit } { prev = $0 }' "$tab" 2>/dev/null)
+    [ -n "$_n" ] || _n=$(basename "$(printf '%s' "$1" | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^\//) {print $i; exit}}')" 2>/dev/null)
+    [ -n "$_n" ] || _n=unknown
+    printf '%s' "$_n"
+}
+slug_of() { printf '%s' "$1" | tr -c 'A-Za-z0-9_\n' '_' | cut -c1-80; }
+
+# cron-shell --reap [-n]: delete the cron_<name>.prom of every job that is no
+# longer in the crontab (removed, renamed or commented out). Nothing else ever
+# deletes them, so a removed job's last failing exit code kept CronJobFailed
+# firing forever (sessions-graph-sync, marketwatch-approval, 2026-11-08).
+# Matching the live crontab rather than file age means a weekly or monthly job
+# is never reaped. Only cron_*.prom is touched; other exporters write here too.
+# -n lists what would go without deleting. Refuses (exit 1) when the crontab
+# is unreadable or yields no jobs, rather than reaping everything.
+if [ "$1" = "--reap" ]; then
+    dry=
+    [ "$2" = "-n" ] && dry=1
+    [ -r "$tab" ] || { echo "cron-shell --reap: cannot read $tab" >&2; exit 1; }
+    # Job lines start with a minute field or @keyword; the rest are comments
+    # or VAR=value. The command is what cronie hands $SHELL -c: everything
+    # after the schedule, up to the first unescaped % (\% is a literal %).
+    keep=$(grep -E '^[[:space:]]*[0-9*@]' "$tab" | while IFS= read -r line; do
+        cmd=$(printf '%s\n' "$line" | awk '{
+            s = $0; sub(/^[ \t]+/, "", s)
+            if (s ~ /^@/) sub(/^[^ \t]+[ \t]+/, "", s)
+            else for (k = 0; k < 5; k++) sub(/^[^ \t]+[ \t]+/, "", s)
+            out = ""; n = length(s)
+            for (i = 1; i <= n; i++) {
+                ch = substr(s, i, 1)
+                if (ch == "\\" && substr(s, i + 1, 1) == "%") { out = out "%"; i++; continue }
+                if (ch == "%") break
+                out = out ch
+            }
+            print out
+        }')
+        [ -n "$cmd" ] && { slug_of "$(job_name "$cmd")"; echo; }
+    done)
+    [ -n "$keep" ] || { echo "cron-shell --reap: no jobs found in $tab, not reaping" >&2; exit 1; }
+    for f in "$dir"/cron_*.prom; do
+        [ -f "$f" ] || continue
+        s=${f##*/cron_}
+        s=${s%.prom}
+        printf '%s\n' "$keep" | grep -qxF "$s" && continue
+        if [ -n "$dry" ]; then
+            echo "would reap ${f##*/}"
+        else
+            rm -f "$f" && echo "$(date -Iseconds) reaped ${f##*/}"
+        fi
+    done
+    exit 0
+fi
+
 [ "$1" = "-c" ] || exec /bin/sh "$@"
 cmd=$2
 start=$(date +%s)
@@ -33,14 +94,8 @@ fi
 end=$(date +%s)
 
 {
-    dir=${CRON_SHELL_DIR:-/opt/compose/textfile-collector}
-    tab=${CRON_SHELL_CRONTAB:-/etc/crontabs/root}
-    # Name the job by the "#Ansible: <name>" comment above its crontab line;
-    # fall back to the command's program name for unmanaged lines.
-    name=$(awk -v c="$cmd" 'index($0, c) && prev ~ /^#Ansible: / { sub(/^#Ansible: /, "", prev); print prev; exit } { prev = $0 }' "$tab" 2>/dev/null)
-    [ -n "$name" ] || name=$(basename "$(printf '%s' "$cmd" | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^\//) {print $i; exit}}')" 2>/dev/null)
-    [ -n "$name" ] || name=unknown
-    slug=$(printf '%s' "$name" | tr -c 'A-Za-z0-9_\n' '_' | cut -c1-80)
+    name=$(job_name "$cmd")
+    slug=$(slug_of "$name")
     label=$(printf '%s' "$name" | sed 's/\\/\\\\/g; s/"/\\"/g')
     file="$dir/cron_$slug.prom"
     last_ok=$(awk '/^cron_job_last_success_timestamp_seconds/ {print $NF}' "$file" 2>/dev/null)

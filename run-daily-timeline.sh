@@ -67,7 +67,12 @@ fi
 log "Step 2: ingest on VPS"
 ssh "$VPS" /opt/compose/session-ingestion/daily-ingest.sh >>"$LOG" 2>&1
 rc=$?
-if [ $rc -ne 0 ]; then
+if [ $rc -eq 3 ]; then
+    # 3 = sessions ingested, but a later VPS step (git history or the VPS Neo4j
+    # sessions-graph sync) failed. The timeline only needs the sessions, so
+    # carry on; the VPS cron raises CronJobFailed for the failed step.
+    log "WARN step 2: ingest ok but a post-ingest VPS step failed (see $VPS:/var/log/session-ingest.log)"
+elif [ $rc -ne 0 ]; then
     # daily-ingest.sh redirects almost everything to the VPS's own log, so
     # this log will look empty. The real error is in
     # /var/log/session-ingest.log on $VPS.
