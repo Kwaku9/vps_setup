@@ -127,6 +127,7 @@ cloudflare_access:
     - "portal"
     - "charts"
     - "timeline"
+    - "tts"          # Kokoro Voices page (2026-11-08)
   ssh_browser:
     enabled: true
     subdomain: "ssh"
