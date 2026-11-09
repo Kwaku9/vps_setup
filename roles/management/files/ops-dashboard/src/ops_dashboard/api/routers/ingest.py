@@ -5,6 +5,7 @@ import os
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
+from ...sessions import redaction
 from ...sessions.parser import parse_lines
 from ...sessions.repository import upsert_event
 from ..ws.sessions_stream import SessionsWSManager
@@ -25,6 +26,8 @@ async def handle_ingest(pool, payload: dict) -> dict:
     parsed = parse_lines(payload.get("transcript_delta", []), payload.get("source", "unknown"))
     # Hooks always send session_uuid even when the delta is empty.
     parsed["session_uuid"] = parsed["session_uuid"] or payload["session_uuid"]
+    # Redact before anything is written (or store no content if redaction is not loaded).
+    parsed = redaction.prepare(parsed)
     if pool is None:
         # Pool never initialised (startup DB failure). Fail loudly instead of
         # 200-ing while silently dropping the event.
