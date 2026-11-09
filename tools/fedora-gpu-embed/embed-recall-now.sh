@@ -57,4 +57,11 @@ export PGHOST=127.0.0.1 PGPORT="$DB_TUNNEL_PORT" PGDATABASE=enterprise PGUSER=se
 export LITELLM_BASE="http://127.0.0.1:$GPU_PORT/v1" LITELLM_KEY="" GEMMA_MODEL=embeddinggemma
 echo "[embed] running embed_recall_delta.py — GPU embeddings -> VPS recall.chunks"
 python3 "$SCRIPT_DIR/embed_recall_delta.py"
-echo "[done] recall.chunks is current. (GPU server left running; pass --stop to shut it down.)"
+
+# 5. Session summaries -> recall.summaries: same GPU server, tunnel and role, so both
+#    indexes share one embedding space. Runs after chunks so a summary failure can't
+#    hold up chunk freshness; under set -e it still fails the unit so it gets noticed.
+#    (It ran once by hand on 2026-08-11 and was never scheduled; that froze the layer.)
+echo "[embed] running embed_summaries.py — visibility sync, then new/rewritten summaries"
+python3 "$SCRIPT_DIR/embed_summaries.py"
+echo "[done] recall.chunks and recall.summaries are current. (GPU server left running; pass --stop to shut it down.)"
