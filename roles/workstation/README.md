@@ -84,6 +84,11 @@ demo if they are changed without the other half being updated:
    on purpose, so if that mapping is dropped the phone loses the model even
    though the container is perfectly healthy. Check with `tailscale serve status`.
 
+   The one exception is VPS speech: `vps-tts-tailnet.service` owns its own
+   `tailscale serve --tcp 5000` mapping (ExecStart adds it, ExecStop removes
+   it), because that mapping is useless without the daemon and vice versa.
+   Every other serve mapping on this host is still hand-managed.
+
 2. **`OLLAMA_ORIGINS` is a browser allowlist, not a convenience.** The demo is a
    static page on a *different* origin calling this server directly, so every
    origin serving it has to be named in the quadlet or the preflight is refused.

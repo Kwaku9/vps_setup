@@ -4,6 +4,13 @@ After=default.target
 
 [Service]
 Environment=TTS_DAEMON_PERSIST=1
+# speak.py auto-spawns a NON-persistent tts_daemon.py on demand, and the daemon
+# exits 0 at once if /tmp/tts_daemon.pid names a live process. If that on-demand
+# copy is up when this unit starts, the unit exits immediately, Restart=always
+# loops, and it dies with start-limit-hit (seen 2026-11-08 while the owner's own
+# reply voice was speaking). Evict the stray first; queued items live in
+# /tmp/tts_queue and survive, only the sentence mid-play is lost.
+ExecStartPre=-/bin/sh -c 'p=$(cat /tmp/tts_daemon.pid 2>/dev/null); [ -n "$p" ] && kill "$p" 2>/dev/null; sleep 0.5; rm -f /tmp/tts_daemon.pid; exit 0'
 ExecStart=/usr/bin/python3 /home/general/.claude/hooks/tts_daemon.py
 Restart=always
 RestartSec=2

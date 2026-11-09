@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kokoro Voices</title>
+<style>
+  :root {
+    --bg: #0b1118; --panel: #121b25; --edge: #233243; --ink: #e6eef2; --muted: #8fa3b3;
+    --accent: #2dd4bf; --accent-ink: #062a26; --danger: #f87171;
+    --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--font);
+         padding: 32px 18px; display: flex; justify-content: center; }
+  main { width: 100%; max-width: 760px; display: grid; gap: 18px; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 1.5rem; font-weight: 600; letter-spacing: 0.01em; }
+  header p { margin: 0; color: var(--muted); }
+  .panel { background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; padding: 18px; display: grid; gap: 14px; }
+  label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  textarea { width: 100%; min-height: 180px; resize: vertical; background: #0d151e; color: var(--ink);
+             border: 1px solid var(--edge); border-radius: 10px; padding: 12px 14px; font: inherit; }
+  textarea:focus, select:focus, input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .count { justify-self: end; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .count.over { color: var(--danger); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+  .field { display: grid; gap: 6px; }
+  select { width: 100%; background: #0d151e; color: var(--ink); border: 1px solid var(--edge);
+           border-radius: 10px; padding: 10px 12px; font: inherit; }
+  .speed { display: flex; align-items: center; gap: 12px; }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+  .speed output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
+  .actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 10px;
+           padding: 11px 22px; font: 600 0.95rem var(--font); cursor: pointer; }
+  button:disabled { opacity: 0.55; cursor: progress; }
+  .hint { color: var(--muted); font-size: 0.85rem; }
+  .status { min-height: 1.4em; color: var(--muted); }
+  .status.error { color: var(--danger); }
+  .result { display: grid; gap: 10px; }
+  audio { width: 100%; }
+  a.download { color: var(--accent); font-size: 0.9rem; }
+  @media (prefers-reduced-motion: no-preference) { button { transition: filter 0.15s; } button:hover:not(:disabled) { filter: brightness(1.08); } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Kokoro Voices</h1>
+    <p>Type text, choose a voice, listen or download.</p>
+  </header>
+
+  <section class="panel">
+    <div class="field">
+      <label for="text">Text</label>
+      <textarea id="text" placeholder="Paste or type what you want read aloud."></textarea>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="voice">Voice</label>
+        <select id="voice"></select>
+      </div>
+      <div class="field">
+        <label for="speed">Speed</label>
+        <div class="speed">
+          <input type="range" id="speed" min="0.5" max="2" step="0.05" value="1">
+          <output id="speedOut" for="speed">1.00×</output>
+        </div>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="speak" type="button">Speak</button>
+      <span class="hint">Ctrl + Enter also speaks.</span>
+    </div>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="panel result" id="result" hidden>
+    <audio id="player" controls></audio>
+    <a class="download" id="download" download>Download WAV</a>
+  </section>
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const text = $("text"), voice = $("voice"), speed = $("speed"), speedOut = $("speedOut");
+  const btn = $("speak"), status = $("status"), count = $("count");
+  let maxChars = 2000, lastUrl = null;
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  };
+  const setStatus = (msg, isError = false) => { status.textContent = msg; status.classList.toggle("error", isError); };
+  const updateCount = () => {
+    const n = text.value.length;
+    count.textContent = `${n.toLocaleString()} / ${maxChars.toLocaleString()} characters`;
+    count.classList.toggle("over", n > maxChars);
+  };
+  speed.addEventListener("input", () => { speedOut.textContent = `${Number(speed.value).toFixed(2)}×`; store.set("kokoro.speed", speed.value); });
+  voice.addEventListener("change", () => store.set("kokoro.voice", voice.value));
+  text.addEventListener("input", updateCount);
+  text.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); speak(); } });
+
+  async function loadVoices() {
+    const r = await fetch("api/voices");
+    if (!r.ok) throw new Error(`Could not load voices (HTTP ${r.status}).`);
+    const data = await r.json();
+    maxChars = data.max_chars;
+    for (const [lang, list] of Object.entries(data.groups)) {
+      const g = document.createElement("optgroup"); g.label = lang;
+      for (const v of list) {
+        const o = document.createElement("option");
+        o.value = v.id; o.textContent = `${v.name} (${v.gender})`;
+        g.appendChild(o);
+      }
+      voice.appendChild(g);
+    }
+    const saved = store.get("kokoro.voice");
+    voice.value = (saved && [...voice.options].some((o) => o.value === saved)) ? saved : data.default;
+    const sp = store.get("kokoro.speed");
+    if (sp) { speed.value = sp; speedOut.textContent = `${Number(sp).toFixed(2)}×`; }
+    updateCount();
+  }
+
+  async function speak() {
+    const t = text.value.trim();
+    if (!t) { setStatus("Type some text first.", true); return; }
+    if (t.length > maxChars) { setStatus(`That is ${t.length} characters; the limit is ${maxChars}. Split it into parts.`, true); return; }
+    btn.disabled = true; setStatus("Generating speech…");
+    const started = performance.now();
+    try {
+      const r = await fetch("api/speak", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: t, voice: voice.value, speed: Number(speed.value) }),
+      });
+      if (!r.ok) {
+        let detail = `HTTP ${r.status}`;
+        try { const j = await r.json(); detail = typeof j.detail === "string" ? j.detail : detail; } catch {}
+        throw new Error(`Speech failed: ${detail}`);
+      }
+      const blob = await r.blob();
+      if (lastUrl) URL.revokeObjectURL(lastUrl);
+      lastUrl = URL.createObjectURL(blob);
+      $("player").src = lastUrl;
+      const dl = $("download"); dl.href = lastUrl; dl.download = `kokoro-${voice.value}.wav`;
+      $("result").hidden = false;
+      $("player").play().catch(() => {});
+      setStatus(`Ready in ${((performance.now() - started) / 1000).toFixed(1)} s.`);
+    } catch (e) {
+      setStatus(e.message || "Speech failed.", true);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+  btn.addEventListener("click", speak);
+  loadVoices().catch((e) => setStatus(e.message, true));
+})();
+</script>
+</body>
+</html>

@@ -82,3 +82,23 @@ export const logout = async () => {
   const r = await api.post<{ ok: boolean; end_session_url: string | null }>('/auth/logout');
   window.location.assign(r.end_session_url || '/auth/login');
 };
+
+// Students and the request desk (admin only; routers/students.py, routers/access_requests.py)
+export interface Person {
+  pk: number; username: string; name: string; email: string;
+  active: boolean; last_login: string | null; groups: string[];
+}
+export interface AccessRequest {
+  id: number; created_at: string; email: string; username: string | null;
+  kind: 'students' | 'paid_users' | 'other'; reason: string;
+  status: 'pending' | 'approved' | 'denied' | 'withdrawn';
+  decided_at: string | null; decided_by: string | null; note: string | null;
+}
+export const fetchStudents = () => api.get<{ students: Person[]; candidates: Person[] }>('/api/students');
+export const addStudent = (pk: number) => api.post<{ ok: boolean }>(`/api/students/${pk}`);
+export const removeStudent = (pk: number) => request<{ ok: boolean }>(`/api/students/${pk}`, { method: 'DELETE' });
+export const fetchAccessRequests = () =>
+  api.get<{ requests: AccessRequest[]; kinds: Record<string, string> }>('/api/access-requests');
+export const decideAccessRequest = (id: number, decision: 'approve' | 'deny', note: string) =>
+  api.post<{ ok: boolean; status: string; granted_group: string | null }>(
+    `/api/access-requests/${id}/decide`, { decision, note });

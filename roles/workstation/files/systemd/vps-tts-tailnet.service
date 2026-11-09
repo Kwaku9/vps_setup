@@ -1,0 +1,19 @@
+[Unit]
+Description=Front the loopback TTS daemon (:5000) on the tailnet via tailscale serve, so the VPS can speak through the laptop
+# The daemon binds 127.0.0.1 on purpose (no-0.0.0.0 estate rule). This unit asks
+# tailscaled to accept tailnet TCP on :5000 and hand it to loopback :5000, so the
+# VPS hook's existing primary URL http://100.79.60.27:5000/speak works without
+# any interface or firewall change. `tailscale serve --bg` PERSISTS in tailscaled
+# state, so ExecStop removes the mapping again: disabling this unit really does
+# close the port. Needs tailscaled's operator to be this user (it is).
+Requires=vps-tts-daemon.service
+After=vps-tts-daemon.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/tailscale serve --bg --tcp 5000 tcp://127.0.0.1:5000
+ExecStop=/usr/bin/tailscale serve --tcp 5000 off
+
+[Install]
+WantedBy=default.target

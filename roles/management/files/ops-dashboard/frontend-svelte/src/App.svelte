@@ -9,6 +9,7 @@
   import Inventory from './routes/Inventory.svelte';
   import Services from './routes/Services.svelte';
   import Sessions from './routes/Sessions.svelte';
+  import Students from './routes/Students.svelte';
   import Triage from './routes/Triage.svelte';
 
   loadMe();
@@ -22,6 +23,7 @@
 {:else if route.tab === 'services'}<Services />
 {:else if route.tab === 'sessions'}<Sessions {approvals} />
 {:else if route.tab === 'inventory'}<Inventory />
+{:else if route.tab === 'students'}<Students />
 {:else}<Audit />{/if}
 
 <TabBar badges={{ triage: approvals.data?.length ?? 0 }} />
