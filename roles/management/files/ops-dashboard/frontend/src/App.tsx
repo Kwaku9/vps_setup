@@ -14,6 +14,7 @@ import { VisualView } from './components/visual/VisualView';
 import { SessionsView } from './components/sessions/SessionsView';
 import { RadarView } from './components/radar/RadarView';
 import { SearchView } from './components/search/SearchView';
+import { StudentsView } from './components/students/StudentsView';
 import { MobileNav } from './components/layout/MobileNav';
 import { pop } from './lib/motion';
 
@@ -23,6 +24,7 @@ const TABS = [
   { key: 'search',    label: 'Search' },
   { key: 'repos',     label: 'Repos' },
   { key: 'manager',   label: 'Manager' },
+  { key: 'students',  label: 'Students' },
   { key: 'visual',    label: 'Visual' },
 ] as const;
 
@@ -117,6 +119,10 @@ function DashboardLayout() {
       ) : activeTab === 'repos' ? (
         <main className="flex-1 overflow-y-auto py-4">
           <RadarView />
+        </main>
+      ) : activeTab === 'students' ? (
+        <main className="flex-1 overflow-y-auto py-4">
+          <StudentsView />
         </main>
       ) : activeTab === 'visual' ? (
         <VisualView />

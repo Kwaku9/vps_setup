@@ -57,3 +57,11 @@ export interface Person {
   active: boolean; last_login: string | null; groups: string[];
 }
 export interface StudentsList { students: Person[]; candidates: Person[] }
+
+/** A request from the request desk (portal.<domain>/request). */
+export interface AccessRequest {
+  id: number; created_at: string; email: string; username: string | null;
+  kind: 'students' | 'paid_users' | 'other'; reason: string;
+  status: 'pending' | 'approved' | 'denied' | 'withdrawn';
+  decided_at: string | null; decided_by: string | null; note: string | null;
+}

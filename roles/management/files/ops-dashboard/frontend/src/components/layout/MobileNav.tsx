@@ -9,6 +9,7 @@ const ITEMS = [
   { key: 'search',    label: 'Search',   icon: '⌕' },
   { key: 'repos',     label: 'Repos',    icon: '⎇' },
   { key: 'manager',   label: 'Manager',  icon: '☷' },
+  { key: 'students',  label: 'Students', icon: '☺' },
   { key: 'visual',    label: 'Visual',   icon: '◉' },
 ] as const;
 

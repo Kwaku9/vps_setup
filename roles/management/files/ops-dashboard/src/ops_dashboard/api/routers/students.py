@@ -27,13 +27,13 @@ def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(base_url=API, timeout=15, headers={"Authorization": f"Bearer {token}"})
 
 
-async def _group_pk(c: httpx.AsyncClient) -> str:
-    r = await c.get("/core/groups/", params={"search": GROUP, "page_size": 100})
+async def _group_pk(c: httpx.AsyncClient, name: str = GROUP) -> str:
+    r = await c.get("/core/groups/", params={"search": name, "page_size": 100})
     r.raise_for_status()
     for g in r.json().get("results", []):
-        if g.get("name") == GROUP:
+        if g.get("name") == name:
             return g["pk"]
-    raise HTTPException(503, f"Authentik has no '{GROUP}' group.")
+    raise HTTPException(503, f"Authentik has no '{name}' group.")
 
 
 def _person(u: dict) -> dict:

@@ -1,5 +1,5 @@
 import type { ActionResult, AuditRow, ContainerDetails, Finding, InventorySummary, LiveSession, Me, PendingApproval, Service,
-  TranscriptMessage, Triage, StudentsList } from './types';
+  TranscriptMessage, Triage, StudentsList, AccessRequest } from './types';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -54,5 +54,8 @@ export const api = {
   students: () => get<StudentsList>('/api/students'),
   addStudent: (pk: number) => post<{ ok: boolean }>(`/api/students/${pk}`),
   removeStudent: (pk: number) => del<{ ok: boolean }>(`/api/students/${pk}`),
+  accessRequests: () => get<{ requests: AccessRequest[] }>('/api/access-requests'),
+  decideRequest: (id: number, decision: 'approve' | 'deny', note: string) =>
+    post<{ ok: boolean; status: string; granted_group: string | null }>(`/api/access-requests/${id}/decide`, { decision, note }),
   pipelines: (own = true) => get<Record<string, unknown>[]>(`/api/inventory/pipelines?own=${own}`),
 };

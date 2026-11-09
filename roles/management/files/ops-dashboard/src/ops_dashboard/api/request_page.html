@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Request access</title>
+<style>
+  :root {
+    --bg: #0b1118; --panel: #121b25; --edge: #233243; --ink: #e6eef2; --muted: #8fa3b3;
+    --accent: #2dd4bf; --accent-ink: #062a26; --danger: #f87171; --warn: #fbbf24; --ok: #34d399;
+    --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--font);
+         padding: 32px 18px; display: flex; justify-content: center; }
+  main { width: 100%; max-width: 720px; display: grid; gap: 18px; }
+  h1 { margin: 0; font-size: 1.5rem; font-weight: 600; }
+  h2 { margin: 0; font-size: 1rem; font-weight: 600; }
+  header p, .muted { margin: 0; color: var(--muted); }
+  .panel { background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; padding: 18px; display: grid; gap: 14px; }
+  fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+  legend, label.cap { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 6px; }
+  .opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--edge);
+         border-radius: 10px; cursor: pointer; }
+  .opt:has(input:checked) { border-color: var(--accent); }
+  .opt.have { opacity: 0.55; cursor: default; }
+  .opt input { margin-top: 4px; accent-color: var(--accent); }
+  .opt small { display: block; color: var(--muted); }
+  textarea { width: 100%; min-height: 130px; resize: vertical; background: #0d151e; color: var(--ink);
+             border: 1px solid var(--edge); border-radius: 10px; padding: 12px 14px; font: inherit; }
+  textarea:focus, input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 10px;
+           padding: 11px 22px; font: 600 0.95rem var(--font); cursor: pointer; }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--edge); padding: 6px 12px; font-size: 0.85rem; }
+  button:disabled { opacity: 0.55; cursor: progress; }
+  .status { min-height: 1.4em; color: var(--muted); }
+  .status.error { color: var(--danger); }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  li { border: 1px solid var(--edge); border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px; }
+  .top { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .chip { font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; }
+  .pending { color: var(--warn); } .approved { color: var(--ok); } .denied { color: var(--danger); } .withdrawn { color: var(--muted); }
+  .when { margin-left: auto; color: var(--muted); font-size: 0.82rem; }
+  .reason { color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .note { border-left: 3px solid var(--accent); padding-left: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Request access</h1>
+    <p id="who">Checking who you are…</p>
+  </header>
+
+  <form class="panel" id="form" hidden>
+    <fieldset id="kinds"><legend>What do you need?</legend></fieldset>
+    <div>
+      <label class="cap" for="reason">Why</label>
+      <textarea id="reason" minlength="10" maxlength="1000" required
+        placeholder="What you are working on and what the extra access lets you do."></textarea>
+    </div>
+    <div class="row">
+      <button id="send" type="submit">Send request</button>
+      <span class="muted">The owner reviews each request by hand. Changes apply at your next sign-in.</span>
+    </div>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+  </form>
+
+  <section class="panel" id="mine" hidden>
+    <h2>Your requests</h2>
+    <ul id="list"></ul>
+  </section>
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const setStatus = (msg, err = false) => { $("status").textContent = msg; $("status").classList.toggle("error", err); };
+  const when = (iso) => iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
+  const LABEL = { students: "Student access", paid_users: "Paid models", other: "Something else" };
+  let me = null;
+
+  async function call(path, opts = {}) {
+    const r = await fetch(path, { credentials: "same-origin", headers: { "Content-Type": "application/json" }, ...opts });
+    let body = null; try { body = await r.json(); } catch {}
+    if (!r.ok) throw new Error((body && typeof body.detail === "string") ? body.detail : `HTTP ${r.status}`);
+    return body;
+  }
+
+  function render() {
+    const name = me.name ? `${me.name} (${me.email})` : me.email;
+    const have = me.groups.filter((g) => ["students", "paid_users", "admins"].includes(g)).map((g) => LABEL[g] || g);
+    $("who").textContent = `Signed in as ${name}.` + (have.length ? ` You already have: ${have.join(", ")}.` : "");
+
+    const open = new Set(me.requests.filter((r) => r.status === "pending").map((r) => r.kind));
+    const box = $("kinds");
+    box.querySelectorAll(".opt").forEach((n) => n.remove());
+    let first = true;
+    for (const k of me.kinds) {
+      const blocked = k.have || open.has(k.kind);
+      const lab = document.createElement("label");
+      lab.className = "opt" + (blocked ? " have" : "");
+      const input = document.createElement("input");
+      input.type = "radio"; input.name = "kind"; input.value = k.kind; input.disabled = blocked;
+      if (!blocked && first) { input.checked = true; first = false; }
+      const text = document.createElement("span");
+      text.textContent = LABEL[k.kind] || k.kind;
+      const sub = document.createElement("small");
+      sub.textContent = k.have ? "You have this already." : open.has(k.kind) ? "Waiting for review." : k.label;
+      text.appendChild(sub);
+      lab.append(input, text);
+      box.appendChild(lab);
+    }
+    $("send").disabled = first;
+    $("form").hidden = false;
+
+    const list = $("list");
+    list.replaceChildren();
+    for (const r of me.requests) {
+      const li = document.createElement("li");
+      const top = document.createElement("div"); top.className = "top";
+      const t = document.createElement("strong"); t.textContent = `#${r.id} ${LABEL[r.kind] || r.kind}`;
+      const chip = document.createElement("span"); chip.className = `chip ${r.status}`; chip.textContent = r.status;
+      const w = document.createElement("span"); w.className = "when"; w.textContent = when(r.created_at);
+      top.append(t, chip, w);
+      const reason = document.createElement("div"); reason.className = "reason"; reason.textContent = r.reason;
+      li.append(top, reason);
+      if (r.note) { const n = document.createElement("div"); n.className = "note"; n.textContent = r.note; li.appendChild(n); }
+      if (r.status === "pending") {
+        const b = document.createElement("button"); b.type = "button"; b.className = "ghost"; b.textContent = "Withdraw";
+        b.onclick = async () => {
+          b.disabled = true;
+          try { await call(`api/requests/${r.id}/withdraw`, { method: "POST" }); await load(); }
+          catch (e) { setStatus(e.message, true); b.disabled = false; }
+        };
+        const row = document.createElement("div"); row.className = "row"; row.appendChild(b); li.appendChild(row);
+      }
+      list.appendChild(li);
+    }
+    $("mine").hidden = me.requests.length === 0;
+  }
+
+  async function load() { me = await call("api/me"); render(); }
+
+  $("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const kind = document.querySelector('input[name="kind"]:checked');
+    const reason = $("reason").value.trim();
+    if (!kind) { setStatus("Pick what you need.", true); return; }
+    if (reason.length < 10) { setStatus("Say a little more about why (10 characters or more).", true); return; }
+    $("send").disabled = true; setStatus("Sending…");
+    try {
+      const r = await call("api/requests", { method: "POST", body: JSON.stringify({ kind: kind.value, reason }) });
+      $("reason").value = "";
+      setStatus(`Sent as request #${r.id}. You will see the answer here.`);
+      await load();
+    } catch (err) { setStatus(err.message, true); $("send").disabled = false; }
+  });
+
+  load().catch((e) => { $("who").textContent = e.message; });
+})();
+</script>
+</body>
+</html>

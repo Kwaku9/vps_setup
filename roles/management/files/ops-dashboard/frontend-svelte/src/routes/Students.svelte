@@ -8,23 +8,45 @@
   import { can, user } from '../lib/me.svelte';
   import { Poll } from '../lib/poll.svelte';
   import { toast } from '../lib/toast.svelte';
-  import type { Person } from '../lib/types';
+  import type { AccessRequest, Person } from '../lib/types';
 
   const data = new Poll(() => api.students(), 60000);
   $effect(() => { if (can('admin')) return data.start(); });
+  const reqs = new Poll(() => api.accessRequests(), 60000);
+  $effect(() => { if (can('admin')) return reqs.start(); });
+  const pending = $derived((reqs.data?.requests ?? []).filter((r) => r.status === 'pending'));
+  const KIND: Record<string, string> = { students: 'Student access', paid_users: 'Paid models', other: 'Something else' };
 
-  let view = $state<'students' | 'candidates'>('students');
+  let view = $state<'students' | 'candidates' | 'requests'>('students');
   let q = $state('');
   const match = (p: Person) => {
     const s = q.trim().toLowerCase();
     return !s || [p.name, p.username, p.email].some((v) => (v ?? '').toLowerCase().includes(s));
   };
-  const list = $derived((data.data?.[view] ?? []).filter(match));
+  const list = $derived(view === 'requests' ? [] : (data.data?.[view] ?? []).filter(match));
 
   let open = $state(false);
   let picked = $state<Person | null>(null);
   let busy = $state(false);
   const isStudent = $derived(!!picked && picked.groups.includes('students'));
+
+  let ropen = $state(false);
+  let rpicked = $state<AccessRequest | null>(null);
+  let note = $state('');
+  async function decide(decision: 'approve' | 'deny') {
+    if (!rpicked) return;
+    busy = true;
+    try {
+      const r = await api.decideRequest(rpicked.id, decision, note);
+      toast(`Request #${rpicked.id} ${r.status}` + (r.granted_group ? `, joined ${r.granted_group}` : ''));
+      ropen = false; note = '';
+      await Promise.all([reqs.refresh(), data.refresh()]);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), true);
+    } finally {
+      busy = false;
+    }
+  }
 
   async function apply() {
     if (!picked) return;
@@ -54,7 +76,22 @@
         Students<span class="n">{data.data?.students.length ?? ''}</span></button>
       <button class="chip" aria-pressed={view === 'candidates'} onclick={() => (view = 'candidates')}>
         Add a student<span class="n">{data.data?.candidates.length ?? ''}</span></button>
+      <button class="chip" aria-pressed={view === 'requests'} onclick={() => (view = 'requests')}>
+        Requests<span class="n">{reqs.data ? pending.length : ''}</span></button>
     </div>
+    {#if view === 'requests'}
+      <Status loading={reqs.loading} error={reqs.error && !reqs.data ? reqs.error : null}
+        empty={!!reqs.data && !pending.length} emptyText="Nothing waiting. People ask at portal.aicortex.cloud/request." />
+      <ul class="list">
+        {#each pending as r (r.id)}
+          <li><button class="item" onclick={() => { rpicked = r; note = ''; ropen = true; }}>
+            <span class="top"><Dot tone="warn" /><span class="t">{KIND[r.kind] ?? r.kind}</span>
+              <span class="r">{clock(r.created_at)}</span></span>
+            <span class="s">{r.email}</span>
+          </button></li>
+        {/each}
+      </ul>
+    {:else}
     <label class="search">
       <span class="sr">Search people</span>
       <input type="search" placeholder="Search by name or email" bind:value={q} />
@@ -72,8 +109,28 @@
         </button></li>
       {/each}
     </ul>
+    {/if}
   {/if}
 </div>
+
+<Sheet title={rpicked ? `Request #${rpicked.id}` : ''} bind:open={ropen}>
+  {#if rpicked}
+    <Sections sections={[
+      { rows: [['From', rpicked.email], ['Account', rpicked.username ?? 'unknown'], ['Wants', KIND[rpicked.kind] ?? rpicked.kind],
+        ['Asked', clock(rpicked.created_at)]] },
+    ]} />
+    <p class="note reason">{rpicked.reason}</p>
+    <label class="search">
+      <span class="sr">Reply to the requester</span>
+      <input type="text" maxlength="1000" placeholder="Optional reply, shown on their request page" bind:value={note} />
+    </label>
+    {#if rpicked.kind === 'other'}<p class="muted small">Approving "Something else" only records the answer. Grant it by hand.</p>{/if}
+    <div class="pair">
+      <button class="act danger" disabled={busy} onclick={() => decide('deny')}>{busy ? 'Working…' : 'Deny'}</button>
+      <button class="act" disabled={busy} onclick={() => decide('approve')}>{busy ? 'Working…' : 'Approve'}</button>
+    </div>
+  {/if}
+</Sheet>
 
 <Sheet title={picked ? (picked.name || picked.username) : ''} bind:open>
   {#if picked}
@@ -107,4 +164,6 @@
   .act.danger { background: var(--bad-bg); color: var(--bad-ink); }
   .act:disabled { opacity: .5; cursor: default; }
   .small { font-size: 13px; margin-top: 8px; }
+  .reason { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
 </style>

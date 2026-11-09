@@ -134,6 +134,14 @@ cloudflare_access:
     - "charts"
     - "timeline"
     - "tts"          # Kokoro Voices page (2026-11-08)
+  # Request desk: portal.<domain>/request, where any signed-in account asks for
+  # more access (students, paid models) and the owner approves in the ops
+  # dashboard. Served by ops-dashboard; Traefik routes the path there.
+  request_desk:
+    enabled: true
+    host: "portal"
+    path: "request"
+    groups: ["free_users", "paid_users", "students", "admins"]
   ssh_browser:
     enabled: true
     subdomain: "ssh"

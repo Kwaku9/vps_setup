@@ -37,8 +37,10 @@ ROLE_GROUPS = [("admin", "admins"), ("operator", "ops-operators"), ("viewer", "o
 RANK = {"viewer": 1, "operator": 2, "admin": 3}
 
 # Machine endpoints with their own bearer token, plus the login flow itself.
-EXEMPT_PREFIXES = ("/auth/",)
-EXEMPT_PATHS = {"/api/health", "/api/sessions/ingest", "/api/repo-radar/ingest", "/favicon.ico"}
+# /request is the request desk (routers/access_requests.py): requesters have no
+# dashboard session, and every call there verifies its own Cloudflare Access token.
+EXEMPT_PREFIXES = ("/auth/", "/request/")
+EXEMPT_PATHS = {"/api/health", "/api/sessions/ingest", "/api/repo-radar/ingest", "/favicon.ico", "/request"}
 
 
 def _env_list(name: str) -> set[str]:
