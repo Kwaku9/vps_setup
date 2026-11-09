@@ -28,6 +28,8 @@ iptables -A INPUT -i br-web -p tcp --dport 22 -m comment --comment "web>host-ssh
 # --- frontend ---
 iptables -A INPUT -i br-frontend -s 10.89.128.32/28 -p udp --dport 53 -j ACCEPT
 iptables -A INPUT -i br-frontend -s 10.89.128.32/28 -p tcp --dport 53 -j ACCEPT
+iptables -A INPUT -i br-frontend -s 10.89.128.32/28 -p tcp --dport ${SQUID_HTTP_PORT:-3128} -j ACCEPT
+iptables -A INPUT -i br-frontend -s 10.89.128.32/28 -p tcp --dport ${SQUID_HTTPS_PORT:-3129} -j ACCEPT
 iptables -A INPUT -i br-frontend -p tcp --dport 22 -m comment --comment "frontend>host-ssh-denied" -j ZONE_DENY
 # --- svc ---
 iptables -A INPUT -i br-svc -s 10.89.128.48/28 -p udp --dport 53 -j ACCEPT
@@ -44,6 +46,7 @@ iptables -A INPUT -i br-identity -s 10.89.128.80/28 -p udp --dport 53 -j ACCEPT
 iptables -A INPUT -i br-identity -s 10.89.128.80/28 -p tcp --dport 53 -j ACCEPT
 iptables -A INPUT -i br-identity -p tcp --dport 22 -m comment --comment "identity>host-ssh-denied" -j ZONE_DENY
 # --- observe ---
+iptables -A INPUT -i br-observe -s 10.89.128.98/32 -p tcp --dport 9100 -m comment --comment "metrics-pod>host" -j ACCEPT
 iptables -A INPUT -i br-observe -s 10.89.128.96/28 -p udp --dport 53 -j ACCEPT
 iptables -A INPUT -i br-observe -s 10.89.128.96/28 -p tcp --dport 53 -j ACCEPT
 iptables -A INPUT -i br-observe -s 10.89.128.96/28 -p tcp --dport ${SQUID_HTTP_PORT:-3128} -j ACCEPT

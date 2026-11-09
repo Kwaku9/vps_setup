@@ -23,6 +23,11 @@ flows:
   - {from: edge, from_pod: security-infra-pod, to: mgmt, to_pod: management-pod, ports: [8090], reason: "ops dashboard; only the edge pod may connect"}
   - {from: edge, from_pod: security-infra-pod, to: mail, to_pod: mailkit-pod, ports: [8790, 8791], reason: "Mail Kit MCP connectors for claude.ai (read, send); only the edge pod may connect"}
   - {from: edge, to: internet, ports: [443], reason: "CrowdSec lists, ACME DNS challenge (via Squid)"}
+  # seen by the capture review 2026-11-09
+  - {from: edge, to: svc, to_pod: ai-gateway-pod, ports: [8881], reason: "tts.<domain> Kokoro Voices page (kokoro-web)"}
+  - {from: edge, to: frontend, to_pod: frontend-pod, ports: [8092], reason: "timeline.<domain> journey-tracker"}
+  - {from: edge, to: agent, to_pod: graph-mcp-pod, ports: [8080], reason: "timeline-context-api route (roles/neo4j traefik-timeline-context-api)"}
+  - {from: edge, to: observe, to_pod: logs-pod, ports: [4318], reason: "Traefik OTLP traces push to Alloy"}
 
   # --- frontend ---
   - {from: frontend, to: svc, ports: [4000, 8080], reason: "Open WebUI to LiteLLM and SearXNG", unverified: true}
@@ -30,16 +35,22 @@ flows:
   - {from: frontend, to: data, to_pod: shared-db-pod, ports: [5432], reason: "apps to their schemas"}
   - {from: frontend, to: identity, ports: [9000], reason: "OIDC back-channel", unverified: true}
   - {from: frontend, to: agent, to_pod: gateway-pod, ports: [7557], reason: "OWUI CC Sessions pipe to owui-coder"}
+  - {from: frontend, from_pod: openwebui-pod, to: observe, to_pod: logs-pod, ports: [4317], reason: "Open WebUI OTLP (gRPC) to Alloy"}
+  - {from: frontend, to: internet, ports: [443], reason: "Open WebUI and frontend outbound fetches (via Squid)"}
 
   # --- svc ---
   - {from: svc, to: data, ports: [5432], reason: "LiteLLM and APIs to Postgres"}
   - {from: svc, from_pod: backend-pod, to: data, to_pod: neo4j-pod, ports: [7687], reason: "timeline-api graph queries (moved from frontend-pod 2026-10-30)"}
   - {from: svc, to: internet, ports: [443], reason: "model providers (via Squid)"}
+  - {from: svc, from_pod: ai-gateway-pod, to: observe, to_pod: logs-pod, ports: [4318], reason: "LiteLLM OTLP traces to Alloy"}
+  - {from: svc, from_pod: ai-gateway-pod, to: tailnet, ports: [8080, 18090], reason: "LiteLLM to Strata on Debian (8080) and the Fedora GPU embedder (18090)"}
+
 
   # --- agent ---
   - {from: agent, to: data, ports: [5432], reason: "recall, graph and bots to Postgres"}
   - {from: agent, to: data, to_pod: neo4j-pod, ports: [7687], reason: "graph MCP to Neo4j"}
   - {from: agent, to: svc, to_pod: ai-gateway-pod, ports: [4000], reason: "agents to LiteLLM"}
+  - {from: agent, from_pod: reports-pod, to: observe, to_pod: metrics-pod, ports: [3000], reason: "grafana-reports renders panels from Grafana"}
   - {from: agent, to: scrape, ports: [8888], reason: "scraper calls"}
   - {from: agent, to: fintech, to_pod: trading-pod, ports: [5002], reason: "IB MCP; order tools stay gated by ib_mcp_allow_trading"}
   - {from: agent, to: internet, ports: [443], reason: "Telegram and APIs (via Squid)"}
@@ -53,6 +64,7 @@ flows:
   - {from: mgmt, to: identity, ports: [9000], reason: "OIDC back-channel", unverified: true}
   - {from: mgmt, to: internet, ports: [443], reason: "CF Access certs and OIDC (via Squid)", unverified: true}
   - {from: mgmt, to: tailnet, ports: [22], reason: "workstation SSH over the tailnet", unverified: true}
+  - {from: mgmt, from_pod: management-pod, to: observe, to_pod: metrics-pod, ports: [8880], reason: "ops-dashboard triage reads vmalert (VMALERT_URL)"}
 
   # --- mail (Mail Kit MCP: can read and send mail; spec section 4B) ---
   - {from: mail, to: internet, ports: [443], reason: "Mail Kit API and OAuth token endpoint (via Squid)"}
@@ -69,6 +81,18 @@ flows:
   - {from: observe, from_pod: logs-pod, to: web, to_pod: honeypot-pod, ports: [8099], reason: "Alloy scrapes the honeypot hit counters", unverified: true}
   - {from: observe, from_pod: threat-map-pod, to: edge, to_pod: security-infra-pod, ports: [8180], reason: "threat-map streams CrowdSec LAPI decisions", unverified: true}
   - {from: observe, from_pod: threat-map-pod, to: agent, to_pod: reports-pod, ports: [8765], reason: "threat-map to grafana-reports render engine", unverified: true}
+  # Cross-zone SCRAPES (pull), TEMPORARY (owner 2026-11-09): `until_push: true` marks each one. They exist only so that
+  # enforcing a zone does not blind monitoring before observe converts scrape -> push (the last zone move); delete them
+  # then. tools/netseg/tests/test_policy.py pins this exact set, so a new scrape or a wider port fails review.
+  - {from: observe, from_pod: metrics-pod, to: svc, to_pod: ai-gateway-pod, ports: [4000], reason: "scrape: LiteLLM /metrics", until_push: true}
+  - {from: observe, from_pod: metrics-pod, to: identity, to_pod: authentication-pod, ports: [9300], reason: "scrape: Authentik metrics", until_push: true}
+  - {from: observe, from_pod: metrics-pod, to: tunnel, to_pod: cloudflared-pod, ports: [2000], reason: "scrape: cloudflared metrics", until_push: true}
+  - {from: observe, from_pod: metrics-pod, to: edge, to_pod: security-infra-pod, ports: [6060, 8080], reason: "scrape: CrowdSec (6060) and Traefik (8080) metrics", until_push: true}
+  - {from: observe, from_pod: metrics-pod, to: frontend, to_pod: marketplace-pod, ports: [8080], reason: "scrape: marketplace metrics", until_push: true}
+  - {from: observe, from_pod: metrics-pod, to: host, ports: [9100], reason: "scrape: host node-exporter", until_push: true}
+  - {from: observe, from_pod: metrics-pod, to: tailnet, ports: [9100], reason: "scrape: workstation node-exporters over the tailnet", until_push: true}
+  - {from: observe, from_pod: logs-pod, to: data, to_pod: ai-db-pod, ports: [5432], reason: "scrape: Alloy postgres exporter (LiteLLM DB)", until_push: true}
+  - {from: observe, from_pod: logs-pod, to: identity, to_pod: authentication-pod, ports: [5432, 6379], reason: "scrape: Alloy postgres + redis exporters (Authentik)", until_push: true}
 
   # --- scrape ---
   - {from: scrape, to: internet, ports: [80, 443], reason: "crawling (via Squid)"}
