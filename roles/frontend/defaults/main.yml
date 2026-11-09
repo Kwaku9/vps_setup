@@ -45,7 +45,10 @@ worldview:
 # Source lives at roles/frontend/files/aicortex-chat/ and is synced to the
 # build/run context on every deploy.
 expo_dev:
-  enabled: true
+  # Off until the owner brings it back (2026-11-09): with the box out of memory
+  # (186 MB free, swap full, load 46) stopping expo-dev recovered ~650 MB. Set
+  # true (or -e '{"expo_dev": {"enabled": true}}') and run --tags expo-dev.
+  enabled: false
   container_name: "expo-dev"
   image: "localhost/expo-dev:latest"
   source_dir: "/opt/compose/aicortex-chat"
