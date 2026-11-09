@@ -82,22 +82,25 @@ honeypot_threatmap:
   canaries:
     enabled: true
 
-    burned: []          # start empty; promote from active_migration as each cuts over
+    # 2026-11-09: n8n, checkmk, dockge promoted. Each had zero containers and zero
+    # live Traefik routes; their Cloudflare Access gate is lifted by listing them in
+    # cloudflare_access.public_services (bypass app), so a probe reaches the honeypot.
+    burned:
+      - checkmk
+      - dockge
+      - n8n
 
     active_migration:
       - auth            # IdP — must stay reachable; rename requires OIDC issuer update
       - breakglass      # emergency access; rename FIRST, it is the most valuable name leaked
       - charts
       - chat
-      - checkmk
-      - dockge
       - geo
       - grafana
       - litellm
-      - n8n
       - ops
       - otlp
-      - portainer       # already NXDOMAIN — safe to honeypot immediately
+      - portainer       # NXDOMAIN: needs a DNS record before it can work as a canary
       - portal
       - prometheus
       - telegram-bot

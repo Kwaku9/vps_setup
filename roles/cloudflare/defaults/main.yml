@@ -90,6 +90,12 @@ cloudflare_access:
     # via bearer token in router rule (vault.yml: otel_ingest_token), so CF Access
     # must NOT challenge it — bypass app overrides the wildcard admin policy.
     - "otel"
+    # Burned-hostname canaries (honeypot_threatmap.canaries.burned). Their services are
+    # gone and Traefik routes them to the honeypot; the bypass lets a CT-log prober reach it
+    # instead of the Access login page. Keep this list equal to canaries.burned.
+    - "checkmk"
+    - "dockge"
+    - "n8n"
     # telegram-bot: webhook receiver. Auth at the app level via
     # X-Telegram-Bot-Api-Secret-Token header + TELEGRAM_ALLOWED_USER_IDS
     # allowlist. CF Access can't gate this — Telegram has no human OAuth flow.
