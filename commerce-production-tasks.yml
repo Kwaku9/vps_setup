@@ -13,7 +13,7 @@
 - name: Build private AWS SDK worker image
   containers.podman.podman_image:
     name: localhost/aicortex-commerce-production
-    tag: '0.12.0'
+    tag: '0.13.0'
     path: /opt/aicortex-commerce-production/build
     force: '{{ production_build.changed }}'
     build:
@@ -27,7 +27,7 @@
 - name: Run isolated read-only production inventory worker
   containers.podman.podman_container:
     name: commerce-production-worker
-    image: localhost/aicortex-commerce-production:0.12.0
+    image: localhost/aicortex-commerce-production:0.13.0
     pod: commerce-production-pod
     state: started
     restart_policy: unless-stopped

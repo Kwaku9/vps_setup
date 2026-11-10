@@ -1,0 +1,39 @@
+# Additive private control upgrade only. Never rerun whole-backend migration/provision.
+- name: Require completed managed tester cleanup before platform rollout
+  ansible.builtin.assert:
+    that: commerce_platform_testing_stopped | default(false) | bool
+    fail_msg: Managed 0.15.1 is frozen for M2B. Obtain the tester's stopped/cleanup notice before platform deployment.
+- name: Install compatible native helper and guarded recovery tool before schema changes
+  ansible.builtin.copy:
+    src: '{{ item.src }}'
+    dest: '{{ item.dest }}'
+    owner: root
+    group: root
+    mode: '0700'
+  loop:
+    - {src: ../aicortex-commerce/ops/postgres_admin.py, dest: /opt/aicortex-commerce-postgres/bin/postgres_admin.py}
+    - {src: ../aicortex-commerce/ops/postgres_admin.py, dest: /opt/aicortex-commerce-recovery/bin/postgres_admin.py}
+    - {src: ../aicortex-commerce/ops/recovery.py, dest: /opt/aicortex-commerce-recovery/bin/recovery.py}
+  when: commerce_use_postgres
+- name: Read shared control schema version without inventory or credentials
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -c, "import sys; sys.path.insert(0,'/opt/aicortex-commerce-postgres/bin'); from postgres_admin import psql; print(psql('commerce_dev','SELECT version FROM commerce_schema_version;'))"]
+  register: commerce_control_version
+  changed_when: false
+  when: commerce_use_postgres
+- name: Require known additive control schema
+  ansible.builtin.assert:
+    that: commerce_control_version.stdout | trim in ['2', '3']
+  when: commerce_use_postgres
+- name: Verify encrypted pre-upgrade backup and isolated restoration
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, /opt/aicortex-commerce-recovery/bin/recovery.py, backup]
+  when: commerce_use_postgres and commerce_control_version.stdout | trim == '2'
+  register: commerce_pre_control_backup
+  changed_when: true
+- name: Upgrade shared private schema only and deny public reader
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, /opt/aicortex-commerce-postgres/bin/postgres_admin.py, control-upgrade]
+  when: commerce_use_postgres
+  register: commerce_control_upgrade
+  changed_when: (commerce_control_upgrade.stdout | from_json).changed

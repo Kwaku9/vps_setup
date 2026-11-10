@@ -1,0 +1,21 @@
+---
+- name: Remove disposable commerce database fixtures after acceptance
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Drop only the three test databases and two test roles
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, '-']
+        stdin: |
+          import runpy
+          from pathlib import Path
+          psql=runpy.run_path('/opt/aicortex-commerce-postgres/bin/postgres_admin.py')['psql']
+          for name in ('commerce_test_development','commerce_test_production','commerce_test_publications'):
+              psql('postgres','DROP DATABASE IF EXISTS '+name+';')
+          for role in ('commerce_test_rw','commerce_test_ro'):
+              psql('postgres','DROP ROLE IF EXISTS '+role+';')
+          root=Path('/opt/aicortex-commerce-postgres/tests/config')
+          for name in ('development.json','production.json','publications.json','readonly.json','publication-reader.json'):
+              (root/name).unlink(missing_ok=True)
+          print('PASS disposable test databases, roles and credential files removed; active commerce stores untouched')
+      changed_when: false

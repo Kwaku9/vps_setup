@@ -57,13 +57,22 @@
     - {path: /opt/aicortex-commerce-monitoring/telemetry, owner: root, group: root, mode: '0755'}
     - {path: /opt/aicortex-commerce-monitoring/telemetry/admin, owner: '65532', group: '65532', mode: '0750'}
     - {path: /opt/aicortex-commerce-monitoring/telemetry/mcp, owner: '65532', group: '65532', mode: '0750'}
+- name: Create read-only identity verification directory for administration
+  ansible.builtin.file:
+    path: /opt/aicortex-commerce-dev/identity
+    state: directory
+    owner: root
+    group: '65532'
+    mode: '0750'
+- name: Prepare additive private platform schema and verified backup
+  ansible.builtin.include_tasks: commerce-platform-prepare-tasks.yml
 - name: Copy application release
   ansible.builtin.copy:
     src: "../aicortex-commerce/app/{{ item }}"
     dest: "{{ commerce_root }}/app/{{ item }}"
     owner: '65532'
     mode: '0640'
-  loop: [core.py, server.py, index.html, app.js, style.css, RELEASE, connectors.py, sync_worker.py, amazon_sandbox.py, amazon_production.py, production_worker.py, readiness.py, publication.py, operations.py, telemetry.py, portability.py, lifecycle.py, database.py]
+  loop: [core.py, server.py, index.html, app.js, style.css, RELEASE, connectors.py, sync_worker.py, amazon_sandbox.py, amazon_production.py, production_worker.py, readiness.py, publication.py, operations.py, telemetry.py, portability.py, lifecycle.py, database.py, identity.py, onboarding.py, catalog.py, knowledge.py, knowledge_fetch.py, control.py, commercial.py, partners.py, authorization.py, usage.py, platform.js, maintenance.py]
   register: app_files
 - name: Generate private development credential once
   ansible.builtin.shell: "umask 077; printf 'ADMIN_TOKEN=' > {{ commerce_root }}/secret.env; head -c 48 /dev/urandom | base64 | tr -d '\\n' >> {{ commerce_root }}/secret.env; printf '\\n' >> {{ commerce_root }}/secret.env"
@@ -95,7 +104,7 @@
 - name: Start resource-limited development runtime
   containers.podman.podman_container:
     name: commerce-dev
-    image: localhost/aicortex-commerce-runtime:0.12.0
+    image: localhost/aicortex-commerce-runtime:0.13.0
     pod: commerce-dev-pod
     state: started
     restart_policy: unless-stopped
@@ -112,13 +121,16 @@
       BIND: '0.0.0.0'
       DATABASE: "{{ 'pgfile:/run/secrets/development.json' if commerce_use_postgres else '/data/commerce.db' }}"
       FEED_ROOT: /feeds
+      ACCESS_IDENTITY_CONFIG: /identity/cloudflare.json
       TELEMETRY_DATABASE: /telemetry/events.sqlite3
+      ANALYTICS_DATABASE: /merchant-usage/events.sqlite3
       OPERATIONS_STATUS_FILE: /operations/observations.json
       PUBLIC_ORIGIN: 'https://{{ commerce_host }}'
+      MCP_PUBLIC_ORIGIN: 'https://commerce-mcp-dev.{{ domain_name }}'
       PUBLICATION_DATABASE: "{{ ('pgfile:/run/secrets/publications.json' if commerce_use_postgres else '/publications/commerce.db') if (commerce_production_enabled | default(false) | bool) else '' }}"
       PRODUCTION_DATABASE: "{{ ('pgfile:/run/secrets/production.json' if commerce_use_postgres else '/production/commerce.db') if (commerce_production_enabled | default(false) | bool) else '' }}"
       PYTHONDONTWRITEBYTECODE: '1'
-    volumes: "{{ [commerce_root + '/app:/app:ro', commerce_root + '/data/feeds:/feeds:rw', '/opt/aicortex-commerce-monitoring/telemetry/admin:/telemetry:rw', '/opt/aicortex-commerce-monitoring/status:/operations:ro', commerce_root + '/amazon-sandbox.json:/run/secrets/amazon-sandbox.json:ro'] + (['/opt/aicortex-commerce-postgres/clients/commerce_dev_rw.json:/run/secrets/development.json:ro', '/opt/aicortex-commerce-postgres/clients/commerce_prod_rw.json:/run/secrets/production.json:ro', '/opt/aicortex-commerce-postgres/clients/commerce_pub_rw.json:/run/secrets/publications.json:ro'] if commerce_use_postgres else [commerce_data_root + ':/data:rw'] + ([commerce_private_root + ':/production:rw', commerce_publications_root + ':/publications:rw'] if (commerce_production_enabled | default(false) | bool) else [])) }}"
+    volumes: "{{ [commerce_root + '/app:/app:ro', commerce_root + '/data/feeds:/feeds:rw', '/opt/aicortex-commerce-monitoring/telemetry/admin:/telemetry:rw', '/opt/aicortex-commerce-monitoring/telemetry/mcp:/merchant-usage:ro', '/opt/aicortex-commerce-monitoring/status:/operations:ro', '/opt/aicortex-commerce-dev/identity:/identity:ro', commerce_root + '/amazon-sandbox.json:/run/secrets/amazon-sandbox.json:ro'] + (['/opt/aicortex-commerce-postgres/clients/commerce_dev_rw.json:/run/secrets/development.json:ro', '/opt/aicortex-commerce-postgres/clients/commerce_prod_rw.json:/run/secrets/production.json:ro', '/opt/aicortex-commerce-postgres/clients/commerce_pub_rw.json:/run/secrets/publications.json:ro'] if commerce_use_postgres else [commerce_data_root + ':/data:rw'] + ([commerce_private_root + ':/production:rw', commerce_publications_root + ':/publications:rw'] if (commerce_production_enabled | default(false) | bool) else [])) }}"
     command: [python, /app/server.py]
 - name: Verify runtime health inside container
   ansible.builtin.command: podman exec commerce-dev python -c "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8788/health').status == 200"
@@ -182,7 +194,7 @@
 - name: Run bounded native catalog sync worker without operator credential
   containers.podman.podman_container:
     name: commerce-sync-dev
-    image: localhost/aicortex-commerce-runtime:0.12.0
+    image: localhost/aicortex-commerce-runtime:0.13.0
     pod: commerce-dev-pod
     state: started
     restart_policy: unless-stopped
@@ -204,3 +216,5 @@
 - name: Deploy private production FBA pilot when enabled
   ansible.builtin.include_tasks: commerce-production-tasks.yml
   when: commerce_production_enabled | default(false) | bool
+- name: Schedule bounded demo and aggregate retention
+  ansible.builtin.include_tasks: commerce-maintenance-tasks.yml

@@ -3,7 +3,7 @@
 - name: Start shopper-only listener without operator credential
   containers.podman.podman_container:
     name: commerce-mcp-dev
-    image: localhost/aicortex-commerce-runtime:0.12.0
+    image: localhost/aicortex-commerce-runtime:0.13.0
     pod: commerce-dev-pod
     state: started
     restart_policy: unless-stopped

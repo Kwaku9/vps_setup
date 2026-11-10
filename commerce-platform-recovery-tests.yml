@@ -1,0 +1,30 @@
+---
+- name: Verify native platform recovery using newly created synthetic databases only
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Prepare private rehearsal code without replacing installed runtime tools
+      ansible.builtin.file:
+        path: /opt/aicortex-commerce-postgres/platform-rehearsal
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+    - name: Stage recovery and helpers in private rehearsal directory only
+      ansible.builtin.copy:
+        src: '{{ item }}'
+        dest: '/opt/aicortex-commerce-postgres/platform-rehearsal/{{ item | basename }}'
+        owner: root
+        group: root
+        mode: '0700'
+      loop:
+        - ../aicortex-commerce/ops/platform_recovery_rehearsal.py
+        - ../aicortex-commerce/ops/postgres_admin.py
+        - ../aicortex-commerce/ops/recovery.py
+    - name: Reconcile native dumps and sanitize isolated restore without live database reads
+      ansible.builtin.command: /usr/bin/python3 /opt/aicortex-commerce-postgres/platform-rehearsal/platform_recovery_rehearsal.py
+      register: platform_recovery
+      changed_when: false
+    - name: Report only synthetic recovery assertions
+      ansible.builtin.debug:
+        msg: '{{ platform_recovery.stdout | from_json }}'

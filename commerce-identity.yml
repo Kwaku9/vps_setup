@@ -1,0 +1,52 @@
+---
+- name: Enable explicit named grants using the existing Access application
+  hosts: alpine_servers
+  gather_facts: false
+  vars:
+    commerce_identity_metadata: "{{ lookup('file', '../aicortex-commerce/.identity-metadata.json') | from_json }}"
+    commerce_identity_audience: "{{ commerce_identity_metadata.audiences.get('commerce-dev.aicortex.cloud', commerce_identity_metadata.audiences.get('*.aicortex.cloud', '')) }}"
+  tasks:
+    - name: Require the already protected administration application
+      ansible.builtin.assert:
+        that:
+          - commerce_identity_metadata.issuer is match('^https://[a-z0-9-]+[.]cloudflareaccess[.]com$')
+          - commerce_identity_audience | length > 0
+    - name: Create admin-only public verification directory
+      ansible.builtin.file:
+        path: /opt/aicortex-commerce-dev/identity
+        state: directory
+        owner: root
+        group: '65532'
+        mode: '0750'
+    - name: Pin public issuer and audience without changing login policies
+      ansible.builtin.copy:
+        dest: /opt/aicortex-commerce-dev/identity/issuer.json
+        content: "{{ {'issuer': commerce_identity_metadata.issuer, 'audience': commerce_identity_audience} | to_nice_json }}"
+        owner: root
+        group: root
+        mode: '0600'
+    - name: Install bounded public signing-key refresher
+      ansible.builtin.copy:
+        src: ../aicortex-commerce/ops/refresh_identity.py
+        dest: /opt/aicortex-commerce-dev/identity/refresh_identity.py
+        owner: root
+        group: root
+        mode: '0700'
+    - name: Fetch public signing keys from pinned issuer
+      ansible.builtin.command: /usr/bin/python3 /opt/aicortex-commerce-dev/identity/refresh_identity.py
+      changed_when: false
+    - name: Prepare private refresh log
+      ansible.builtin.file:
+        path: /var/log/aicortex-commerce-identity.log
+        state: touch
+        owner: root
+        group: root
+        mode: '0600'
+        modification_time: preserve
+        access_time: preserve
+    - name: Refresh public signing keys every five minutes
+      ansible.builtin.cron:
+        name: AICORTEX commerce Access public signing key refresh
+        user: root
+        minute: '*/5'
+        job: '/usr/bin/python3 /opt/aicortex-commerce-dev/identity/refresh_identity.py >> /var/log/aicortex-commerce-identity.log 2>&1'
