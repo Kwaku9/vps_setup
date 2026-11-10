@@ -109,28 +109,27 @@
   changed_when: false
   failed_when: false
   when: commerce_dev_infra.rc == 0
-- name: Gracefully stop development pod before moving its network namespace
+- name: Attach development pod to its isolated zone network at the fixed address
   ansible.builtin.command:
-    argv: [podman, pod, stop, --time, '90', commerce-dev-pod]
+    argv: [podman, network, connect, --ip, '{{ netseg_pods["commerce-dev-pod"].ip }}', '{{ netseg_pods["commerce-dev-pod"].network[0] }}', '{{ commerce_dev_infra.stdout | trim }}']
   when: commerce_dev_infra.rc == 0 and (netseg_pods['commerce-dev-pod'].ip | string) not in (commerce_dev_networks.stdout | default(''))
-- name: Remove stopped development members before deleting the old pod
-  containers.podman.podman_container:
-    name: '{{ item }}'
-    state: absent
-  loop: [commerce-dev, commerce-mcp-dev, commerce-sync-dev-zone]
-  when: commerce_dev_infra.rc == 0 and (netseg_pods['commerce-dev-pod'].ip | string) not in (commerce_dev_networks.stdout | default(''))
-- name: Remove empty old development pod without force
+- name: Detach development pod from the former flat network
   ansible.builtin.command:
-    argv: [podman, pod, rm, commerce-dev-pod]
-  when: commerce_dev_infra.rc == 0 and (netseg_pods['commerce-dev-pod'].ip | string) not in (commerce_dev_networks.stdout | default(''))
-- name: Create or move commerce pod without host ports
+    argv: [podman, network, disconnect, enterprise_network, '{{ commerce_dev_infra.stdout | trim }}']
+  when: commerce_dev_infra.rc == 0 and 'enterprise_network' in (commerce_dev_networks.stdout | default(''))
+- name: Create commerce pod on its isolated zone network when absent
   containers.podman.podman_pod:
     name: commerce-dev-pod
     network: "{{ netseg_pods['commerce-dev-pod'].network }}"
     ip: "{{ netseg_pods['commerce-dev-pod'].ip | default(omit, true) }}"
     state: started
-    recreate: false
+  when: commerce_dev_infra.rc != 0
   register: commerce_dev_pod
+- name: Read development pod identity after optional creation
+  ansible.builtin.command:
+    argv: [podman, pod, inspect, --format, "{{ '{{.Id}}' }}", commerce-dev-pod]
+  register: commerce_dev_pod_id
+  changed_when: false
 - name: Read commerce development container pod membership
   containers.podman.podman_container_info:
     name: commerce-dev
@@ -143,7 +142,7 @@
     state: started
     restart_policy: unless-stopped
     stop_timeout: 90
-    recreate: '{{ app_files.changed or commerce_dev_pod.changed or (commerce_dev_info.containers | length > 0 and (commerce_dev_info.containers[0].Pod | default("")) != (commerce_dev_pod.pod.Id | default(""))) or (commerce_force_recreate | default(false) | bool) }}'
+    recreate: '{{ app_files.changed or (commerce_dev_info.containers | length > 0 and (commerce_dev_info.containers[0].Pod | default("")) != (commerce_dev_pod_id.stdout | trim)) or (commerce_force_recreate | default(false) | bool) }}'
     user: '65532:65532'
     read_only: true
     cap_drop: [ALL]

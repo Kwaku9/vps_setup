@@ -32,27 +32,27 @@
   changed_when: false
   failed_when: false
   when: commerce_prod_infra.rc == 0
-- name: Gracefully stop production pod before moving its network namespace
+- name: Attach production pod to its isolated zone network at the fixed address
   ansible.builtin.command:
-    argv: [podman, pod, stop, --time, '90', commerce-production-pod]
+    argv: [podman, network, connect, --ip, '{{ netseg_pods["commerce-production-pod"].ip }}', '{{ netseg_pods["commerce-production-pod"].network[0] }}', '{{ commerce_prod_infra.stdout | trim }}']
   when: commerce_prod_infra.rc == 0 and (netseg_pods['commerce-production-pod'].ip | string) not in (commerce_prod_networks.stdout | default(''))
-- name: Remove stopped production worker before deleting the old pod
-  containers.podman.podman_container:
-    name: commerce-production-worker
-    state: absent
-  when: commerce_prod_infra.rc == 0 and (netseg_pods['commerce-production-pod'].ip | string) not in (commerce_prod_networks.stdout | default(''))
-- name: Remove empty old production pod without force
+- name: Detach production pod from the former flat network
   ansible.builtin.command:
-    argv: [podman, pod, rm, commerce-production-pod]
-  when: commerce_prod_infra.rc == 0 and (netseg_pods['commerce-production-pod'].ip | string) not in (commerce_prod_networks.stdout | default(''))
-- name: Create or move private production worker pod without host ports
+    argv: [podman, network, disconnect, enterprise_network, '{{ commerce_prod_infra.stdout | trim }}']
+  when: commerce_prod_infra.rc == 0 and 'enterprise_network' in (commerce_prod_networks.stdout | default(''))
+- name: Create private production pod on its isolated zone network when absent
   containers.podman.podman_pod:
     name: commerce-production-pod
     network: "{{ netseg_pods['commerce-production-pod'].network }}"
     ip: "{{ netseg_pods['commerce-production-pod'].ip | default(omit, true) }}"
     state: started
-    recreate: false
+  when: commerce_prod_infra.rc != 0
   register: commerce_prod_pod
+- name: Read production pod identity after optional creation
+  ansible.builtin.command:
+    argv: [podman, pod, inspect, --format, "{{ '{{.Id}}' }}", commerce-production-pod]
+  register: commerce_prod_pod_id
+  changed_when: false
 - name: Read production worker pod membership
   containers.podman.podman_container_info:
     name: commerce-production-worker
@@ -65,7 +65,7 @@
     state: started
     restart_policy: unless-stopped
     stop_timeout: 90
-    recreate: '{{ app_files.changed or production_build.changed or commerce_prod_pod.changed or (commerce_prod_info.containers | length > 0 and (commerce_prod_info.containers[0].Pod | default("")) != (commerce_prod_pod.pod.Id | default(""))) or (commerce_force_recreate | default(false) | bool) }}'
+    recreate: '{{ app_files.changed or production_build.changed or (commerce_prod_info.containers | length > 0 and (commerce_prod_info.containers[0].Pod | default("")) != (commerce_prod_pod_id.stdout | trim)) or (commerce_force_recreate | default(false) | bool) }}'
     user: '65532:65532'
     read_only: true
     cap_drop: [ALL]

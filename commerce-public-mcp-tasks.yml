@@ -12,7 +12,7 @@
     state: started
     restart_policy: unless-stopped
     stop_timeout: 90
-    recreate: '{{ app_files.changed or commerce_dev_pod.changed or (commerce_mcp_info.containers | length > 0 and (commerce_mcp_info.containers[0].Pod | default("")) != (commerce_dev_pod.pod.Id | default(""))) or (commerce_force_recreate | default(false) | bool) }}'
+    recreate: '{{ app_files.changed or (commerce_mcp_info.containers | length > 0 and (commerce_mcp_info.containers[0].Pod | default("")) != (commerce_dev_pod_id.stdout | trim)) or (commerce_force_recreate | default(false) | bool) }}'
     user: '65532:65532'
     read_only: true
     cap_drop: [ALL]
