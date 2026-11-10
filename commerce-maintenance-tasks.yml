@@ -1,0 +1,31 @@
+- name: Prepare private retention log without truncating earlier results
+  ansible.builtin.file:
+    path: /var/log/aicortex-commerce-maintenance.log
+    state: touch
+    owner: root
+    group: root
+    mode: '0600'
+    modification_time: preserve
+    access_time: preserve
+- name: Schedule isolated expired demo retention
+  ansible.builtin.cron:
+    name: AICORTEX commerce expired synthetic demo retention
+    user: root
+    minute: '31'
+    job: 'PATH=/usr/local/bin:/usr/bin:/bin podman exec -w /app commerce-dev python /app/maintenance.py demos >> /var/log/aicortex-commerce-maintenance.log 2>&1'
+- name: Schedule inactive merchant aggregate retention
+  ansible.builtin.cron:
+    name: AICORTEX commerce MCP aggregate retention
+    user: root
+    minute: '41'
+    job: 'PATH=/usr/local/bin:/usr/bin:/bin podman exec -w /app commerce-mcp-dev python /app/maintenance.py usage >> /var/log/aicortex-commerce-maintenance.log 2>&1'
+  when: commerce_public_mcp_enabled | default(false) | bool
+- name: Verify scoped retention task in protected administration
+  ansible.builtin.command:
+    argv: [podman, exec, -w, /app, commerce-dev, python, /app/maintenance.py, demos]
+  changed_when: false
+- name: Verify scoped aggregate retention task
+  ansible.builtin.command:
+    argv: [podman, exec, -w, /app, commerce-mcp-dev, python, /app/maintenance.py, usage]
+  when: commerce_public_mcp_enabled | default(false) | bool
+  changed_when: false

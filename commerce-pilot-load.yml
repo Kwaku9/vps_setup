@@ -1,0 +1,20 @@
+---
+- name: Measure bounded commerce pilot load using isolated fixtures only
+  hosts: alpine_servers
+  gather_facts: false
+  tasks:
+    - name: Stage bounded pilot load harness
+      ansible.builtin.copy:
+        src: ../aicortex-commerce/tests/load_pilot.py
+        dest: /opt/aicortex-commerce-postgres/tests/tests/load_pilot.py
+        owner: '65532'
+        mode: '0644'
+    - name: Run pilot read-only listener and load on disposable PostgreSQL only
+      ansible.builtin.command:
+        argv: [podman, run, --rm, --network, enterprise_network, --memory, 192m, --pids-limit, '64', --user, '65532:65532', --read-only, --cap-drop, ALL, --security-opt, no-new-privileges, -v, '/opt/aicortex-commerce-postgres/tests/app:/app:ro', -v, '/opt/aicortex-commerce-postgres/tests/tests:/tests:ro', -v, '/opt/aicortex-commerce-postgres/tests/config:/test-config:ro', localhost/aicortex-commerce-runtime:0.13.0, python, /tests/load_pilot.py]
+      register: pilot_load
+      changed_when: false
+      failed_when: pilot_load.rc not in [0, 3]
+    - name: Report bounded measurements without fixture data or credentials
+      ansible.builtin.debug:
+        msg: '{{ pilot_load.stdout | from_json }}'

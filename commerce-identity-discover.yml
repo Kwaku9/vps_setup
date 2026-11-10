@@ -1,0 +1,28 @@
+---
+- name: Discover existing Cloudflare identity metadata without changing access policies
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files: [all.yml, vault.yml]
+  tasks:
+    - name: Read Access organization
+      ansible.builtin.uri:
+        url: 'https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/organizations'
+        headers: {Authorization: 'Bearer {{ cloudflare_api_token }}'}
+      register: identity_org
+      no_log: true
+    - name: Read existing Access applications
+      ansible.builtin.uri:
+        url: 'https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps'
+        headers: {Authorization: 'Bearer {{ cloudflare_api_token }}'}
+      register: identity_apps
+      no_log: true
+    - name: Save public issuer and protected application audience only
+      ansible.builtin.copy:
+        dest: ../aicortex-commerce/.identity-metadata.json
+        mode: '0600'
+        content: "{{ {'issuer':'https://' + identity_org.json.result.auth_domain,'applications': identity_apps.json.result | map(attribute='domain') | list,'audiences': identity_apps.json.result | items2dict(key_name='domain', value_name='aud')} | to_nice_json }}"
+      no_log: true
+    - name: Confirm discovery contains no user credential
+      ansible.builtin.debug:
+        msg: Existing Access issuer and application audiences discovered; policies unchanged.

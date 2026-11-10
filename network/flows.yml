@@ -73,8 +73,6 @@ flows:
   - {from: edge, from_pod: security-infra-pod, to: commerce-dev, to_pod: commerce-dev-pod, ports: [8788, 8789], reason: "commerce-dev web (8788) and commerce-mcp-dev (8789); only the edge pod may connect"}
   - {from: commerce-dev, to: data, to_pod: shared-db-pod, ports: [5432], reason: "commerce dev schemas"}
   - {from: commerce-dev, to: internet, ports: [443], reason: "marketplace APIs and feeds (via Squid)"}
-  - {from: commerce-dev, to: agent, to_pod: gateway-pod, ports: [7555], reason: "Telegram notifications via telegram-gateway"}
-  - {from: commerce-dev, to: observe, to_pod: metrics-pod, ports: [8880], reason: "operations page reads vmalert"}
   - {from: commerce-prod, to: data, to_pod: shared-db-pod, ports: [5432], reason: "commerce production schema (commerce_prod_rw)"}
   - {from: commerce-prod, to: internet, ports: [443], reason: "marketplace APIs (via Squid)"}
 

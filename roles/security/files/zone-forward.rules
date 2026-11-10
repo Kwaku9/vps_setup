@@ -138,8 +138,6 @@ iptables -A ZONE_FWD -s 10.89.128.168/29 -p tcp --dport 443 -m comment --comment
 iptables -A ZONE_FWD -s 10.89.128.10/32 -d 10.89.128.178/32 -p tcp -m multiport --dports 8788,8789 -m comment --comment "security-infra-pod>commerce-dev-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.176/29 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "commerce-dev>shared-db-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.176/29 -p tcp --dport 443 -m comment --comment "commerce-dev>internet" -j ZONE_PUBLIC
-iptables -A ZONE_FWD -s 10.89.128.176/29 -d 10.89.128.114/32 -p tcp --dport 7555 -m comment --comment "commerce-dev>gateway-pod" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.176/29 -d 10.89.128.98/32 -p tcp --dport 8880 -m comment --comment "commerce-dev>metrics-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.184/29 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "commerce-prod>shared-db-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.184/29 -p tcp --dport 443 -m comment --comment "commerce-prod>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.128/28 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "fintech>shared-db-pod" -j ACCEPT

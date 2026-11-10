@@ -26,13 +26,20 @@
       loop:
         - {src: ../aicortex-commerce/tests/postgres_suite.py, name: postgres_suite.py}
         - {src: ../aicortex-commerce/tests/test_core.py, name: test_core.py}
+        - {src: ../aicortex-commerce/tests/test_catalog.py, name: test_catalog.py}
+        - {src: ../aicortex-commerce/tests/test_platform.py, name: test_platform.py}
+        - {src: ../aicortex-commerce/tests/test_platform_http.py, name: test_platform_http.py}
+        - {src: ../aicortex-commerce/tests/test_query_scale.py, name: test_query_scale.py}
+        - {src: ../aicortex-commerce/tests/test_knowledge.py, name: test_knowledge.py}
+        - {src: ../aicortex-commerce/tests/test_identity_onboarding.py, name: test_identity_onboarding.py}
         - {src: ../aicortex-commerce/ops/postgres_test_setup.py, name: setup.py}
+        - {src: ../aicortex-commerce/ops/postgres_admin.py, name: postgres_admin.py}
     - name: Create disposable database fixtures and verify actual production role boundaries
       ansible.builtin.command: /usr/bin/python3 /opt/aicortex-commerce-postgres/tests/tests/setup.py
       changed_when: false
     - name: Test real PostgreSQL isolation, concurrent updates, leases and revocation
       ansible.builtin.command:
-        argv: [podman, run, --rm, --network, enterprise_network, --memory, 192m, --pids-limit, '64', --user, '65532:65532', --read-only, --cap-drop, ALL, --security-opt, no-new-privileges, -v, '/opt/aicortex-commerce-postgres/tests/app:/app:ro', -v, '/opt/aicortex-commerce-postgres/tests/tests:/tests:ro', -v, '/opt/aicortex-commerce-postgres/tests/config:/test-config:ro', localhost/aicortex-commerce-runtime:0.12.0, python, /tests/postgres_suite.py, -v]
+        argv: [podman, run, --rm, --network, enterprise_network, --memory, 192m, --pids-limit, '64', --user, '65532:65532', --read-only, --cap-drop, ALL, --security-opt, no-new-privileges, -v, '/opt/aicortex-commerce-postgres/tests/app:/app:ro', -v, '/opt/aicortex-commerce-postgres/tests/tests:/tests:ro', -v, '/opt/aicortex-commerce-postgres/tests/config:/test-config:ro', localhost/aicortex-commerce-runtime:0.13.0, python, /tests/postgres_suite.py, -v]
       changed_when: false
       register: postgres_acceptance
     - name: Report PostgreSQL acceptance outcomes

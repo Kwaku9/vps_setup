@@ -13,26 +13,59 @@
 - name: Build private AWS SDK worker image
   containers.podman.podman_image:
     name: localhost/aicortex-commerce-production
-    tag: '0.12.0'
+    tag: '0.13.0'
     path: /opt/aicortex-commerce-production/build
     force: '{{ production_build.changed }}'
     build:
       file: Containerfile
       extra_args: --network=enterprise_network
-- name: Create private production worker pod without host ports
+- name: Inspect current production pod before a possible network move
+  ansible.builtin.command:
+    argv: [podman, pod, inspect, --format, "{{ '{{.InfraContainerID}}' }}", commerce-production-pod]
+  register: commerce_prod_infra
+  changed_when: false
+  failed_when: false
+- name: Read current commerce production pod addresses
+  ansible.builtin.command:
+    argv: [podman, inspect, --format, "{{ '{{json .NetworkSettings.Networks}}' }}", '{{ commerce_prod_infra.stdout | trim }}']
+  register: commerce_prod_networks
+  changed_when: false
+  failed_when: false
+  when: commerce_prod_infra.rc == 0
+- name: Attach production pod to its isolated zone network at the fixed address
+  ansible.builtin.command:
+    argv: [podman, network, connect, --ip, '{{ netseg_pods["commerce-production-pod"].ip }}', '{{ netseg_pods["commerce-production-pod"].network[0] }}', '{{ commerce_prod_infra.stdout | trim }}']
+  when: commerce_prod_infra.rc == 0 and (netseg_pods['commerce-production-pod'].ip | string) not in (commerce_prod_networks.stdout | default(''))
+- name: Detach production pod from the former flat network
+  ansible.builtin.command:
+    argv: [podman, network, disconnect, enterprise_network, '{{ commerce_prod_infra.stdout | trim }}']
+  when: commerce_prod_infra.rc == 0 and 'enterprise_network' in (commerce_prod_networks.stdout | default(''))
+- name: Create private production pod on its isolated zone network when absent
   containers.podman.podman_pod:
     name: commerce-production-pod
-    network: enterprise_network
+    network: "{{ netseg_pods['commerce-production-pod'].network }}"
+    ip: "{{ netseg_pods['commerce-production-pod'].ip | default(omit, true) }}"
     state: started
+  when: commerce_prod_infra.rc != 0
+  register: commerce_prod_pod
+- name: Read production pod identity after optional creation
+  ansible.builtin.command:
+    argv: [podman, pod, inspect, --format, "{{ '{{.Id}}' }}", commerce-production-pod]
+  register: commerce_prod_pod_id
+  changed_when: false
+- name: Read production worker pod membership
+  containers.podman.podman_container_info:
+    name: commerce-production-worker
+  register: commerce_prod_info
 - name: Run isolated read-only production inventory worker
   containers.podman.podman_container:
     name: commerce-production-worker
-    image: localhost/aicortex-commerce-production:0.12.0
+    image: localhost/aicortex-commerce-production:0.13.0
     pod: commerce-production-pod
     state: started
     restart_policy: unless-stopped
     stop_timeout: 90
-    recreate: '{{ app_files.changed or production_build.changed or (commerce_force_recreate | default(false) | bool) }}'
+    recreate: '{{ app_files.changed or production_build.changed or (commerce_prod_info.containers | length > 0 and (commerce_prod_info.containers[0].Pod | default("")) != (commerce_prod_pod_id.stdout | trim)) or (commerce_force_recreate | default(false) | bool) }}'
     user: '65532:65532'
     read_only: true
     cap_drop: [ALL]
