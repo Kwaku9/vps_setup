@@ -142,6 +142,16 @@ cloudflare_access:
     host: "portal"
     path: "request"
     groups: ["free_users", "paid_users", "students", "admins"]
+  # Commerce merchants: commerce-dev.<domain> (AICORTEX Commerce administration)
+  # gets its own Access app, more specific than the admins-only wildcard, so a
+  # merchant owner can sign in without joining `admins`. Admits the Authentik
+  # group below OR admins, plus the admin e-mail OTP break-glass. Membership is
+  # granted by an admin only (never by sign-up); Commerce still requires its own
+  # per-email invitation. commerce-mcp-dev (public read-only MCP) is NOT covered.
+  commerce_merchants:
+    enabled: true
+    host: "commerce-dev"
+    group: "commerce_merchants"
   ssh_browser:
     enabled: true
     subdomain: "ssh"
