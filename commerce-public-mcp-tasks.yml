@@ -1,5 +1,9 @@
 ---
 # Prepared for explicit approval. Included only with commerce_public_mcp_enabled=true.
+- name: Read current shopper listener pod membership
+  containers.podman.podman_container_info:
+    name: commerce-mcp-dev
+  register: commerce_mcp_info
 - name: Start shopper-only listener without operator credential
   containers.podman.podman_container:
     name: commerce-mcp-dev
@@ -8,7 +12,7 @@
     state: started
     restart_policy: unless-stopped
     stop_timeout: 90
-    recreate: '{{ app_files.changed or (commerce_force_recreate | default(false) | bool) }}'
+    recreate: '{{ app_files.changed or commerce_dev_pod.changed or (commerce_mcp_info.containers | length > 0 and (commerce_mcp_info.containers[0].Pod | default("")) != (commerce_dev_pod.pod.Id | default(""))) or (commerce_force_recreate | default(false) | bool) }}'
     user: '65532:65532'
     read_only: true
     cap_drop: [ALL]
@@ -47,7 +51,7 @@
           commerce-mcp-dev:
             loadBalancer:
               servers:
-                - url: 'http://commerce-dev-pod:8789'
+                - url: 'http://{{ netseg_pods["commerce-dev-pod"].host }}:8789'
 - name: Query shopper DNS
   ansible.builtin.uri:
     url: 'https://api.cloudflare.com/client/v4/zones/{{ cloudflare_zone_id }}/dns_records?name=commerce-mcp-dev.{{ domain_name }}&type=CNAME'

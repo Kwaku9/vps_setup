@@ -19,11 +19,31 @@
     build:
       file: Containerfile
       extra_args: --network=enterprise_network
-- name: Create private production worker pod without host ports
+- name: Inspect current production pod before a possible network move
+  ansible.builtin.command:
+    argv: [podman, pod, inspect, --format, '{{.InfraContainerID}}', commerce-production-pod]
+  register: commerce_prod_infra
+  changed_when: false
+  failed_when: false
+- name: Read current commerce production pod addresses
+  ansible.builtin.command:
+    argv: [podman, inspect, --format, '{{json .NetworkSettings.Networks}}', '{{ commerce_prod_infra.stdout | trim }}']
+  register: commerce_prod_networks
+  changed_when: false
+  failed_when: false
+  when: commerce_prod_infra.rc == 0
+- name: Create or move private production worker pod without host ports
   containers.podman.podman_pod:
     name: commerce-production-pod
-    network: enterprise_network
+    network: "{{ netseg_pods['commerce-production-pod'].network }}"
+    ip: "{{ netseg_pods['commerce-production-pod'].ip | default(omit, true) }}"
     state: started
+    recreate: "{{ commerce_prod_infra.rc != 0 or (netseg_pods['commerce-production-pod'].ip | string) not in (commerce_prod_networks.stdout | default('')) }}"
+  register: commerce_prod_pod
+- name: Read production worker pod membership
+  containers.podman.podman_container_info:
+    name: commerce-production-worker
+  register: commerce_prod_info
 - name: Run isolated read-only production inventory worker
   containers.podman.podman_container:
     name: commerce-production-worker
@@ -32,7 +52,7 @@
     state: started
     restart_policy: unless-stopped
     stop_timeout: 90
-    recreate: '{{ app_files.changed or production_build.changed or (commerce_force_recreate | default(false) | bool) }}'
+    recreate: '{{ app_files.changed or production_build.changed or commerce_prod_pod.changed or (commerce_prod_info.containers | length > 0 and (commerce_prod_info.containers[0].Pod | default("")) != (commerce_prod_pod.pod.Id | default(""))) or (commerce_force_recreate | default(false) | bool) }}'
     user: '65532:65532'
     read_only: true
     cap_drop: [ALL]
