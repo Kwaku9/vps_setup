@@ -98,13 +98,13 @@
   when: commerce_production_enabled | default(false) | bool
 - name: Inspect current commerce development pod before a possible network move
   ansible.builtin.command:
-    argv: [podman, pod, inspect, --format, '{{.InfraContainerID}}', commerce-dev-pod]
+    argv: [podman, pod, inspect, --format, "{{ '{{.InfraContainerID}}' }}", commerce-dev-pod]
   register: commerce_dev_infra
   changed_when: false
   failed_when: false
 - name: Read current commerce development pod addresses
   ansible.builtin.command:
-    argv: [podman, inspect, --format, '{{json .NetworkSettings.Networks}}', '{{ commerce_dev_infra.stdout | trim }}']
+    argv: [podman, inspect, --format, "{{ '{{json .NetworkSettings.Networks}}' }}", '{{ commerce_dev_infra.stdout | trim }}']
   register: commerce_dev_networks
   changed_when: false
   failed_when: false

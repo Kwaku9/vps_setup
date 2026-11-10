@@ -21,13 +21,13 @@
       extra_args: --network=enterprise_network
 - name: Inspect current production pod before a possible network move
   ansible.builtin.command:
-    argv: [podman, pod, inspect, --format, '{{.InfraContainerID}}', commerce-production-pod]
+    argv: [podman, pod, inspect, --format, "{{ '{{.InfraContainerID}}' }}", commerce-production-pod]
   register: commerce_prod_infra
   changed_when: false
   failed_when: false
 - name: Read current commerce production pod addresses
   ansible.builtin.command:
-    argv: [podman, inspect, --format, '{{json .NetworkSettings.Networks}}', '{{ commerce_prod_infra.stdout | trim }}']
+    argv: [podman, inspect, --format, "{{ '{{json .NetworkSettings.Networks}}' }}", '{{ commerce_prod_infra.stdout | trim }}']
   register: commerce_prod_networks
   changed_when: false
   failed_when: false
