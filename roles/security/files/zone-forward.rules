@@ -110,7 +110,6 @@ iptables -A ZONE_FWD -s 10.89.128.8/29 -d 10.89.128.99/32 -p tcp --dport 4318 -m
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.48/28 -p tcp -m multiport --dports 4000,8080 -m comment --comment "frontend>svc" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.35/32 -d 10.89.128.50/32 -p tcp -m multiport --dports 8880,8888 -m comment --comment "openwebui-pod>ai-gateway-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "frontend>shared-db-pod" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.80/28 -p tcp --dport 9000 -m comment --comment "frontend>identity" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.114/32 -p tcp --dport 7557 -m comment --comment "frontend>gateway-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.35/32 -d 10.89.128.99/32 -p tcp --dport 4317 -m comment --comment "openwebui-pod>logs-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.32/28 -p tcp --dport 443 -m comment --comment "frontend>internet" -j ZONE_PUBLIC
@@ -130,7 +129,7 @@ iptables -A ZONE_FWD -s 10.89.128.114/32 -d 10.89.128.99/32 -p tcp --dport 4318 
 iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "mgmt>shared-db-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.68/32 -p tcp --dport 7687 -m comment --comment "mgmt>neo4j-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.50/32 -p tcp --dport 4000 -m comment --comment "mgmt>ai-gateway-pod" -j ACCEPT
-iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.80/28 -p tcp --dport 9000 -m comment --comment "mgmt>identity" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.162/32 -d 10.89.128.82/32 -p tcp --dport 9000 -m comment --comment "management-pod>authentication-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.160/29 -p tcp --dport 443 -m comment --comment "mgmt>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.160/29 -d 100.64.0.0/10 -p tcp --dport 22 -m comment --comment "mgmt>tailnet" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.162/32 -d 10.89.128.98/32 -p tcp --dport 8880 -m comment --comment "management-pod>metrics-pod" -j ACCEPT

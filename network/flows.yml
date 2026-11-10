@@ -33,7 +33,6 @@ flows:
   - {from: frontend, to: svc, ports: [4000, 8080], reason: "Open WebUI to LiteLLM and SearXNG", unverified: true}
   - {from: frontend, from_pod: openwebui-pod, to: svc, to_pod: ai-gateway-pod, ports: [8880, 8888], reason: "Open WebUI to Kokoro TTS and SearXNG (were pod loopback until the ai-stack split)"}
   - {from: frontend, to: data, to_pod: shared-db-pod, ports: [5432], reason: "apps to their schemas"}
-  - {from: frontend, to: identity, ports: [9000], reason: "OIDC back-channel", unverified: true}
   - {from: frontend, to: agent, to_pod: gateway-pod, ports: [7557], reason: "OWUI CC Sessions pipe to owui-coder"}
   - {from: frontend, from_pod: openwebui-pod, to: observe, to_pod: logs-pod, ports: [4317], reason: "Open WebUI OTLP (gRPC) to Alloy"}
   - {from: frontend, to: internet, ports: [443], reason: "Open WebUI and frontend outbound fetches (via Squid)"}
@@ -61,7 +60,7 @@ flows:
   - {from: mgmt, to: data, to_pod: shared-db-pod, ports: [5432], reason: "sessions and gateway.approvals"}
   - {from: mgmt, to: data, to_pod: neo4j-pod, ports: [7687], reason: "Neo4j"}
   - {from: mgmt, to: svc, to_pod: ai-gateway-pod, ports: [4000], reason: "LiteLLM"}
-  - {from: mgmt, to: identity, ports: [9000], reason: "OIDC back-channel", unverified: true}
+  - {from: mgmt, from_pod: management-pod, to: identity, to_pod: authentication-pod, ports: [9000], reason: "ops-dashboard: Authentik API (Students page) + OIDC token/userinfo (capture 2026-11)"}
   - {from: mgmt, to: internet, ports: [443], reason: "CF Access certs and OIDC (via Squid)", unverified: true}
   - {from: mgmt, to: tailnet, ports: [22], reason: "workstation SSH over the tailnet", unverified: true}
   - {from: mgmt, from_pod: management-pod, to: observe, to_pod: metrics-pod, ports: [8880], reason: "ops-dashboard triage reads vmalert (VMALERT_URL)"}

@@ -34,8 +34,10 @@ ingress:
     container_name: traefik
     pod_name: security-infra-pod
     network_alias: traefik
-    # A name Traefik routes to; the canary restarts Traefik when aardvark-dns lost its registration.
-    dns_canary: authentication-pod
+    # A name Traefik routes to; the canary restarts Traefik when aardvark-dns lost its registration. It must come from
+    # the zone lookup: a bare name stops resolving from Traefik the moment its pod moves zones (identity, 2026-11-10),
+    # and then every deploy would restart the ingress. openwebui-pod is bare until frontend moves, .zone after.
+    dns_canary: "{{ netseg_pods['openwebui-pod'].host }}"
   crowdsec:
     container_name: crowdsec
     pod_name: security-infra-pod
