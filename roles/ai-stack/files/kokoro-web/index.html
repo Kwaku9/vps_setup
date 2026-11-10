@@ -49,6 +49,16 @@
   .hint { color: var(--muted); font-size: 0.85rem; }
   .status { min-height: 1.4em; color: var(--muted); }
   .status.error { color: var(--danger); }
+  .progress { display: grid; gap: 6px; }
+  .progress .track { height: 10px; border-radius: 999px; background: #0d151e; border: 1px solid var(--edge); overflow: hidden; }
+  .progress .fill { height: 100%; width: 0%; border-radius: 999px; background-color: var(--accent);
+    background-image: linear-gradient(45deg, rgba(255,255,255,.22) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.22) 50%, rgba(255,255,255,.22) 75%, transparent 75%);
+    background-size: 18px 18px; transition: width 0.25s linear; }
+  .progress .meta { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+  @media (prefers-reduced-motion: no-preference) {
+    .progress .fill { animation: stripes 0.8s linear infinite; }
+    @keyframes stripes { from { background-position: 0 0; } to { background-position: 18px 0; } }
+  }
   .result { display: grid; gap: 10px; }
   audio { width: 100%; }
   a.download { color: var(--accent); font-size: 0.9rem; }
@@ -85,6 +95,12 @@
     <div class="actions">
       <button id="speak" type="button">Speak</button>
       <span class="hint">Ctrl + Enter also speaks.</span>
+    </div>
+    <div class="progress" id="progress" hidden>
+      <div class="track" role="progressbar" id="bar" aria-label="Generating speech" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="fill" id="fill"></div>
+      </div>
+      <div class="meta"><span id="phase"></span><span id="clock"></span></div>
     </div>
     <div class="status" id="status" role="status" aria-live="polite"></div>
   </section>
@@ -162,12 +178,49 @@
     updateCount();
   }
 
+  // Time estimate per engine: seconds = base + perChar * characters. perChar is
+  // learned from this browser's own finished requests (moving average).
+  const PACE = { kokoro: { base: 2, perChar: 0.16 }, piper: { base: 1, perChar: 0.04 } };
+  const pace = (eng) => {
+    const d = PACE[eng] || PACE.kokoro;
+    const saved = Number(store.get(`pace.${eng}`));
+    return { base: d.base, perChar: saved > 0 ? saved : d.perChar };
+  };
+  const learn = (eng, chars, secs) => {
+    const p = pace(eng);
+    const seen = Math.max(0.005, (secs - p.base) / Math.max(chars, 1));
+    store.set(`pace.${eng}`, String(p.perChar * 0.6 + seen * 0.4));
+  };
+  let ticker = null;
+  function startProgress(eng, chars) {
+    const p = pace(eng), est = p.base + p.perChar * chars, t0 = performance.now();
+    const name = (engines[eng] && engines[eng].label || eng).replace(/^.*\((.*)\)$/, "$1");
+    $("progress").hidden = false;
+    const tick = () => {
+      const secs = (performance.now() - t0) / 1000;
+      // Up to 95% on the estimate; past it, creep toward 99% so it never looks frozen.
+      const pct = secs <= est ? 95 * secs / est : 95 + 4 * (1 - Math.exp(-(secs - est) / Math.max(est, 1)));
+      $("fill").style.width = `${pct.toFixed(1)}%`;
+      $("bar").setAttribute("aria-valuenow", String(Math.round(pct)));
+      $("phase").textContent = secs <= est ? `${name} is generating…` : `${name} is still working, longer than usual…`;
+      $("clock").textContent = secs <= est ? `${Math.floor(secs)} s of about ${Math.ceil(est)} s` : `${Math.floor(secs)} s`;
+    };
+    tick(); ticker = setInterval(tick, 250);
+  }
+  function stopProgress(ok) {
+    clearInterval(ticker); ticker = null;
+    if (ok) { $("fill").style.width = "100%"; $("bar").setAttribute("aria-valuenow", "100"); }
+    setTimeout(() => { $("progress").hidden = true; $("fill").style.width = "0%"; }, ok ? 600 : 0);
+  }
+
   async function speak() {
     const t = text.value.trim();
     if (!t) { setStatus("Type some text first.", true); return; }
     if (t.length > maxChars) { setStatus(`That is ${t.length} characters; the limit is ${maxChars}. Split it into parts.`, true); return; }
-    btn.disabled = true; setStatus("Generating speech…");
-    const started = performance.now();
+    btn.disabled = true; btn.textContent = "Generating…"; setStatus("");
+    const started = performance.now(), used = engine;
+    startProgress(used, t.length);
+    let ok = false;
     try {
       const r = await fetch("api/speak", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -185,11 +238,14 @@
       const dl = $("download"); dl.href = lastUrl; dl.download = `${engine}-${voice.value}.wav`;
       $("result").hidden = false;
       $("player").play().catch(() => {});
-      setStatus(`Ready in ${((performance.now() - started) / 1000).toFixed(1)} s.`);
+      const secs = (performance.now() - started) / 1000;
+      learn(used, t.length, secs); ok = true;
+      setStatus(`Ready in ${secs.toFixed(1)} s.`);
     } catch (e) {
       setStatus(e.message || "Speech failed.", true);
     } finally {
-      btn.disabled = false;
+      stopProgress(ok);
+      btn.disabled = false; btn.textContent = "Speak";
     }
   }
   btn.addEventListener("click", speak);
