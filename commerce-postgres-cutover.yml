@@ -69,11 +69,11 @@
           ansible.builtin.include_tasks: commerce-runtime-tasks.yml
         - name: Confirm all four services are running after storage operation
           ansible.builtin.command:
-            argv: [/usr/bin/python3, -c, "import json,subprocess; rows=json.loads(subprocess.check_output(['podman','inspect','commerce-dev','commerce-mcp-dev','commerce-sync-dev','commerce-production-worker'])); assert all(r['State']['Running'] for r in rows); print('PASS all commerce services running')"]
+            argv: [/usr/bin/python3, -c, "import json,subprocess; rows=json.loads(subprocess.check_output(['podman','inspect','commerce-dev','commerce-mcp-dev','commerce-sync-dev-zone','commerce-production-worker'])); assert all(r['State']['Running'] for r in rows); print('PASS all commerce services running')"]
           changed_when: false
       rescue:
         - name: Freeze any components started during a failed cutover
-          ansible.builtin.command: podman stop --time 90 commerce-sync-dev commerce-production-worker commerce-dev commerce-mcp-dev
+          ansible.builtin.command: podman stop --time 90 commerce-sync-dev-zone commerce-production-worker commerce-dev commerce-mcp-dev
         - name: Inspect last active backend without credentials
           ansible.builtin.stat:
             path: /opt/aicortex-commerce-postgres/active.json

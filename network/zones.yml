@@ -152,7 +152,7 @@ zones:
     single_pod: true
     purpose: commerce dev web app + public MCP; reaches its schemas, the internet, Telegram notify and vmalert
     pods:
-      commerce-dev-pod: {ip: 10.89.128.178, replaces: [commerce-dev, commerce-mcp-dev, commerce-sync-dev]}
+      commerce-dev-pod: {ip: 10.89.128.178, replaces: [commerce-dev, commerce-mcp-dev, commerce-sync-dev, commerce-sync-dev-zone]}
   commerce-prod:
     name: net-commerce-prod
     bridge: br-com-prod

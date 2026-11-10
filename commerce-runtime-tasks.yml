@@ -117,7 +117,7 @@
   containers.podman.podman_container:
     name: '{{ item }}'
     state: absent
-  loop: [commerce-dev, commerce-mcp-dev, commerce-sync-dev]
+  loop: [commerce-dev, commerce-mcp-dev, commerce-sync-dev-zone]
   when: commerce_dev_infra.rc == 0 and (netseg_pods['commerce-dev-pod'].ip | string) not in (commerce_dev_networks.stdout | default(''))
 - name: Remove empty old development pod without force
   ansible.builtin.command:
@@ -227,7 +227,7 @@
 
 - name: Run bounded native catalog sync worker without operator credential
   containers.podman.podman_container:
-    name: commerce-sync-dev
+    name: commerce-sync-dev-zone
     image: localhost/aicortex-commerce-runtime:0.13.0
     pod: commerce-dev-pod
     state: started
