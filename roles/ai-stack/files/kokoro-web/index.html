@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kokoro Voices</title>
+<title>Voices</title>
 <style>
   :root {
     --bg: #0b1118; --panel: #121b25; --edge: #233243; --ink: #e6eef2; --muted: #8fa3b3;
@@ -33,6 +33,15 @@
   .speed { display: flex; align-items: center; gap: 12px; }
   input[type=range] { flex: 1; accent-color: var(--accent); }
   .speed output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
+  .speed.off { opacity: 0.45; }
+  .engines { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; border: 0; padding: 0; margin: 0; }
+  .engines legend { margin-bottom: 6px; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .engine { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--edge);
+            border-radius: 10px; cursor: pointer; background: #0d151e; text-transform: none; letter-spacing: 0;
+            font-size: 0.95rem; color: var(--ink); }
+  .engine:has(input:checked) { border-color: var(--accent); }
+  .engine input { margin-top: 4px; accent-color: var(--accent); }
+  .engine small { display: block; color: var(--muted); font-size: 0.82rem; }
   .actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 10px;
            padding: 11px 22px; font: 600 0.95rem var(--font); cursor: pointer; }
@@ -49,8 +58,8 @@
 <body>
 <main>
   <header>
-    <h1>Kokoro Voices</h1>
-    <p>Type text, choose a voice, listen or download.</p>
+    <h1>Voices</h1>
+    <p>Type text, choose an engine and a voice, listen or download.</p>
   </header>
 
   <section class="panel">
@@ -59,6 +68,7 @@
       <textarea id="text" placeholder="Paste or type what you want read aloud."></textarea>
       <span class="count" id="count"></span>
     </div>
+    <fieldset class="engines" id="engines" hidden><legend>Engine</legend></fieldset>
     <div class="row">
       <div class="field">
         <label for="voice">Voice</label>
@@ -66,7 +76,7 @@
       </div>
       <div class="field">
         <label for="speed">Speed</label>
-        <div class="speed">
+        <div class="speed" id="speedBox">
           <input type="range" id="speed" min="0.5" max="2" step="0.05" value="1">
           <output id="speedOut" for="speed">1.00×</output>
         </div>
@@ -89,7 +99,7 @@
   const $ = (id) => document.getElementById(id);
   const text = $("text"), voice = $("voice"), speed = $("speed"), speedOut = $("speedOut");
   const btn = $("speak"), status = $("status"), count = $("count");
-  let maxChars = 2000, lastUrl = null;
+  let maxChars = 2000, lastUrl = null, engines = {}, engine = "kokoro";
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch {} },
@@ -101,26 +111,52 @@
     count.classList.toggle("over", n > maxChars);
   };
   speed.addEventListener("input", () => { speedOut.textContent = `${Number(speed.value).toFixed(2)}×`; store.set("kokoro.speed", speed.value); });
-  voice.addEventListener("change", () => store.set("kokoro.voice", voice.value));
+  voice.addEventListener("change", () => store.set(`voice.${engine}`, voice.value));
   text.addEventListener("input", updateCount);
   text.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); speak(); } });
+
+  function showEngine(name) {
+    engine = name; store.set("voices.engine", name);
+    const e = engines[name];
+    voice.replaceChildren();
+    for (const [lang, list] of Object.entries(e.groups)) {
+      const g = document.createElement("optgroup"); g.label = lang;
+      for (const v of list) {
+        const o = document.createElement("option");
+        o.value = v.id; o.textContent = v.gender ? `${v.name} (${v.gender})` : v.name;
+        g.appendChild(o);
+      }
+      voice.appendChild(g);
+    }
+    const saved = store.get(`voice.${name}`) || (name === "kokoro" ? store.get("kokoro.voice") : null);
+    voice.value = (saved && [...voice.options].some((o) => o.value === saved)) ? saved : e.default;
+    voice.disabled = voice.options.length < 2;
+    speed.disabled = !e.speed;
+    $("speedBox").classList.toggle("off", !e.speed);
+    speed.title = e.speed ? "" : "This engine speaks at normal speed only.";
+  }
 
   async function loadVoices() {
     const r = await fetch("api/voices");
     if (!r.ok) throw new Error(`Could not load voices (HTTP ${r.status}).`);
     const data = await r.json();
     maxChars = data.max_chars;
-    for (const [lang, list] of Object.entries(data.groups)) {
-      const g = document.createElement("optgroup"); g.label = lang;
-      for (const v of list) {
-        const o = document.createElement("option");
-        o.value = v.id; o.textContent = `${v.name} (${v.gender})`;
-        g.appendChild(o);
-      }
-      voice.appendChild(g);
+    engines = data.engines || { kokoro: { label: "Kokoro", default: data.default, groups: data.groups, speed: true } };
+    const box = $("engines");
+    for (const [name, e] of Object.entries(engines)) {
+      const lab = document.createElement("label"); lab.className = "engine";
+      const input = document.createElement("input");
+      input.type = "radio"; input.name = "engine"; input.value = name;
+      input.addEventListener("change", () => showEngine(name));
+      const text = document.createElement("span"); text.textContent = e.label;
+      const sub = document.createElement("small"); sub.textContent = e.hint || "";
+      text.appendChild(sub); lab.append(input, text); box.appendChild(lab);
     }
-    const saved = store.get("kokoro.voice");
-    voice.value = (saved && [...voice.options].some((o) => o.value === saved)) ? saved : data.default;
+    box.hidden = Object.keys(engines).length < 2;
+    const want = store.get("voices.engine");
+    const start = engines[want] ? want : "kokoro";
+    box.querySelector(`input[value="${start}"]`).checked = true;
+    showEngine(start);
     const sp = store.get("kokoro.speed");
     if (sp) { speed.value = sp; speedOut.textContent = `${Number(sp).toFixed(2)}×`; }
     updateCount();
@@ -135,7 +171,7 @@
     try {
       const r = await fetch("api/speak", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: t, voice: voice.value, speed: Number(speed.value) }),
+        body: JSON.stringify({ text: t, voice: voice.value, speed: engines[engine].speed ? Number(speed.value) : 1, engine }),
       });
       if (!r.ok) {
         let detail = `HTTP ${r.status}`;
@@ -146,7 +182,7 @@
       if (lastUrl) URL.revokeObjectURL(lastUrl);
       lastUrl = URL.createObjectURL(blob);
       $("player").src = lastUrl;
-      const dl = $("download"); dl.href = lastUrl; dl.download = `kokoro-${voice.value}.wav`;
+      const dl = $("download"); dl.href = lastUrl; dl.download = `${engine}-${voice.value}.wav`;
       $("result").hidden = false;
       $("player").play().catch(() => {});
       setStatus(`Ready in ${((performance.now() - started) / 1000).toFixed(1)} s.`);
