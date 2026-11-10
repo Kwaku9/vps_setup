@@ -109,13 +109,27 @@
   changed_when: false
   failed_when: false
   when: commerce_dev_infra.rc == 0
+- name: Gracefully stop development pod before moving its network namespace
+  ansible.builtin.command:
+    argv: [podman, pod, stop, --time, '90', commerce-dev-pod]
+  when: commerce_dev_infra.rc == 0 and (netseg_pods['commerce-dev-pod'].ip | string) not in (commerce_dev_networks.stdout | default(''))
+- name: Remove stopped development members before deleting the old pod
+  containers.podman.podman_container:
+    name: '{{ item }}'
+    state: absent
+  loop: [commerce-dev, commerce-mcp-dev, commerce-sync-dev]
+  when: commerce_dev_infra.rc == 0 and (netseg_pods['commerce-dev-pod'].ip | string) not in (commerce_dev_networks.stdout | default(''))
+- name: Remove empty old development pod without force
+  ansible.builtin.command:
+    argv: [podman, pod, rm, commerce-dev-pod]
+  when: commerce_dev_infra.rc == 0 and (netseg_pods['commerce-dev-pod'].ip | string) not in (commerce_dev_networks.stdout | default(''))
 - name: Create or move commerce pod without host ports
   containers.podman.podman_pod:
     name: commerce-dev-pod
     network: "{{ netseg_pods['commerce-dev-pod'].network }}"
     ip: "{{ netseg_pods['commerce-dev-pod'].ip | default(omit, true) }}"
     state: started
-    recreate: "{{ commerce_dev_infra.rc != 0 or (netseg_pods['commerce-dev-pod'].ip | string) not in (commerce_dev_networks.stdout | default('')) }}"
+    recreate: false
   register: commerce_dev_pod
 - name: Read commerce development container pod membership
   containers.podman.podman_container_info:
