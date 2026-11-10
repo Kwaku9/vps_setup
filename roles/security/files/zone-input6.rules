@@ -27,3 +27,7 @@ v6add -i br-mgmt -p tcp -j DROP
 v6add -i br-mgmt -p udp -j DROP
 v6add -i br-mail -p tcp -j DROP
 v6add -i br-mail -p udp -j DROP
+v6add -i br-com-dev -p tcp -j DROP
+v6add -i br-com-dev -p udp -j DROP
+v6add -i br-com-prod -p tcp -j DROP
+v6add -i br-com-prod -p udp -j DROP

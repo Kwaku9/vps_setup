@@ -35,6 +35,8 @@ iptables -A FORWARD -i br-fintech ! -s 10.89.128.128/28 -j ZONE_DENY
 iptables -A FORWARD -i br-scrape ! -s 10.89.128.144/28 -j ZONE_DENY
 iptables -A FORWARD -i br-mgmt ! -s 10.89.128.160/29 -j ZONE_DENY
 iptables -A FORWARD -i br-mail ! -s 10.89.128.168/29 -j ZONE_DENY
+iptables -A FORWARD -i br-com-dev ! -s 10.89.128.176/29 -j ZONE_DENY
+iptables -A FORWARD -i br-com-prod ! -s 10.89.128.184/29 -j ZONE_DENY
 iptables -A FORWARD -s 10.89.128.0/29 ! -i br-tunnel -j ZONE_DENY
 iptables -A FORWARD -s 10.89.128.8/29 ! -i br-edge -j ZONE_DENY
 iptables -A FORWARD -s 10.89.128.16/28 ! -i br-web -j ZONE_DENY
@@ -48,6 +50,8 @@ iptables -A FORWARD -s 10.89.128.128/28 ! -i br-fintech -j ZONE_DENY
 iptables -A FORWARD -s 10.89.128.144/28 ! -i br-scrape -j ZONE_DENY
 iptables -A FORWARD -s 10.89.128.160/29 ! -i br-mgmt -j ZONE_DENY
 iptables -A FORWARD -s 10.89.128.168/29 ! -i br-mail -j ZONE_DENY
+iptables -A FORWARD -s 10.89.128.176/29 ! -i br-com-dev -j ZONE_DENY
+iptables -A FORWARD -s 10.89.128.184/29 ! -i br-com-prod -j ZONE_DENY
 iptables -A FORWARD -d 10.89.128.0/29 ! -o br-tunnel -j ZONE_DENY
 iptables -A FORWARD -d 10.89.128.8/29 ! -o br-edge -j ZONE_DENY
 iptables -A FORWARD -d 10.89.128.16/28 ! -o br-web -j ZONE_DENY
@@ -61,6 +65,8 @@ iptables -A FORWARD -d 10.89.128.128/28 ! -o br-fintech -j ZONE_DENY
 iptables -A FORWARD -d 10.89.128.144/28 ! -o br-scrape -j ZONE_DENY
 iptables -A FORWARD -d 10.89.128.160/29 ! -o br-mgmt -j ZONE_DENY
 iptables -A FORWARD -d 10.89.128.168/29 ! -o br-mail -j ZONE_DENY
+iptables -A FORWARD -d 10.89.128.176/29 ! -o br-com-dev -j ZONE_DENY
+iptables -A FORWARD -d 10.89.128.184/29 ! -o br-com-prod -j ZONE_DENY
 # every packet touching the zone supernet is decided in ZONE_FWD, ahead of the legacy per-network accepts
 iptables -A FORWARD -s 10.89.128.0/24 -j ZONE_FWD
 iptables -A FORWARD -d 10.89.128.0/24 -j ZONE_FWD
@@ -79,6 +85,8 @@ iptables -A ZONE_FWD -s 10.89.128.128/28 -d 10.89.128.128/28 -m comment --commen
 iptables -A ZONE_FWD -s 10.89.128.144/28 -d 10.89.128.144/28 -m comment --comment "same-zone" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.160/29 -m comment --comment "same-zone" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.168/29 -d 10.89.128.168/29 -m comment --comment "same-zone" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.176/29 -d 10.89.128.176/29 -m comment --comment "same-zone" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.184/29 -d 10.89.128.184/29 -m comment --comment "same-zone" -j ACCEPT
 # allowed flows
 iptables -A ZONE_FWD -s 10.89.128.2/32 -d 10.89.128.10/32 -p tcp --dport 443 -m comment --comment "cloudflared-pod>security-infra-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.0/29 -p tcp --dport 7844 -m comment --comment "tunnel>internet" -j ZONE_PUBLIC
@@ -117,6 +125,13 @@ iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.80/28 -p tcp --dport 9000 
 iptables -A ZONE_FWD -s 10.89.128.160/29 -p tcp --dport 443 -m comment --comment "mgmt>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.160/29 -d 100.64.0.0/10 -p tcp --dport 22 -m comment --comment "mgmt>tailnet" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.168/29 -p tcp --dport 443 -m comment --comment "mail>internet" -j ZONE_PUBLIC
+iptables -A ZONE_FWD -s 10.89.128.10/32 -d 10.89.128.178/32 -p tcp -m multiport --dports 8788,8789 -m comment --comment "security-infra-pod>commerce-dev-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.176/29 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "commerce-dev>shared-db-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.176/29 -p tcp --dport 443 -m comment --comment "commerce-dev>internet" -j ZONE_PUBLIC
+iptables -A ZONE_FWD -s 10.89.128.176/29 -d 10.89.128.114/32 -p tcp --dport 7555 -m comment --comment "commerce-dev>gateway-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.176/29 -d 10.89.128.98/32 -p tcp --dport 8880 -m comment --comment "commerce-dev>metrics-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.184/29 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "commerce-prod>shared-db-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.184/29 -p tcp --dport 443 -m comment --comment "commerce-prod>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.128/28 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "fintech>shared-db-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.128/28 -p tcp --dport 443 -m comment --comment "fintech>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.96/28 -d 10.89.128.66/32 -p tcp --dport 5432 -m comment --comment "observe>shared-db-pod" -j ACCEPT
@@ -136,5 +151,7 @@ iptables -A ZONE_FWD -s 10.89.128.112/28 -d 10.89.128.98/32 -p tcp --dport 8428 
 iptables -A ZONE_FWD -s 10.89.128.128/28 -d 10.89.128.98/32 -p tcp --dport 8428 -m comment --comment "fintech>metrics-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.144/28 -d 10.89.128.98/32 -p tcp --dport 8428 -m comment --comment "scrape>metrics-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.160/29 -d 10.89.128.98/32 -p tcp --dport 8428 -m comment --comment "mgmt>metrics-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.176/29 -d 10.89.128.98/32 -p tcp --dport 8428 -m comment --comment "commerce-dev>metrics-pod" -j ACCEPT
+iptables -A ZONE_FWD -s 10.89.128.184/29 -d 10.89.128.98/32 -p tcp --dport 8428 -m comment --comment "commerce-prod>metrics-pod" -j ACCEPT
 # a packet is dropped if either end is an enforced zone and no flow matched
 iptables -A ZONE_FWD -j ZONE_AUDIT
