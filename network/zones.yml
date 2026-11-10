@@ -141,3 +141,23 @@ zones:
     purpose: Mail Kit MCP connectors only; can read and send mail, so nothing else shares its network (spec section 4B)
     pods:
       mailkit-pod: {ip: 10.89.128.170, replaces: [mailkit-pod, mailkit-mcp-read, mailkit-mcp-send]}
+  # Commerce (owner 2026-11-10): dev and production in SEPARATE single-pod zones. Same-bridge traffic is never
+  # filtered, and dev serves a public MCP endpoint while production holds the production read-write DB credentials.
+  # Deployed by /opt/aicortex-commerce-* (not this playbook): moving them means that deploy's `podman pod create`
+  # takes --network net-commerce-<x> --ip <ip>.
+  commerce-dev:
+    name: net-commerce-dev
+    bridge: br-com-dev
+    cidr: 10.89.128.176/29
+    single_pod: true
+    purpose: commerce dev web app + public MCP; reaches its schemas, the internet, Telegram notify and vmalert
+    pods:
+      commerce-dev-pod: {ip: 10.89.128.178, replaces: [commerce-dev, commerce-mcp-dev, commerce-sync-dev]}
+  commerce-prod:
+    name: net-commerce-prod
+    bridge: br-com-prod
+    cidr: 10.89.128.184/29
+    single_pod: true
+    purpose: commerce production worker; production DB credentials; nothing connects in
+    pods:
+      commerce-production-pod: {ip: 10.89.128.186, replaces: [commerce-production-worker]}

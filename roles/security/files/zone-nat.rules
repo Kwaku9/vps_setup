@@ -16,6 +16,8 @@ iptables -t nat -A ZONE_POST -s 10.89.128.128/28 ! -d 10.89.0.0/16 -j MASQUERADE
 iptables -t nat -A ZONE_POST -s 10.89.128.144/28 ! -d 10.89.0.0/16 -j MASQUERADE
 iptables -t nat -A ZONE_POST -s 10.89.128.160/29 ! -d 10.89.0.0/16 -j MASQUERADE
 iptables -t nat -A ZONE_POST -s 10.89.128.168/29 ! -d 10.89.0.0/16 -j MASQUERADE
+iptables -t nat -A ZONE_POST -s 10.89.128.176/29 ! -d 10.89.0.0/16 -j MASQUERADE
+iptables -t nat -A ZONE_POST -s 10.89.128.184/29 ! -d 10.89.0.0/16 -j MASQUERADE
 # Squid transparent intercept, only for zones with an internet flow on 80/443
 if [ "${SQUID_ENABLED:-0}" = 1 ]; then
     iptables -t nat -A ZONE_PROXY -d 0.0.0.0/8 -j RETURN
@@ -37,6 +39,8 @@ if [ "${SQUID_ENABLED:-0}" = 1 ]; then
     iptables -t nat -A ZONE_PRE -i br-scrape -s 10.89.128.144/28 -j ZONE_PROXY
     iptables -t nat -A ZONE_PRE -i br-mgmt -s 10.89.128.160/29 -j ZONE_PROXY
     iptables -t nat -A ZONE_PRE -i br-mail -s 10.89.128.168/29 -j ZONE_PROXY
+    iptables -t nat -A ZONE_PRE -i br-com-dev -s 10.89.128.176/29 -j ZONE_PROXY
+    iptables -t nat -A ZONE_PRE -i br-com-prod -s 10.89.128.184/29 -j ZONE_PROXY
 fi
 # attach once: remove every earlier copy of the jump, then insert it first
 while iptables -t nat -D PREROUTING -j ZONE_PRE 2>/dev/null; do :; done

@@ -83,3 +83,15 @@ iptables -A INPUT -i br-mail -s 10.89.128.168/29 -p tcp --dport 53 -j ACCEPT
 iptables -A INPUT -i br-mail -s 10.89.128.168/29 -p tcp --dport ${SQUID_HTTP_PORT:-3128} -j ACCEPT
 iptables -A INPUT -i br-mail -s 10.89.128.168/29 -p tcp --dport ${SQUID_HTTPS_PORT:-3129} -j ACCEPT
 iptables -A INPUT -i br-mail -p tcp --dport 22 -m comment --comment "mail>host-ssh-denied" -j ZONE_DENY
+# --- commerce-dev ---
+iptables -A INPUT -i br-com-dev -s 10.89.128.176/29 -p udp --dport 53 -j ACCEPT
+iptables -A INPUT -i br-com-dev -s 10.89.128.176/29 -p tcp --dport 53 -j ACCEPT
+iptables -A INPUT -i br-com-dev -s 10.89.128.176/29 -p tcp --dport ${SQUID_HTTP_PORT:-3128} -j ACCEPT
+iptables -A INPUT -i br-com-dev -s 10.89.128.176/29 -p tcp --dport ${SQUID_HTTPS_PORT:-3129} -j ACCEPT
+iptables -A INPUT -i br-com-dev -p tcp --dport 22 -m comment --comment "commerce-dev>host-ssh-denied" -j ZONE_DENY
+# --- commerce-prod ---
+iptables -A INPUT -i br-com-prod -s 10.89.128.184/29 -p udp --dport 53 -j ACCEPT
+iptables -A INPUT -i br-com-prod -s 10.89.128.184/29 -p tcp --dport 53 -j ACCEPT
+iptables -A INPUT -i br-com-prod -s 10.89.128.184/29 -p tcp --dport ${SQUID_HTTP_PORT:-3128} -j ACCEPT
+iptables -A INPUT -i br-com-prod -s 10.89.128.184/29 -p tcp --dport ${SQUID_HTTPS_PORT:-3129} -j ACCEPT
+iptables -A INPUT -i br-com-prod -p tcp --dport 22 -m comment --comment "commerce-prod>host-ssh-denied" -j ZONE_DENY
