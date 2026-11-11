@@ -102,3 +102,19 @@ export const fetchAccessRequests = () =>
 export const decideAccessRequest = (id: number, decision: 'approve' | 'deny', note: string) =>
   api.post<{ ok: boolean; status: string; granted_group: string | null }>(
     `/api/access-requests/${id}/decide`, { decision, note });
+
+// Student progress (admin only; routers/progress.py)
+export interface StudentProgress {
+  email: string; name: string; username: string; last_login: string | null; last_seen: string | null;
+  days_active: number;
+  by_resource: { resource: string; label: string; hits: number }[];
+  items: { resource: string; resource_label: string; label: string; hits: number; last_seen: string }[];
+  decks: { deck: string; slides_total: number; furthest: number; seen: number; percent: number;
+           status: 'started' | 'finished'; first_seen: string; last_seen: string }[];
+  openwebui: { chats_active: number; chats_started: number; models: { model: string; chats: number }[] };
+  refused: { domain: string; count: number }[];
+  daily: { day: string; hits: number }[];
+  needs_attention: string[];
+}
+export const fetchStudentProgress = (days: number) =>
+  api.get<{ days: number; students: StudentProgress[] }>(`/api/students/progress?days=${days}`);

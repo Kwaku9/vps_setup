@@ -4,6 +4,7 @@ import {
   type AccessRequest, type Me, type Person,
 } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
+import { StudentProgressView } from './StudentProgressView';
 
 const KIND_LABEL: Record<string, string> = { students: 'Student access', paid_users: 'Paid models', other: 'Something else' };
 const STATUS_TONE: Record<string, string> = {
@@ -142,6 +143,7 @@ export function StudentsView() {
   const [err, setErr] = useState<string | null>(null);
   const [view, setView] = useState<'students' | 'candidates'>('students');
   const [showDone, setShowDone] = useState(false);
+  const [mode, setMode] = useState<'progress' | 'manage'>('progress');
   const [q, setQ] = useState('');
 
   const load = useCallback(async () => {
@@ -176,8 +178,29 @@ export function StudentsView() {
     );
   }
 
+  const switcher = (
+    <div className="glass rounded-full p-1 inline-flex justify-self-start">
+      {(['progress', 'manage'] as const).map((m) => (
+        <button key={m} onClick={() => setMode(m)} aria-pressed={mode === m}
+          className={`px-4 py-1.5 text-[13px] font-semibold rounded-full ${mode === m ? 'bg-white/10 text-white' : 'text-white/60'}`}>
+          {m === 'progress' ? 'Progress' : `Manage${pending.length ? ` (${pending.length} waiting)` : ''}`}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (mode === 'progress') {
+    return (
+      <div className="mx-auto max-w-7xl w-full px-4 md:px-6 pb-28 lg:pb-6 grid gap-4">
+        {switcher}
+        <StudentProgressView />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-7xl w-full px-4 md:px-6 pb-28 lg:pb-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="lg:col-span-2">{switcher}</div>
       {err && <div className="lg:col-span-2 glass rounded-2xl p-3 text-[13px] text-red-300">{err}</div>}
 
       <section className="grid gap-3 content-start" aria-labelledby="req-h">

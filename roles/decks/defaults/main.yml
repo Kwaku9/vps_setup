@@ -16,4 +16,6 @@ decks:
   pod_name: "web-public-pod"
   image: "docker.io/library/nginx:1.29-alpine"
   data_dir: "/opt/compose/decks"
+  # nginx site config + slide tracker (mounted read-only; not inside data_dir)
+  config_dir: "/opt/compose/decks-nginx"
   domain: "decks"
