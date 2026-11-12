@@ -39,8 +39,10 @@ RANK = {"viewer": 1, "operator": 2, "admin": 3}
 # Machine endpoints with their own bearer token, plus the login flow itself.
 # /request is the request desk (routers/access_requests.py): requesters have no
 # dashboard session, and every call there verifies its own Cloudflare Access token.
+# /api/workstations/* authenticate themselves: a per-host HMAC token (routers/workstations.py bridge_host).
 EXEMPT_PREFIXES = ("/auth/", "/request/")
-EXEMPT_PATHS = {"/api/health", "/api/sessions/ingest", "/api/repo-radar/ingest", "/favicon.ico", "/request"}
+EXEMPT_PATHS = {"/api/health", "/api/sessions/ingest", "/api/repo-radar/ingest", "/favicon.ico", "/request",
+                "/api/workstations/sync", "/api/workstations/result"}
 
 
 def _env_list(name: str) -> set[str]:

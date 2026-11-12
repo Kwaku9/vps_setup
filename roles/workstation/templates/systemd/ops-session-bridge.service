@@ -1,0 +1,27 @@
+[Unit]
+Description=OPS live desktop sessions and reply bridge
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ ops_bridge_user }}
+WorkingDirectory={{ ops_bridge_home }}
+ExecStart={{ ops_bridge_home }}/.local/share/ops-session-bridge/venv/bin/python {{ ops_bridge_home }}/.local/bin/ops-session-bridge.py
+Environment=HOME={{ ops_bridge_home }}
+Environment=OPS_BRIDGE_URL={{ ops_bridge_url }}
+LoadCredentialEncrypted=ops-session-token:/etc/credstore.encrypted/ops-session-token
+StateDirectory=ops-session-bridge
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Native sockets verify the desktop user's process identity. Do not use
+# PrivateUsers, PrivateTmp, or a container PID namespace for this service.
+
+[Install]
+WantedBy=multi-user.target
