@@ -10,6 +10,7 @@ iptables -t nat -A ZONE_POST -s 10.89.128.0/29 ! -d 10.89.0.0/16 -j MASQUERADE
 iptables -t nat -A ZONE_POST -s 10.89.128.8/29 ! -d 10.89.0.0/16 -j MASQUERADE
 iptables -t nat -A ZONE_POST -s 10.89.128.32/28 ! -d 10.89.0.0/16 -j MASQUERADE
 iptables -t nat -A ZONE_POST -s 10.89.128.48/28 ! -d 10.89.0.0/16 -j MASQUERADE
+iptables -t nat -A ZONE_POST -s 10.89.128.80/28 ! -d 10.89.0.0/16 -j MASQUERADE
 iptables -t nat -A ZONE_POST -s 10.89.128.96/28 ! -d 10.89.0.0/16 -j MASQUERADE
 iptables -t nat -A ZONE_POST -s 10.89.128.112/28 ! -d 10.89.0.0/16 -j MASQUERADE
 iptables -t nat -A ZONE_POST -s 10.89.128.128/28 ! -d 10.89.0.0/16 -j MASQUERADE

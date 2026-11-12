@@ -37,6 +37,9 @@ flows:
   - {from: frontend, from_pod: openwebui-pod, to: observe, to_pod: logs-pod, ports: [4317], reason: "Open WebUI OTLP (gRPC) to Alloy"}
   - {from: frontend, to: internet, ports: [443], reason: "Open WebUI and frontend outbound fetches (via Squid)"}
 
+  # --- identity (Authentik: no internet except recovery email; owner 2026-11-10) ---
+  - {from: identity, to: internet, ports: [587], reason: "Authentik password-recovery email (SMTP submission)", unverified: true}
+
   # --- svc ---
   - {from: svc, to: data, ports: [5432], reason: "LiteLLM and APIs to Postgres"}
   - {from: svc, from_pod: backend-pod, to: data, to_pod: neo4j-pod, ports: [7687], reason: "timeline-api graph queries (moved from frontend-pod 2026-10-30)"}

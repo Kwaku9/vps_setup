@@ -113,6 +113,7 @@ iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.66/32 -p tcp --dport 5432 -
 iptables -A ZONE_FWD -s 10.89.128.32/28 -d 10.89.128.114/32 -p tcp --dport 7557 -m comment --comment "frontend>gateway-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.35/32 -d 10.89.128.99/32 -p tcp --dport 4317 -m comment --comment "openwebui-pod>logs-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.32/28 -p tcp --dport 443 -m comment --comment "frontend>internet" -j ZONE_PUBLIC
+iptables -A ZONE_FWD -s 10.89.128.80/28 -p tcp --dport 587 -m comment --comment "identity>internet" -j ZONE_PUBLIC
 iptables -A ZONE_FWD -s 10.89.128.48/28 -d 10.89.128.64/28 -p tcp --dport 5432 -m comment --comment "svc>data" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.52/32 -d 10.89.128.68/32 -p tcp --dport 7687 -m comment --comment "backend-pod>neo4j-pod" -j ACCEPT
 iptables -A ZONE_FWD -s 10.89.128.48/28 -p tcp --dport 443 -m comment --comment "svc>internet" -j ZONE_PUBLIC
