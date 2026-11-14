@@ -50,3 +50,21 @@
   # reload. Ingestion pauses for seconds; Alloy retries and loses nothing.
   command: podman restart loki
   changed_when: false
+
+- name: wait for loki ready
+  tags: ['always']
+  listen: restart loki
+  # Runs right after "restart loki" (same notify). Found 2026-11-14: the play's
+  # last task, podman network reload --all, ran while the restarted Loki was
+  # still starting; Loki found no network interfaces, exited 1 and, with no
+  # restart policy, stayed down until it was started again. Holding the play
+  # here until /ready answers keeps the reload away from a starting Loki. The
+  # image has no shell or wget, so probe from the host inside its netns.
+  shell: >-
+    {% raw %}nsenter -t "$(podman inspect -f '{{.State.Pid}}' loki)" -n
+    wget -qO- http://127.0.0.1:3100/ready{% endraw %}
+  register: loki_ready
+  until: loki_ready.rc == 0 and 'ready' in loki_ready.stdout
+  retries: 45
+  delay: 2
+  changed_when: false
