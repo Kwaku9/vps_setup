@@ -65,3 +65,9 @@ def test_not_configured_without_a_key(monkeypatch):
 def test_only_the_tracking_period_is_queried():
     for sql in hr._queries(7).values():
         assert "tracking_version) >= 3" in sql and "INTERVAL 7 DAY" in sql
+
+
+def test_presenter_room_events_are_left_out():
+    for name, sql in hr._queries(7).items():
+        if name != "denied":
+            assert "coalesce(properties.rehearsal_mode, 'host') = 'host'" in sql

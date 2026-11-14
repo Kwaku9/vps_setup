@@ -61,7 +61,10 @@ async def _hogql(client: httpx.AsyncClient, sql: str) -> list[list]:
 
 
 def _queries(days: int) -> dict[str, str]:
+    # The presenter room (?mode=presenter) sends the same events with rehearsal_mode = 'presenter';
+    # this view is the host room only. Host events from before the mode tag have none.
     base = (f"event LIKE 'host_%' AND toFloat(properties.tracking_version) >= {TRACKING_FROM} "
+            f"AND coalesce(properties.rehearsal_mode, 'host') = 'host' "
             f"AND timestamp > now() - INTERVAL {int(days)} DAY")
     host = "properties.rehearsal_host"
     return {
