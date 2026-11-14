@@ -1,0 +1,29 @@
+# Managed by Ansible (roles/shared-services: "Deploy CrowdSec profiles"). Mounted read-only over the image's default.
+#
+# FIRST: confirmed reconnaissance against a burned hostname (scenario aicortex/burned-hostname-recon) is banned
+# "indefinitely" (owner 2026-11-14). CrowdSec decisions always carry a duration, so indefinite = 10 years. Lift a single
+# ban with: podman exec crowdsec cscli decisions delete -i <ip>
+name: burned_hostname_recon_indefinite
+filters:
+ - Alert.Remediation == true && Alert.GetScenario() == "aicortex/burned-hostname-recon"
+decisions:
+ - type: ban
+   duration: 87600h
+on_success: break
+---
+# BELOW: the image's default profiles, unchanged (crowdsec v1.7.8): every other scenario keeps its 4h ban.
+name: default_ip_remediation
+filters:
+ - Alert.Remediation == true && Alert.GetScope() == "Ip"
+decisions:
+ - type: ban
+   duration: 4h
+on_success: break
+---
+name: default_range_remediation
+filters:
+ - Alert.Remediation == true && Alert.GetScope() == "Range"
+decisions:
+ - type: ban
+   duration: 4h
+on_success: break
