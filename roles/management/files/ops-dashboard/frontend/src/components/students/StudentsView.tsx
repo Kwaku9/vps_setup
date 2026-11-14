@@ -5,6 +5,7 @@ import {
 } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { StudentProgressView } from './StudentProgressView';
+import { HostRehearsalView } from './HostRehearsalView';
 
 const KIND_LABEL: Record<string, string> = { students: 'Student access', paid_users: 'Paid models', other: 'Something else' };
 const STATUS_TONE: Record<string, string> = {
@@ -143,7 +144,7 @@ export function StudentsView() {
   const [err, setErr] = useState<string | null>(null);
   const [view, setView] = useState<'students' | 'candidates'>('students');
   const [showDone, setShowDone] = useState(false);
-  const [mode, setMode] = useState<'progress' | 'manage'>('progress');
+  const [mode, setMode] = useState<'progress' | 'rehearsal' | 'manage'>('progress');
   const [q, setQ] = useState('');
 
   const load = useCallback(async () => {
@@ -180,14 +181,23 @@ export function StudentsView() {
 
   const switcher = (
     <div className="glass rounded-full p-1 inline-flex justify-self-start">
-      {(['progress', 'manage'] as const).map((m) => (
+      {(['progress', 'rehearsal', 'manage'] as const).map((m) => (
         <button key={m} onClick={() => setMode(m)} aria-pressed={mode === m}
           className={`px-4 py-1.5 text-[13px] font-semibold rounded-full ${mode === m ? 'bg-white/10 text-white' : 'text-white/60'}`}>
-          {m === 'progress' ? 'Progress' : `Manage${pending.length ? ` (${pending.length} waiting)` : ''}`}
+          {m === 'progress' ? 'Progress' : m === 'rehearsal' ? 'Host rehearsal' : `Manage${pending.length ? ` (${pending.length} waiting)` : ''}`}
         </button>
       ))}
     </div>
   );
+
+  if (mode === 'rehearsal') {
+    return (
+      <div className="mx-auto max-w-7xl w-full px-4 md:px-6 pb-28 lg:pb-6 grid gap-4">
+        {switcher}
+        <HostRehearsalView />
+      </div>
+    );
+  }
 
   if (mode === 'progress') {
     return (
