@@ -118,3 +118,23 @@ export interface StudentProgress {
 }
 export const fetchStudentProgress = (days: number) =>
   api.get<{ days: number; students: StudentProgress[] }>(`/api/students/progress?days=${days}`);
+
+export interface HostRehearsalSection {
+  id: string; title: string; practice: boolean; target_seconds: number | null;
+  minutes: number; opens: number; seconds_open: number; takes: number; rerecords: number;
+  avg_take_seconds: number | null; playbacks: number; listens: number; last: string | null;
+}
+export interface HostRehearsalPerson {
+  name: string; visits: number; active_days: number; minutes: number; takes: number; rerecords: number;
+  playbacks: number; listens: number; briefings_completed: number; slides_reached: number; slides_total: number;
+  script_edits: number; first_seen: string | null; last_seen: string | null;
+  sections: HostRehearsalSection[];
+  places: { id: string; title: string; minutes: number }[];
+  daily: { day: string; minutes: number; takes: number }[];
+  visits_recent: { at: string; device: string | null; os: string | null; browser: string | null; city: string | null }[];
+}
+export interface HostRehearsal {
+  days: number; configured: boolean; tracking_from: number; hosts: HostRehearsalPerson[]; gate_denied: number;
+}
+export const fetchHostRehearsal = (days: number) =>
+  api.get<HostRehearsal>(`/api/students/host-rehearsal?days=${days}`);
